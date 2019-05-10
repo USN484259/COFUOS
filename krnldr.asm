@@ -4,39 +4,36 @@ IA32_EFER equ 0xC0000080
 
 TSS_BASE equ 0x1000
 GDT_BASE equ 0x1200
-GDT_LIM equ 0x200
-MEMSCAN_BASE equ 0x1400
+GDT_LIM equ 0x200	;64 entries
+IDT_BASE equ 0x1400
+IDT_LIM equ 0x400	;128 entries
 
-MEMBMP_BASE equ 0x20000
-MEMBMP_LIM equ 0x80000
+MEMSCAN_BASE equ 0x1800
+
+;MEMBMP_BASE equ 0x20000
+;MEMBMP_LIM equ 0x80000
 
 
-PG4D equ 0x18000
+PG4D equ 0x02000
 
 
 ;	Memory layout
-;	Virtual Address		Physical Address
-
-;	000000	001000		000000	001000		GAP	NULL address
-;	001000	002000		001000	002000		R	TSS & GDT & MEMSCAN
-;	002000	00A000		002000	00A000		RW	avl	
-;	00A000	010000		00A000	010000		RW	stacks
-;	010000	018000		010000	018000		RX	loader code & data
-;	018000	020000		018000	020000		RW	PG
-;	020000	0A0000		020000	0A0000		RW	PMMBMP up to 16G
-;	0A0000	100000		0A0000	100000		R	BIOS area
-;	---- direct map ----
-
-;	100000	400000		Video memory		W	3MB big enough ?
-
-;						100000	MAXPMM	?	Allocable PMM
+;	Virtual Address					Physical Address
 
 
-
-
-
-
-
+;	000000000000	000000001000							GAP	NULL address
+;									00000000	00001000	N	first PT for krnl
+;	000000001000	000000002000	00001000	00002000	R	TSS & GDT & IDT & systeminfo
+;	000000002000	000000010000	00002000	00010000	RW	PG & TSS stack
+;	800000010000	800000040000	00010000	00040000	RX	ldr code	avlPMM
+;	?								00040000	000A0000	?	avlPMM
+;									000A0000	00100000	N	BIOS area
+;	000000004000	000000010000	?						RW	common PMM map area
+;	?								00100000	MAXPMM		?	avlPMM
+;	000000010000	000080000000	(allocated)				?	user area
+;	000080000000	000100000000	(allocated)				RX	32bit krnl proxy
+;	000100000000	800000000000	(allocated)				?	user area
+;	800000000000   1000000000000	(allocated)				?	krnl area
 
 
 
@@ -540,7 +537,7 @@ bts eax,31
 mov cr0,eax
 
 ;NOTE GDT and TSS no longer write-able since now
-
+;All 'data' values in this ldr shall have been set
 
 ;test LMA
 
