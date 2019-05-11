@@ -21,25 +21,35 @@ ISR_STK equ 0x04000
 GATE_STK equ 0x010000
 ;guard page at 0x0C000
 
-PG4D equ 0x04000
+PG4D equ 0x0A000
 
-PT0 equ 0x0A000
+PDPT0 equ 0x4000
+PDPT8 equ 0x5000
+
+PT0 equ 0x0
 PDT0 equ 0x0B000
+PDT2 equ 0x06000
+PDT3 equ 0x07000
+PTVBE equ 0x08000
+
+PT_BASE equ 0x4000
+PT_LEN equ (0xC000-PT_BASE)
+
 ;	Memory layout
 ;	Virtual Address					Physical Address
 
 
 ;	000000000000	000000001000							GAP		NULL address
-;									00000000	00001000	N		PDPT for krnl 512G layout fixed
+;									00000000	00001000	N		PT for low fixed
 ;	000000001000	000000002000	00001000	00002000	R(W)	TSS & GDT & IDT & systeminfo
 ;	000000002000	000000004000	00002000	00004000	RW		ISR stack & PMMSCAN
 
-;	000000004000	000000005000	00004000	00005000	RW		PG4D
-;	000000005000	000000006000	00005000	00006000	RW		PDPT for krnl at high
+;	000000004000	000000005000	00004000	00005000	RW		PDPT for krnl low
+;	000000005000	000000006000	00005000	00006000	RW		PDPT for krnl high
 ;	000000006000	000000007000	00006000	00007000	RW		PDT for krnl at 2G
 ;	000000007000	000000008000	00007000	00008000	RW		PDT for krnl at 3G
 ;	000000008000	00000000A000	00008000	0000A000	RW		PT for video memory
-;	00000000A000	00000000B000	0000A000	0000B000	RW		first PT for krnl
+;	00000000A000	00000000B000	0000A000	0000B000	RW		PG4D
 ;	00000000B000	00000000C000							GAP		guard page
 ;									0000B000	0000C000	N		first PDT for krnl	1G layout fixed reused at high
 ;	00000000C000	000000010000	0000C000	00010000	RW		GATE stack
@@ -69,10 +79,10 @@ struc sysinfo
 .cpu	resd 1
 .bus	resw 1
 .port	resw 7
-.VBE_width	resw 1
-.VBE_height	resw 1
 .VBE_bpp	resw 1
 .VBE_mode	resw 1
+.VBE_width	resw 1
+.VBE_height	resw 1
 .VBE_addr	resd 1
 .VBE_lim	resd 1
 
@@ -228,23 +238,22 @@ mov si,strvberr
 jnz abort16
 
 
-;xor cx,cx
-;mov di,MEMSCAN_BASE
-;mov es,cx
+xor cx,cx
+mov es,cx
 
-;TRICK	ss is 0
 
 
 mov edx,'VESA'
-cmp [ss:MEMSCAN_BASE+0x200],edx
+cmp [es:MEMSCAN_BASE+0x200],edx
 jnz abort16
 
-mov si,[ss:MEMSCAN_BASE+0x200+0x0E]	;video modes offset
-mov cx,[ss:MEMSCAN_BASE+0x200+0x10]	;video modes segment
+mov si,[es:MEMSCAN_BASE+0x200+0x0E]	;video modes offset
+mov cx,[es:MEMSCAN_BASE+0x200+0x10]	;video modes segment
 
-;WARNING	DS changed !!!
 
+;	WARNING DS changed
 mov ds,cx
+
 
 video_loop:
 lodsw	;next mode
@@ -254,67 +263,79 @@ inc ax
 jz video_end
 
 
-xor dx,dx
-mov di,MEMSCAN_BASE
-mov es,dx
 
+mov di,MEMSCAN_BASE
 
 mov ax,0x4F01
 int 0x10	;query video mode
 
+xor dx,dx
+mov es,dx
 
 cmp ax,0x4F
 jnz video_end
 
-;TRICK	ss is 0
 
-test BYTE [ss:MEMSCAN_BASE],0x80
+test BYTE [es:MEMSCAN_BASE],0x80
 jz video_loop
 
 
-mov ax,[ss:MEMSCAN_BASE+0x12]
-cmp ax,800
+mov cx,[es:MEMSCAN_BASE+0x12]
+cmp cx,800
 jb video_loop
 
-mov dx,[ss:MEMSCAN_BASE+0x14]
+mov dx,[es:MEMSCAN_BASE+0x14]
 cmp dx,600
 jb video_loop
 
-;WARNING	ES changed
-
-mov cx,0x1000
-mov es,cx
 
 
 
-cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_width]
+cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_width]
 jb video_loop
 cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
 jb video_loop
 
-movzx cx,BYTE [ss:MEMSCAN_BASE+0x19]
-cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
+movzx ax,BYTE [es:MEMSCAN_BASE+0x19]
+cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
 jb video_loop
 
 
 ;save current video mode
 
-mov di,SYSINFO_BASE+sysinfo.VBE_width
+mov di,SYSINFO_BASE+sysinfo.VBE_bpp
 
 stosw
-mov ax,dx
+
+xchg ax,bx
 stosw
+
 mov ax,cx
 stosw
-mov ax,bx
+
+mov ax,dx
 stosw
+
+mul cx
+
+shl edx,16
+shr bx,3
+mov dx,ax
+
+
+
+
 ;mov [es:VBE_width],ax
 ;mov [es:VBE_height],dx
 ;mov [es:VBE_bpp],bx
 
-mov eax,[ss:MEMSCAN_BASE+0x28]
+mov eax,[es:MEMSCAN_BASE+0x28]
 stosd
-mov eax,[ss:MEMSCAN_BASE+0x2C]
+
+movzx eax,bx
+mul edx
+
+;mov eax,[es:MEMSCAN_BASE+0x2C]
 stosd
 
 
@@ -322,16 +343,13 @@ jmp video_loop
 
 video_end:
 
+push cs
+pop ds
 
-mov cx,0x1000
-xor dx,dx
-mov ds,cx
-mov es,dx
 mov si,strvberr
 
-;TODO check if resolution is set
-mov bx,[SYSINFO_BASE+sysinfo.VBE_mode]
-cmp dx,bx
+mov bx,[es:SYSINFO_BASE+sysinfo.VBE_mode]
+test bx,bx
 jz abort16
 mov ax,0x4F02
 or bx,0x4000	;LFB enable
@@ -560,92 +578,108 @@ stosd
 
 ;paging init
 
-xor edi,edi
-mov ecx,0x1000
-call zeromemory
-mov eax,PDT0 | 3
-stosd
 
+mov edi,PT_BASE
+mov ecx,PT_LEN
+call zeromemory
 
 mov edi,PG4D
-mov ecx,(0xC000-PG4D)
-call zeromemory
-
 xor ecx,ecx
+mov ebx,PDPT0
+mov edx,0x03
+inc ecx
+call map_page
 
-mov edx,edi
-mov cl,3
-mov cr3,edx
-mov [edi],ecx
-
-
-
-add edx,0x1000
-add edi,0x0800
-mov eax,edx
-
-mov al,3
-stosd
-
-mov edi,edx
-mov eax,PDT0 | 3
-stosd
-
-;TODO set video memory here
+mov edi,PG4D+0x800
+mov ebx,PDPT8
+inc ecx
+call map_page
 
 
+mov edi,PDPT8
+mov ebx,PDT0
+inc ecx
+call map_page
 
-mov edx,PT0
+
+mov edi,PDPT0
+mov ebx,PDT0
+inc ecx
+call map_page
+
+add edi,8
+mov ebx,PDT2
+mov cl,2
+call map_page
 
 mov edi,PDT0
-mov eax,edx
-mov al,3
-stosd
+mov ebx,PT0
+inc ecx
+call map_page
 
-;set pages of first 2MB
-xor eax,eax
-mov edi,edx	;PT0
-stosd
-stosd
+mov edi,PT0
+mov ecx,0x1000
+call zeromemory
 
-mov ax,0x1003
-mov edx,0x80000000
+add edi,8
+mov ebx,0x1000
+mov edx,0x80000003
+mov cl,0x0A
+call map_page
 
-mov ecx,0x0F
+add edi,8
+mov ebx,0xC000
+mov cl,4
+call map_page
 
-PT0_loop1:
-stosd
-add eax,0x1000
-mov [edi],edx
-add edi,4
+mov edx,0x01
+mov ebx,0x10000
+mov cl,0x10
+call map_page
 
-loop PT0_loop1
+VBE_vmmap:
 
-mov ebx,edi
 
-btc eax,1
-mov ecx,0x10
+mov ax,[SYSINFO_BASE+sysinfo.VBE_mode]
+test ax,ax
+jz abort
 
-PT0_loop2:
 
-stosd
-add eax,0x1000
-add edi,4
+mov ebx,[SYSINFO_BASE+sysinfo.VBE_addr]
+mov edi,PTVBE
+test ebx,0xFFF
+jnz abort
+mov ecx,[SYSINFO_BASE+sysinfo.VBE_lim]
+mov edx,0x80000003
+test ecx,0xFFF
 
-loop PT0_loop2
+jz .nalign
+add ecx,0x1000
+.nalign:
+shr ecx,12
 
-;clear guard page
-xor eax,eax
-sub ebx,(4+1)*8
-stosd
+cmp ecx,0x400
+ja abort
 
+call map_page
+
+
+mov edi,PDT3	;map to 0xC0000000
+mov ebx,PTVBE
+mov cl,2
+call map_page
+
+
+mov eax,PG4D
+mov cr3,eax
 
 ;enable PG
 mov eax,cr0
 bts eax,31
 mov cr0,eax
 
-;NOTE GDT IDT TSS and SYSINFO no longer write-able since now
+;	clear W bit of page 0x1000 after setting IDT
+;	GDT IDT TSS and SYSINFO no longer write-able after that
 
 ;test LMA
 
@@ -666,6 +700,27 @@ lgdt [esp+2]
 
 
 jmp DWORD 0x08:LM_entry
+
+
+map_page:	;edi PT		ebx PMM		ecx cnt		edx attrib
+
+mov eax,ebx
+xor ebx,ebx
+mov al,dl
+
+bt edx,31
+rcr ebx,1
+
+.st:
+
+stosd
+add eax,0x1000
+mov [edi],ebx
+add edi,4
+
+loop .st
+
+ret
 
 
 [bits 64]
@@ -703,10 +758,49 @@ align 8
 
 LM_high:
 
-mov rax,TR_selector
-ltr [rax]
+mov rdx,TR_selector
+ltr [rdx]
+
+xor rcx,rcx
+;set screen to white
+mov ecx,[SYSINFO_BASE+sysinfo.VBE_lim]
+xor rdi,rdi
+shr rcx,2
+mov edi,0xC0000000
 
 
+.color_loop:
+
+xor eax,eax
+
+bt cx,7
+jnc .k1
+
+mov al,ch
+
+.k1:
+shl eax,8
+
+bt cx,6
+
+jnc .k2
+
+mov al,ch
+
+.k2:
+shl eax,8
+
+bt cx,5
+
+jnc .k3
+
+mov al,ch
+
+.k3:
+
+stosd
+
+loop .color_loop
 
 
 hlt
