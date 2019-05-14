@@ -1,73 +1,58 @@
 IA32_EFER equ 0xC0000080
 
 
-
-TSS_BASE equ 0x1000
+TSS_BASE equ 0x0000
 TSS_LIM equ 0x200
-GDT_BASE equ 0x1200
+GDT_BASE equ 0x0200
 GDT_LIM equ 0x200	;64 entries
-IDT_BASE equ 0x1400
+IDT_BASE equ 0x0400
 IDT_LIM equ 0x400	;128 entries
 
-SYSINFO_BASE equ 0x1800
+SYSINFO_BASE equ 0x0800
 
 
-MEMSCAN_BASE equ 0x2000
+MEMSCAN_BASE equ 0x1000
 
 
 
-ISR_STK equ 0x04000
-;guard page at 0x02000
-GATE_STK equ 0x010000
-;guard page at 0x0C000
+ISR_STK equ 0x02000
 
-PG4D equ 0x0A000
+PL4T equ 0x03000
 
 PDPT0 equ 0x4000
 PDPT8 equ 0x5000
 
-PT0 equ 0x0
-PDT0 equ 0x0B000
-PDT2 equ 0x06000
-PDT3 equ 0x07000
-PTVBE equ 0x08000
+PDT0 equ 0x06000
 
-PT_BASE equ 0x4000
-PT_LEN equ (0xC000-PT_BASE)
+PT0	equ 0x07000
 
-;	Memory layout
-;	Virtual Address					Physical Address
+PT_BASE equ 0x3000
+PT_LEN equ (0x8000-PT_BASE)
+
+;	physical Memory layout
 
 
-;	000000000000	000000001000							GAP		NULL address
-;									00000000	00001000	N		PT for low fixed
-;	000000001000	000000002000	00001000	00002000	R(W)	TSS & GDT & IDT & systeminfo
-;	000000002000	000000004000	00002000	00004000	RW		ISR stack & PMMSCAN
 
-;	000000004000	000000005000	00004000	00005000	RW		PDPT for krnl low
-;	000000005000	000000006000	00005000	00006000	RW		PDPT for krnl high
-;	000000006000	000000007000	00006000	00007000	RW		PDT for krnl at 2G
-;	000000007000	000000008000	00007000	00008000	RW		PDT for krnl at 3G
-;	000000008000	00000000A000	00008000	0000A000	RW		PT for video memory
-;	00000000A000	00000000B000	0000A000	0000B000	RW		PG4D
-;	00000000B000	00000000C000							GAP		guard page
-;									0000B000	0000C000	N		first PDT for krnl	1G layout fixed reused at high
-;	00000000C000	000000010000	0000C000	00010000	RW		GATE stack
-;	800000010000	800000020000	00010000	00020000	X		ldr code	avlPMM
-;	?								00020000	000A0000	?		avlPMM
-;									000A0000	00100000	N		BIOS area
-;	000000004000	000000010000	?						RW		common PMM map area
-;	?								00100000	MAXPMM		?		avlPMM
-;	000000010000	000080000000	(allocated)				?		user area
-;	000080000000	000100000000	(allocated)				RX		32bit krnl proxy
-;	000100000000	800000000000	(allocated)				?		user area
-;	800000000000   1000000000000	(allocated)				?		krnl area
+;	000000		001000		R	TSS & GDT & IDT & sysinfo
+;	001000		002000		RW	ISR stack
+;	002000		003000		RX	loader		RW	3G PDT ?
+;	003000		004000		RW	PL4T
+;	004000		005000		RW	PDPT low
+;	005000		006000		RW	PDPT high
+;	006000		007000		RW	PDT
+;	007000		008000		RW	PT
+;	008000		0A0000		?	avl
+
+
+;	100000		?			RW	PMMWMP
 
 
 
 
 
-section code vstart=0x10000
+
+
+section code vstart=0x2000
 
 [bits 16]
 
@@ -85,6 +70,10 @@ struc sysinfo
 .VBE_height	resw 1
 .VBE_addr	resd 1
 .VBE_lim	resd 1
+.FAT_table	resd 1
+.FAT_backup	resd 1
+.FAT_cluster	resd 1
+.FAT_data	resd 1
 
 endstruc
 
@@ -119,17 +108,37 @@ dq 0	;end of GDT
 gdt32_len equ ($-gdt32_base)
 
 gdt64_base:
-dd 0
-dd 0000_0000_0010_0000_1001_1000_0000_0000_b	;sys CS
+
 
 dd 0
-dd 1001_0010_0000_0000_b	;sys DS
+dd 0000_0000_0010_0000_1001_1000_0000_0000_b	;sys64 CS
 
 dd 0
-dd 0000_0000_0010_0000_1111_1100_0000_0000_b	;user CS	confirming ?
+dd 1001_0010_0000_0000_b	;sys64 DS
+
+
+dw 0xFFFF
+dw 0
+db 0
+db 1111_1010_b
+db 1100_1111_b
+db 0		;user cs
+
+dw 0xFFFF
+dw 0
+db 0
+db 1111_0010_b
+db 1100_1111_b
+db 0		;user ds
+
+
 
 dd 0
-dd 1111_0010_0000_0000_b	;user DS
+dd 0000_0000_0010_0000_1111_1000_0000_0000_b	;user64 CS
+
+dd 0
+dd 1111_0010_0000_0000_b	;user64 DS
+
 
 dw TSS_LIM
 dw TSS_BASE
@@ -137,7 +146,14 @@ dw 0x8900
 dw 0
 dq 0		;TSS
 
+
+
 gdt64_len equ ($-gdt64_base)
+
+GDT_TSS equ 7*8
+GDT_SYS_CS equ 1*8
+GDT_SYS_DS equ 2*8
+
 
 align 16
 
@@ -203,6 +219,8 @@ mov sp,0x7c00
 mov si,strboot
 call print16
 
+
+;sysinfo setup
 xor ax,ax
 mov di,SYSINFO_BASE
 mov cx,0x800/2
@@ -403,13 +421,12 @@ in al,dx
 or al,2
 out dx,al	;A20 gate
 
-xor ax,ax
-inc ax
-push ax
+xor cx,cx
 mov ax,gdt32_base
+mov dx,gdt32_len-1
+push cx
 push ax
-mov ax,gdt32_len-1
-push ax
+push dx
 mov di,sp
 lgdt [ss:di]
 
@@ -458,20 +475,29 @@ mov es,ax
 mov fs,ax
 mov gs,ax
 mov ss,ax
-mov esp,0x10000
+mov esp,ISR_STK
 mov ebp,esp		;stack frame
+
+
+
+
 
 
 push 10_0000_0000_0000_0000_0010_b
 popfd
 
-nop
+;save ports
+mov esi,0x0400
+mov edi,SYSINFO_BASE+sysinfo.port
+mov ecx,7
+rep movsw
 
 ;check cpuid
 pushfd
 pop edx
 test edx,1<<21
 jz abort
+
 
 
 xor eax,eax
@@ -547,11 +573,6 @@ or ax,0000_1001_0000_0001_b		;NXE LME SCE
 wrmsr
 
 
-;save ports
-mov esi,0x0400
-mov edi,SYSINFO_BASE+sysinfo.port
-mov ecx,7
-rep movsw
 
 
 ;init GDT64
@@ -568,11 +589,8 @@ rep movsd
 mov edi,TSS_BASE
 mov ecx,TSS_LIM
 call zeromemory
-mov eax,GATE_STK
-add edi,4
-stosd
 mov eax,ISR_STK
-add edi,0x20
+add edi,4
 stosd
 
 
@@ -583,15 +601,21 @@ mov edi,PT_BASE
 mov ecx,PT_LEN
 call zeromemory
 
-mov edi,PG4D
+mov edi,PL4T
 xor ecx,ecx
 mov ebx,PDPT0
 mov edx,0x03
 inc ecx
 call map_page
 
-mov edi,PG4D+0x800
+mov edi,PL4T+0x800
 mov ebx,PDPT8
+inc ecx
+call map_page
+
+
+mov edi,PDPT0
+mov ebx,PDT0
 inc ecx
 call map_page
 
@@ -602,75 +626,42 @@ inc ecx
 call map_page
 
 
-mov edi,PDPT0
-mov ebx,PDT0
-inc ecx
-call map_page
-
-add edi,8
-mov ebx,PDT2
-mov cl,2
-call map_page
-
 mov edi,PDT0
 mov ebx,PT0
 inc ecx
 call map_page
 
+
+
+
+
+
 mov edi,PT0
-mov ecx,0x1000
-call zeromemory
-
-add edi,8
-mov ebx,0x1000
+xor ebx,ebx
 mov edx,0x80000003
-mov cl,0x0A
-call map_page
-
-add edi,8
-mov ebx,0xC000
-mov cl,4
-call map_page
-
-mov edx,0x01
-mov ebx,0x10000
-mov cl,0x10
-call map_page
-
-VBE_vmmap:
-
-
-mov ax,[SYSINFO_BASE+sysinfo.VBE_mode]
-test ax,ax
-jz abort
-
-
-mov ebx,[SYSINFO_BASE+sysinfo.VBE_addr]
-mov edi,PTVBE
-test ebx,0xFFF
-jnz abort
-mov ecx,[SYSINFO_BASE+sysinfo.VBE_lim]
-mov edx,0x80000003
-test ecx,0xFFF
-
-jz .nalign
-add ecx,0x1000
-.nalign:
-shr ecx,12
-
-cmp ecx,0x400
-ja abort
-
-call map_page
-
-
-mov edi,PDT3	;map to 0xC0000000
-mov ebx,PTVBE
 mov cl,2
 call map_page
 
+mov ebx,0x2000
+mov edx,0x01
+inc ecx
+call map_page
 
-mov eax,PG4D
+mov ebx,PT_BASE
+mov edx,0x80000003
+mov cl,PT_LEN>>12
+call map_page
+
+
+
+;TODO
+;init PMMWMP here
+
+
+
+
+
+mov eax,PL4T
 mov cr3,eax
 
 ;enable PG
@@ -678,8 +669,6 @@ mov eax,cr0
 bts eax,31
 mov cr0,eax
 
-;	clear W bit of page 0x1000 after setting IDT
-;	GDT IDT TSS and SYSINFO no longer write-able after that
 
 ;test LMA
 
@@ -699,7 +688,7 @@ push ecx
 lgdt [esp+2]
 
 
-jmp DWORD 0x08:LM_entry
+jmp DWORD GDT_SYS_CS:LM_entry
 
 
 map_page:	;edi PT		ebx PMM		ecx cnt		edx attrib
@@ -725,12 +714,16 @@ ret
 
 [bits 64]
 
+HIGHADDR equ 0xFFFF_8000_0000
+
+
+
 align 16
 
 LM_entry:
 
 
-mov ax,0x10
+mov ax,GDT_SYS_DS
 mov ds,ax
 mov es,ax
 mov fs,ax
@@ -747,12 +740,12 @@ align 16
 
 CODE64OFF equ ($-$$)
 
-section codehigh vstart=0xFFFF8000_00010000+CODE64OFF
+section codehigh vstart=0xFFFF8000_00002000+CODE64OFF
 
 ldrstk:
 
 TR_selector:
-dw 5*8
+dw GDT_TSS
 
 align 8
 
@@ -761,49 +754,220 @@ LM_high:
 mov rdx,TR_selector
 ltr [rdx]
 
-xor rcx,rcx
-;set screen to white
-mov ecx,[SYSINFO_BASE+sysinfo.VBE_lim]
-xor rdi,rdi
-shr rcx,2
-mov edi,0xC0000000
 
 
-.color_loop:
-
-xor eax,eax
-
-bt cx,7
-jnc .k1
-
-mov al,ch
-
-.k1:
-shl eax,8
-
-bt cx,6
-
-jnc .k2
-
-mov al,ch
-
-.k2:
-shl eax,8
-
-bt cx,5
-
-jnc .k3
-
-mov al,ch
-
-.k3:
-
-stosd
-
-loop .color_loop
 
 
 hlt
 
+
+
+
+align 16
+
+
+BugCheck:
+
+hlt
+jmp BugCheck
+
+
+;ReadSector dst,LBA,cnt
+;TODO get ports from PCI
+ReadSector:
+
+push rdi
+
+
+mov r9,rdx		;LBA
+mov rax,r8		;cnt
+mov rdi,rcx		;dst
+
+mov dx,0x1F2
+out dx,al
+
+mov rax,r9
+inc dx
+out dx,al		;0x1F3
+
+shr eax,8
+inc dx
+out dx,al		;0x1F4
+
+shr eax,8
+inc dx
+out dx,al		;0x1F5
+
+shr eax,8
+inc dx
+btc eax,4
+or al,0xE0
+out dx,al		;0x1F6
+
+mov al,0x20
+inc dx
+out dx,al		;0x1F7
+
+xor ecx,ecx
+.wait:
+
+inc ecx
+jc BugCheck
+
+pause
+
+in al,dx
+test al,0x80
+jnz .wait
+test al,0010_0001_b
+jnz BugCheck
+test al,8
+jz .wait
+
+mov rcx,r8
+mov dx,0x1F0
+shl rcx,8		;*256
+rep insw
+
+pop rdi
+
+ret
+
+
+
+;ReadFile dst,cluster
+;return next cluster
+ReadCluster:
+
+push rbx
+push rdx
+
+xor rax,rax
+mov r8d,128
+xchg rdx,rax
+mov rbx,rcx	;dst
+div r8d
+
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
+
+add eax,DWORD [r9]
+xor r8,r8
+push rdx	;remainder
+
+;rcx dst
+mov rdx,rax
+inc r8
+call ReadSector
+xor rcx,rcx
+pop rax
+mov ecx,[rbx+4*rax]
+
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+pop rax
+
+mov r8d,DWORD [r9]
+xchg rcx,rbx
+
+mul r8d
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
+
+add eax,DWORD [r9]
+
+sub eax,r8d
+sub eax,r8d
+
+mov rdx,rax
+call ReadSector
+
+xor rax,rax
+
+cmp ebx,0x0FFFFFF8
+
+cmovnb rax,rbx
+
+
+pop rbx
+
+ret
+
+
+;GetFile filename,buf
+;return cluster
+GetFile:	
+
+push rsi
+push rdi
+push rbx
+
+mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
+xor rsi,rsi
+mov rdi,rcx
+mov esi,DWORD [r8]
+mov rcx,rdx
+mov rdx,rsi
+
+
+call ReadCluster
+
+mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+mov ebx,DWORD [r8]
+mov rdx,rdi		;filename
+shl ebx,9
+xor rcx,rcx
+dec ebx			;cluster mask
+
+xor rax,rax
+.match:
+
+cmp BYTE [rsi],0
+jz .fail
+
+mov rdi,rdx
+mov cl,11
+
+.name:
+lodsb
+xor al,[rdi]
+
+test al,(~0x20)
+jnz .next
+inc rdi
+loop .name
+
+
+lodsb
+test al,0x10
+jnz .fail
+
+add rsi,8
+lodsw	;+0x14
+
+shl eax,16
+add rsi,4
+lodsw
+
+jmp .ret
+
+
+
+.next:
+
+add rsi,0x20
+and rsi,0x1F
+
+test esi,ebx
+jnz .match
+
+.fail:
+xor rax,rax
+
+.ret:
+
+
+pop rbx
+pop rdi
+pop rsi
+
+ret
 
 

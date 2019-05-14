@@ -8,8 +8,8 @@ xor ax,ax
 mov ss,ax
 mov sp,0x7c00
 mov ds,ax
-mov ax,0x1000
-mov es,ax	;es:di -> 0x10000
+mov ax,0x0200
+mov es,ax	;es:di -> 0x02000
 mov bp,sp
 
 
