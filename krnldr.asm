@@ -11,7 +11,7 @@ IDT_LIM equ 0x400	;128 entries
 SYSINFO_BASE equ 0x0800
 
 
-MEMSCAN_BASE equ 0x1000
+PMMSCAN_BASE equ 0x1000
 
 
 
@@ -29,6 +29,11 @@ PT0	equ 0x07000
 PT_BASE equ 0x3000
 PT_LEN equ (0x8000-PT_BASE)
 
+PT_PMM equ 0x8000
+
+
+PMMWMP_PBASE equ 0x100000
+
 ;	physical Memory layout
 
 
@@ -41,8 +46,8 @@ PT_LEN equ (0x8000-PT_BASE)
 ;	005000		006000		RW	PDPT high
 ;	006000		007000		RW	PDT
 ;	007000		008000		RW	PT
-;	008000		0A0000		?	avl
-
+;	008000		009000		RW	PT for PMM 
+;	009000		0A0000		?	avl
 
 ;	100000		?			RW	PMMWMP
 
@@ -60,20 +65,23 @@ jmp entry
 
 
 struc sysinfo
-.sig	resq 1
-.cpu	resd 1
-.bus	resw 1
-.port	resw 7
-.VBE_bpp	resw 1
-.VBE_mode	resw 1
-.VBE_width	resw 1
-.VBE_height	resw 1
-.VBE_addr	resd 1
-.VBE_lim	resd 1
-.FAT_table	resd 1
-.FAT_backup	resd 1
+.sig			resq 1
+.PMM_avl_top	resq 1
+.PMM_wmp_vbase	resq 1
+.PMM_wmp_page	resd 1
+.cpu			resd 1
+.bus			resw 1
+.port			resw 7
+.VBE_bpp		resw 1
+.VBE_mode		resw 1
+.VBE_width		resw 1
+.VBE_height		resw 1
+.VBE_addr		resd 1
+.VBE_lim		resd 1
+.FAT_table		resd 1
+.FAT_backup		resd 1
 .FAT_cluster	resd 1
-.FAT_data	resd 1
+.FAT_data		resd 1
 
 endstruc
 
@@ -201,6 +209,45 @@ hlt
 jmp .hlt
 
 
+
+set_PMM_top:	;si INFO	di PMMSCAN
+
+mov eax,[es:di+0x10]
+dec eax
+jnz .end
+
+
+
+mov eax,[es:di]
+mov ecx,[es:di+4]
+
+add eax,[es:di+8]
+adc ecx,[es:di+0x0C]
+
+cmp eax,[es:di]
+jnz .nzero
+cmp ecx,[es:di+4]
+jnz .nzero
+
+jmp .end
+
+.nzero:
+cmp ecx,[es:si+4]
+jb .end
+ja .found
+
+cmp eax,[es:si]
+jbe .end
+
+.found:
+mov [es:si],eax
+mov [es:si+4],ecx
+
+.end:
+
+ret
+
+
 entry:
 
 push cs
@@ -226,18 +273,18 @@ mov di,SYSINFO_BASE
 mov cx,0x800/2
 rep stosw
 
-mov di,SYSINFO_BASE
+mov di,SYSINFO_BASE+sysinfo.sig
 
 mov eax,'SYSI'
 stosd
 mov eax,'NFO'
 stosd
 
-add di,4
+mov di,SYSINFO_BASE+sysinfo.bus
 mov ax,0x2024
 stosw
 
-add di,6
+mov di,SYSINFO_BASE+sysinfo.VBE_bpp
 mov ax,24
 stosw
 
@@ -246,7 +293,7 @@ stosw
 
 
 ;detect VBE
-mov di,MEMSCAN_BASE+0x200
+mov di,PMMSCAN_BASE+0x200
 mov ecx,'VBE2'
 mov [di],ecx
 mov ax,0x4F00
@@ -262,11 +309,11 @@ mov es,cx
 
 
 mov edx,'VESA'
-cmp [es:MEMSCAN_BASE+0x200],edx
+cmp [es:PMMSCAN_BASE+0x200],edx
 jnz abort16
 
-mov si,[es:MEMSCAN_BASE+0x200+0x0E]	;video modes offset
-mov cx,[es:MEMSCAN_BASE+0x200+0x10]	;video modes segment
+mov si,[es:PMMSCAN_BASE+0x200+0x0E]	;video modes offset
+mov cx,[es:PMMSCAN_BASE+0x200+0x10]	;video modes segment
 
 
 ;	WARNING DS changed
@@ -278,11 +325,11 @@ lodsw	;next mode
 mov cx,ax
 mov bx,ax
 inc ax
-jz video_end
+jz .end
 
 
 
-mov di,MEMSCAN_BASE
+mov di,PMMSCAN_BASE
 
 mov ax,0x4F01
 int 0x10	;query video mode
@@ -291,18 +338,18 @@ xor dx,dx
 mov es,dx
 
 cmp ax,0x4F
-jnz video_end
+jnz .end
 
 
-test BYTE [es:MEMSCAN_BASE],0x80
+test BYTE [es:PMMSCAN_BASE],0x80
 jz video_loop
 
 
-mov cx,[es:MEMSCAN_BASE+0x12]
+mov cx,[es:PMMSCAN_BASE+0x12]
 cmp cx,800
 jb video_loop
 
-mov dx,[es:MEMSCAN_BASE+0x14]
+mov dx,[es:PMMSCAN_BASE+0x14]
 cmp dx,600
 jb video_loop
 
@@ -314,7 +361,7 @@ jb video_loop
 cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
 jb video_loop
 
-movzx ax,BYTE [es:MEMSCAN_BASE+0x19]
+movzx ax,BYTE [es:PMMSCAN_BASE+0x19]
 cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
 jb video_loop
 
@@ -347,19 +394,19 @@ mov dx,ax
 ;mov [es:VBE_height],dx
 ;mov [es:VBE_bpp],bx
 
-mov eax,[es:MEMSCAN_BASE+0x28]
+mov eax,[es:PMMSCAN_BASE+0x28]
 stosd
 
 movzx eax,bx
 mul edx
 
-;mov eax,[es:MEMSCAN_BASE+0x2C]
+;mov eax,[es:PMMSCAN_BASE+0x2C]
 stosd
 
 
 jmp video_loop
 
-video_end:
+.end:
 
 push cs
 pop ds
@@ -379,42 +426,49 @@ jnz abort16
 
 xor ebx,ebx
 
+
 xor ax,ax
-mov di,MEMSCAN_BASE
+mov di,PMMSCAN_BASE
 mov cx,0x800
 rep stosw		;clear memscan area
 
-mov di,MEMSCAN_BASE
+mov si,SYSINFO_BASE+sysinfo.PMM_avl_top
+mov di,PMMSCAN_BASE
 mov ecx,ebx
-mov eax,0x534D4150	;'SMAP'
+mov edx,0x534D4150	;'SMAP'
 
-memscan_loop:
-mov edx,eax
-mov cx,20
-mov eax,0xE820
-int 0x15			;BIOS memory detection
-jc memscan_end
-xor edx,edx
-add di,32
-cmp ebx,edx
-jnz memscan_loop
 
 ;	QWORD		base
 ;	QWORD		length
 ;	DWORD		type
-;	BYTE[12]	alignment
+;	BYTE[4]		alignment
+
+memscan_loop:
+;mov edx,eax
+mov cx,20
+mov eax,0xE820
+int 0x15			;BIOS memory detection
+jc .end
+
+;get PMM_avl_top here
+
+mov edx,eax
 
 
-
-memscan_end:
-
+call set_PMM_top
 
 
-;mov ax,0x0200
-;xor bx,bx
-;mov dx,0x1900
-;int 0x10	;hide cursor
+add di,24
+test ebx,ebx
+jnz memscan_loop
 
+.end:
+
+;align PMM_avl_top to 4K
+
+and WORD [es:si],0xF000	;4K align
+
+.nalign:
 
 mov dx,0x92
 in al,dx
@@ -432,9 +486,6 @@ lgdt [ss:di]
 
 ;	sp+0	WORD length-1
 ;	sp+2	DWORD linear base
-
-
-
 
 
 ;pg cd nw AM WP NE ET ts em MP PE
@@ -654,12 +705,147 @@ call map_page
 
 
 
-;TODO
-;init PMMWMP here
+
+PMMWMP_init:
+
+;init PDT here
+;map PMMWMP to 0xFFFF8000_00200000
+
+mov edi,PDT0+8
+mov ebx,PT_PMM
+;mov edx,0x80000003
+inc ecx
+call map_page
+
+mov ecx,[SYSINFO_BASE+sysinfo.PMM_avl_top]
+mov eax,[SYSINFO_BASE+sysinfo.PMM_avl_top+4]
+test ecx,0x007FFFFF
+
+jz .nalign
+
+add ecx,0x00800000
+adc eax,0
+.nalign:
+
+shrd ecx,eax,23		;/0x800*0x1000
+
+;ecx PMM page
+mov [SYSINFO_BASE+sysinfo.PMM_wmp_page],ecx
 
 
+;NOTE assume PMM less than 4G
+mov edi,PT_PMM
+cmp ecx,0x200
+mov ebx,PMMWMP_PBASE
+jbe .within4G
+
+call BugCheck
+
+.within4G:
+call map_page
+
+mov ebx,[SYSINFO_BASE+sysinfo.PMM_wmp_page]
+shl ebx,12
+mov edi,PMMWMP_PBASE
+mov ecx,ebx
+call zeromemory
+
+mov esi,PMMSCAN_BASE-24
+add ebx,edi
+
+;ebx PMM limit
+
+.scan:
+add esi,24
+mov edi,PMMWMP_PBASE
 
 
+mov edx,[esi+0x10]	;status
+dec edx
+
+mov eax,[esi]
+mov edx,[esi+4]
+mov ecx,eax
+jz .avl
+jns .rev
+jmp .end
+
+.rev:
+;reserved memory
+
+shrd eax,edx,12-1
+
+add edi,eax
+cmp edi,ebx
+jae .scan
+
+;ecx=eax	edx not changed
+add ecx,[esi+8]
+adc edx,[esi+0x0C]
+
+test cx,0x0FFF
+jz .rev_noalign
+add ecx,0x1000
+adc edx,0
+.rev_noalign:
+shrd ecx,edx,12-1
+
+add ecx,PMMWMP_PBASE
+
+cmp ecx,ebx
+cmovae ecx,ebx
+
+sub ecx,edi
+mov ax,0x7FFF
+shr ecx,1
+rep stosw
+
+jmp .scan
+
+.avl:
+;available memory
+test ax,0x0FFF
+jz .avl_noalign
+add eax,0x1000
+adc edx,0
+.avl_noalign:
+shrd eax,edx,12-1
+add edi,eax
+cmp edi,ebx
+jae .scan
+
+;ecx=eax	edx not changed
+add ecx,[esi+8]
+adc edx,[esi+0x0C]
+
+shrd ecx,edx,12-1
+
+add ecx,PMMWMP_PBASE
+
+cmp ecx,ebx
+cmovae ecx,ebx
+
+sub ecx,edi
+mov ax,0x8000
+shr ecx,1
+
+.avl_set:
+cmp WORD [edi],0
+jnz .avl_nop
+
+mov [edi],ax
+
+.avl_nop:
+add edi,2
+loop .avl_set
+
+
+jmp .scan
+
+.end:
+
+
+;TODO set current state of PMM
 
 mov eax,PL4T
 mov cr3,eax
@@ -714,8 +900,8 @@ ret
 
 [bits 64]
 
-HIGHADDR equ 0xFFFF_8000_0000
-
+HIGHADDR equ 0xFFFF_8000_0000_0000
+PMMWMP_VBASE equ 0xFFFF8000_00200000
 
 
 align 16
@@ -754,7 +940,9 @@ LM_high:
 mov rdx,TR_selector
 ltr [rdx]
 
-
+mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
+mov rax,PMMWMP_VBASE
+mov [rcx],rax
 
 
 
