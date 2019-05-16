@@ -40,7 +40,7 @@ PMMWMP_PBASE equ 0x100000
 
 ;	000000		001000		R	TSS & GDT & IDT & sysinfo
 ;	001000		002000		RW	ISR stack
-;	002000		003000		RX	loader		RW	3G PDT ?
+;	002000		003000		RX	loader		RW	video PT ?
 ;	003000		004000		RW	PL4T
 ;	004000		005000		RW	PDPT low
 ;	005000		006000		RW	PDPT high
@@ -78,10 +78,10 @@ struc sysinfo
 .VBE_height		resw 1
 .VBE_addr		resd 1
 .VBE_lim		resd 1
+.FAT_header		resd 1
 .FAT_table		resd 1
-.FAT_backup		resd 1
-.FAT_cluster	resd 1
 .FAT_data		resd 1
+.FAT_cluster	resd 1
 
 endstruc
 
@@ -289,6 +289,10 @@ mov ax,24
 stosw
 
 
+mov si,0x7C00+0x200-0x10	;FAT_INFO from boot
+mov di,SYSINFO_BASE+sysinfo.FAT_header
+mov cx,7
+es rep movsw
 
 
 
@@ -468,7 +472,6 @@ jnz memscan_loop
 
 and WORD [es:si],0xF000	;4K align
 
-.nalign:
 
 mov dx,0x92
 in al,dx
@@ -562,20 +565,29 @@ cmp al,7
 jb cpuid0_basic
 
 xor ecx,ecx
-mov al,7
+mov eax,7
 cpuid
 
-mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMAP SMEP INVPCID	TODO
+mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMEP TODO (SMAP INVPCID ?)
 
 cpuid0_basic:
 
 mov eax,1
 cpuid
 
-bt edx,16	;PAT	TODO
+;bt edx,16	;PAT	?
+;jnc abort
+
+bt edx,15	;cmovcc
 jnc abort
 
 bt edx,13	;PGE	TODO
+jnc abort
+
+bt edx,11	;SYSENTER
+jnc abort
+
+bt edx,9	;APIC	TODO
 jnc abort
 
 bt edx,6	;PAE
@@ -594,7 +606,7 @@ jb abort
 
 cmp al,8
 jb cpuid8_basic
-mov al,8
+mov eax,0x80000008
 cpuid
 
 mov [SYSINFO_BASE+sysinfo.bus],ax	;MAXPHYADDR
@@ -689,17 +701,17 @@ call map_page
 
 mov edi,PT0
 xor ebx,ebx
-mov edx,0x80000003
+mov edx,0x80000103
 mov cl,2
 call map_page
 
 mov ebx,0x2000
-mov edx,0x01
+mov edx,0x101
 inc ecx
 call map_page
 
 mov ebx,PT_BASE
-mov edx,0x80000003
+mov edx,0x80000103
 mov cl,PT_LEN>>12
 call map_page
 
@@ -713,7 +725,7 @@ PMMWMP_init:
 
 mov edi,PDT0+8
 mov ebx,PT_PMM
-;mov edx,0x80000003
+mov edx,0x80000003
 inc ecx
 call map_page
 
@@ -737,6 +749,7 @@ mov [SYSINFO_BASE+sysinfo.PMM_wmp_page],ecx
 mov edi,PT_PMM
 cmp ecx,0x200
 mov ebx,PMMWMP_PBASE
+mov edx,0x80000103
 jbe .within4G
 
 call BugCheck
@@ -844,8 +857,17 @@ jmp .scan
 
 .end:
 
+;set current state of PMM
+xor ax,ax
+mov edi,PMMWMP_PBASE
+mov ecx,9
+rep stosw
 
-;TODO set current state of PMM
+mov edi,PMMWMP_PBASE+2*0x100
+mov ecx,[SYSINFO_BASE+sysinfo.PMM_wmp_page]
+rep stosw
+
+
 
 mov eax,PL4T
 mov cr3,eax
@@ -881,7 +903,8 @@ map_page:	;edi PT		ebx PMM		ecx cnt		edx attrib
 
 mov eax,ebx
 xor ebx,ebx
-mov al,dl
+or ax,dx
+;mov al,dl
 
 bt edx,31
 rcr ebx,1
@@ -922,7 +945,7 @@ mov rdx,LM_high
 
 jmp rdx
 
-align 16
+align 4
 
 CODE64OFF equ ($-$$)
 
@@ -945,6 +968,20 @@ mov rax,PMMWMP_VBASE
 mov [rcx],rax
 
 
+;set up FAT32 here
+
+
+
+
+
+
+
+
+;kernel:
+;map video memory
+;unmap lowaddr
+;ebable PGE SMEP disable WRGSBASE
+;no need to reload CR3 since setting PGE flushs TLB
 
 hlt
 

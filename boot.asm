@@ -1,5 +1,14 @@
 [bits 16]
 
+FAT_INFO equ 0x7C00+0x200-0x10
+;	FAT_header	resd 1
+;	FAT_table	resd 1
+;	FAT_data	resd 1
+;	FAT_cluster	resw 1
+;	BOOT_MAGIC	dw 0xAA55
+
+LOADER_BASE equ 0x2000
+
 
 section code vstart=0x7c5A
 
@@ -8,9 +17,8 @@ xor ax,ax
 mov ss,ax
 mov sp,0x7c00
 mov ds,ax
-mov ax,0x0200
-mov es,ax	;es:di -> 0x02000
-mov bp,sp
+mov es,ax
+cld
 
 
 
@@ -39,48 +47,53 @@ jmp die_loop
 
 
 lba_pass:
-
 xor dx,dx
-push dx
-push dx
+mov bx,dx
+mov ax,dx
+inc bx
+mov di,LOADER_BASE
 
-
-mov si,sp
-mov di,dx
-inc dx
 call readsector	;read MBR
-;add esp,4
-pop ax
-pop ax
-cld
 
-mov si,0x1C2
-es lodsw
+mov si,LOADER_BASE+0x1C2
+lodsw
 cmp al,0x0C		;FAT32 with LBA
 jnz die
 
 ;PAT => partition
 
-es lodsw	;skip 2 bytes
-es lodsw	;LWORD of PAT
+mov di,FAT_INFO
+
+lodsw	;skip 2 bytes
+lodsw	;LWORD of PAT
 mov dx,ax
-es lodsw	;HWORD of PAT
+stosw
+lodsw	;HWORD of PAT
 push ax
 push dx
+stosw
 
 ;assume PAT at 0x7C00
 
-xor ax,ax
 mov si,0x0D+0x7c00
 lodsb	;sectors per cluster => SpC
-mov bx,ax
+movzx bx,al
 lodsw	;reserved sectors
 ;mov cx,ax
-mov di,sp
-xor dx,dx
-add [di],ax
-adc WORD [di+2],dx	;FAT table
+;mov di,sp
+pop cx
+add ax,cx
+stosw
+mov dx,ax
+xor cx,cx
+pop ax
+adc ax,cx
+stosw
+;add [di],ax
+;adc [di+2],dx	;FAT table
 
+push ax
+push dx
 
 mov si,0x24+0x7c00
 lodsw
@@ -91,80 +104,57 @@ xchg dx,ax	;dx:ax  sectors per FAT
 add ax,ax
 adc dx,dx	;mul by 2
 
-add ax,[di]
-adc dx,[di+2]	;dx:ax  FAT DATA
+pop cx
+add ax,cx
+stosw
+mov dx,ax
+xor cx,cx
+pop ax
+adc ax,cx
+stosw
 
-push dx
-push ax
+;add ax,[di]
+;adc dx,[di+2]	;dx:ax  FAT DATA
 
+mov [di],bx
 
-
+mov di,LOADER_BASE
 
 ;mov dx,1
 ;xor di,di
-xor dx,dx
-mov di,dx
-inc dx
+xchg ax,dx
 
-mov si,sp
 call readsector	;read root directory
 
 push bx		;SpC
-;xor di,di
+mov si,di
 jmp _findfile
 
 
-
-;read (dx) sectors starting from (LBA index at ds:si) to (es:di)
+;read bx sctors starting from LBA dx:ax to es:di
 readsector:
-push bp
-
-push bx
-
-mov bp,sp
-
 xor cx,cx
 push cx
 push cx
-lodsw
-mov bx,ax
-lodsw
+push dx
 push ax
-push bx
-
 push es
 push di
-
-
-push dx
-
 mov cl,0x10
+push bx
 push cx
-
-
-;	+0	BYTE size
-;	+1	BYTE zero
-;	+2	WORD sector number
-;	+4	WORD offset
-;	+6	WORD segment
-;	+8	QWORD LBA
-
 
 mov ax,0x4200
 mov dl,0x80
 mov si,sp
 
-int 0x13	;LBA read file
+int 0x13
 
-jc die	;read fail
+jc die
 
-
-
-mov sp,bp
-;pop es
-pop bx
-pop bp
+add sp,0x10
 ret
+
 
 ;kernel file name
 
@@ -180,21 +170,20 @@ strkrnl db 'KRNLDR',0x20,0x20,'BIN'
 
 
 _nfound:
-lea di,[bx+0x20]	;next file
+lea si,[bx+0x20]	;next file
 
 _findfile:
 xor cx,cx
-mov cl,[es:di]
-cmp cl,ch
+cmp cl,BYTE [di]
 jz die		;end of directory
 
-mov bx,di
-mov si,strkrnl
+mov bx,si
+mov di,strkrnl
 mov cl,11
 
 _cmp:
 lodsb
-xor al,byte [es:di]
+xor al,byte [di]
 test al,0xDF	;not 0x20	case insensitive
 jnz _nfound
 inc di
@@ -203,171 +192,114 @@ loop _cmp
 
 
 _found:
-lea si,[bx+0x0B]
-;mov si,bx
-;add si,0x0B
-es lodsb
+;lea si,[bx+0x0B]
+lodsb
 test al,0x10
-jnz _nfound		;sub directory
+jnz die		;directory
 
-;add si,8	;	+14
-lea si,[bx+0x14]
+add si,8	;	+14
+;lea si,[bx+0x14]
 
 
-es lodsw
+lodsw
 mov dx,ax
 ;add si,4	;	+1A
-es lodsw
-es lodsw
+lodsw
+lodsw
 
 
-es lodsw	;dx:ax first cluster of file
+lodsw	;dx:ax first cluster of file
 
-xor di,di	;es:di -->	0x10000
+;xchg ax,dx
+mov di,LOADER_BASE
 pop bx		;SpC
-;mov si,sp	;FAT table
-call loadfile
-
-xor ax,ax
-push es
-push ax
-retf	;jmp to 1000:0000
 
 
-
-
-loadfile:	;dx:ax index of FAT   es:di target		bx	sectors per cluster
-push bp
-push si
-push bx
-
-mov bp,sp
-
-;	bp+0	bx
-;	bp+2	si
-;	bp+4	old bp
-;	bp+6	retaddr
-;	bp+8	DATA
-;	bp+C	FAT
-
-loadfile_loop:
-
-
+loadfile:	;dx:ax cluster index	es:di target auto inc bx SpC
 
 cmp ax,0xFFF8
-jb _pas
-
+jb .pas
 cmp dx,0x0FFF
-jb _pas
+jb .pas
 
-_break:
-pop bx
-pop si
-pop bp
+.break:
+push LOADER_BASE
 ret
 
-_pas:
+.pas:
 xor cx,cx
 cmp ax,cx
-jnz _pass
+jnz .pass
 cmp dx,cx
-jnz _pass
-jmp _break
+jz .break
 
-_pass:		;valid cluster index
+.pass:
+mov bp,sp
 
 push dx
 push ax
 
-;	bp-4	cur cluster index
+mov cl,128
+xor dx,dx
 
-mov cl,128	;512bytes / DWORD per index
 div cx
 push dx		;remainder
+
 xor cx,cx
-push cx
-push ax
-;stack top sector offset from FAT
+add ax,[FAT_INFO+4]
+mov dx,[FAT_INFO+6]
+adc dx,cx
 
-lea si,[bp+0x0C]	;FAT
-
-mov bx,sp
-
-lodsw
-add [bx],ax
-lodsw
-adc [bx+2],ax
-;stack top target FAT sector
-
-mov si,sp
-xor dx,dx
-inc dx
-;mov dx,1
 call readsector
-;add sp,4
-pop ax
-pop ax
 
-pop bx	;remainder
 mov cl,2
-shl bx,cl
-;bx offset in this sector
+pop si
+shl si,cl
 
-mov ax,[es:di+bx]
-mov dx,[es:di+bx+2]
-push dx
-push ax		;dx:ax  next cluster
+add si,di
 
-mov ax,[bp-4]	;LBYTE of cur
-mov bx,[bp]		;SpC
-mul bx
+lodsw
+mov dx,[si]
+
 push dx
 push ax
 
-mov ax,[bp-2]	;HBYTE of cur
+mov ax,[bp-4]
+
 mul bx
-xor cx,cx
-cmp dx,cx
-jnz die		;DWORD overflow
 
-mov bx,sp
-add [bx+2],ax
+push ax
+push dx
 
+mov ax,[bp-2]
+mul bx
 
+test dx,dx
+jnz die
 
-lea si,[bp+0x08]	;DATA
+pop dx
+add dx,ax
+pop ax
+jc die
 
-lodsw
-add [bx],ax
-lodsw
-adc [bx+2],ax
+add ax,[FAT_INFO+8]
+adc dx,[FAT_INFO+0x0A]
 
-mov ax,[bp]
-add ax,ax		;2*SpC
-sub WORD [bx],ax
-sbb WORD [bx+2],0
+mov cx,bx
+shl cx,1
+sub ax,cx
+sbb dx,0
 
-;stack top  sector of cur cluster
-
-mov si,bx
-mov dx,[bp]		;SpC
 call readsector
-;add sp,4
-pop ax
-pop ax
 
-mov dx,[bp]		;SpC
+mov ax,bx
 mov cl,9
-shl dx,cl
-add di,dx		;next block
+shl ax,cl
+add di,ax
 
 pop ax
-pop dx		;next cluster
+pop dx
 
 mov sp,bp
-jmp loadfile_loop
-
-
-
-
+jmp loadfile
 
