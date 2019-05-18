@@ -982,10 +982,11 @@ mov [rcx],rax
 mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov ax,[rcx]
 cmp ax,8
-ja BugCheck
+jbe .unmap_low
 
+call BugCheck
 
-;unmap lowaddr
+.unmap_low:
 
 mov rdi,HIGHADDR+PDPT0
 xor rax,rax
@@ -1011,13 +1012,136 @@ mov cr4,rdx
 ;mov cr3,rdx
 
 
-;load kernel
+struc peinfo
+.curpmm		resq 1
+.curcluster	resq 1
+.vbase		resq 1
+.entry		resd 1
+.section	resw 1
+.filealign	resw 1
+
+endstruc
 
 
 
+load_kernel:
+mov rbp,rsp
+
+sub rsp,0x20
+
+
+call PmmAlloc
+mov rsi,CMN_BUF_VBASE
+mov rdx,rax
+mov rcx,rsi
+mov r8,0x80000000_00000003
+;mov r12,rax		;r12 PMM
+mov [rsp+peinfo.curpmm],eax
+call MapPage
+
+mov rcx,strkrnl
+mov rdx,rsi
+call GetFile
+
+test rax,rax
+jz near .fail
+
+xor rbx,rbx
+mov rcx,rsi
+mov rdx,rax
+call ReadCluster
+;mov rbx,rax		;rbx cur cluster
+mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+mov rdi,rsi
+mov ebx,[r8]
+cmp ebx,0x400
+jae .largecluster
+
+test rax,rax
+jz near .fail
+mov rcx,rsi
+mov rdx,rax
+add rcx,rbx
+call ReadCluster
+
+.largecluster:
+
+mov [rsp+peinfo.curcluster],rax
+
+;verify PE header
+mov ax,[rsi]
+cmp ax,'MZ'
+mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+jnz near .fail
+xor rdx,rdx
+mov edx,[rsi+0x3C]
+shl ebx,9	;rbx cluster size
+
+add rsi,rdx
+add rdi,rbx
+
+lodsd
+cmp eax,'PE'
+jnz near .fail
+
+lodsw
+cmp ax,0x8664
+jnz near .fail
+
+lodsw
+add rsi,0x0C
+;mov r13w,ax	;r13 section count & file alignment (needed?)
+mov [rsp+peinfo.section],ax
+
+lodsw	;opt header size
+cmp ax,0xF0
+jnz near .fail
+lodsw	;Characteristics
+bt ax,2
+jnc near .fail
+bt ax,12
+jnc near .fail
+
+lodsd
+add rsi,0x0C
+cmp ax,0x20B
+jnz near .fail
+
+lodsd	;entrypoint RVA
+;mov edx,eax
+mov [rsp+peinfo.entry],eax
+
+lodsd
+lodsq
+;mov r14,rax		;VBASE
+mov [rsp+peinfo.vbase],rax
+
+lodsd
+cmp eax,0x1000
+jnz near .fail
+lodsd
+add rsi,0x14
+;mov r13w,ax	;r13 section count & file alignment (needed?)
+mov [rsp+peinfo.filealign],ax
+
+lodsd
+cmp rsi,rdi
+jae .fail
+cmp eax,0x400
+ja .fail
+
+lodsd
+lodsd
+bt eax,24	;DEP
+jnc .fail
+
+
+;map vbase and stack
 
 
 
+.fail:
+call BugCheck
 
 
 hlt
@@ -1277,7 +1401,7 @@ ret
 ;MapAddress VirtualAddr,PhysicalAddr,attrib
 ;PMM==0	change attrib
 ;attrib==0 unmap
-MapAddress:
+MapPage:
 
 
 
