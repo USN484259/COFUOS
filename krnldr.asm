@@ -14,8 +14,9 @@ SYSINFO_BASE equ 0x0800
 PMMSCAN_BASE equ 0x1000
 
 
-
 ISR_STK equ 0x02000
+
+PAGE_SIZE equ 0x1000
 
 PL4T equ 0x03000
 
@@ -46,7 +47,8 @@ PMMWMP_PBASE equ 0x100000
 ;	005000		006000		RW	PDPT high
 ;	006000		007000		RW	PDT
 ;	007000		008000		RW	PT
-;	008000		009000		RW	PT for PMM 
+;	008000		009000		RW	PT for PMM
+;-------------direct map---------------------
 ;	009000		0A0000		?	avl
 
 ;	100000		?			RW	PMMWMP
@@ -568,7 +570,7 @@ xor ecx,ecx
 mov eax,7
 cpuid
 
-mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMEP TODO (SMAP INVPCID ?)
+mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMEP (SMAP INVPCID ?)
 
 cpuid0_basic:
 
@@ -581,7 +583,7 @@ cpuid
 bt edx,15	;cmovcc
 jnc abort
 
-bt edx,13	;PGE	TODO
+bt edx,13	;PGE
 jnc abort
 
 bt edx,11	;SYSENTER
@@ -926,6 +928,10 @@ ret
 HIGHADDR equ 0xFFFF_8000_0000_0000
 PMMWMP_VBASE equ 0xFFFF8000_00200000
 
+TMP_PT_VBASE equ HIGHADDR+0x9000
+CMN_BUF_VBASE equ HIGHADDR+0xA000
+PT_MAP_PT equ PT0+8*9
+BUF_MAP_PT equ PT0+8*0x0A
 
 align 16
 
@@ -938,7 +944,7 @@ mov es,ax
 mov fs,ax
 mov gs,ax
 mov ss,ax
-mov rsp,ldrstk
+mov rsp,HIGHADDR+ISR_STK
 mov rbp,rsp
 
 mov rdx,LM_high
@@ -951,10 +957,13 @@ CODE64OFF equ ($-$$)
 
 section codehigh vstart=0xFFFF8000_00002000+CODE64OFF
 
-ldrstk:
 
 TR_selector:
 dw GDT_TSS
+
+align 4
+
+strkrnl db 'COFUOS',0x20,0x20,'SYS',0
 
 align 8
 
@@ -963,25 +972,53 @@ LM_high:
 mov rdx,TR_selector
 ltr [rdx]
 
+
+
+
 mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
 mov rax,PMMWMP_VBASE
 mov [rcx],rax
 
-
-;set up FAT32 here
-
-
-
-
+mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+mov ax,[rcx]
+cmp ax,8
+ja BugCheck
 
 
-
-
-;kernel:
-;map video memory
 ;unmap lowaddr
+
+mov rdi,HIGHADDR+PDPT0
+xor rax,rax
+stosq
+
 ;ebable PGE SMEP disable WRGSBASE
+
+mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.cpu
+mov rdx,cr4
+lodsd
+bt eax,7
+jnc .nosmep
+bts rdx,20	;SMEP
+
+.nosmep:
+bts rdx,7	;PGE
+btr rdx,16	;FSGSBASE
+
+mov cr4,rdx
+
 ;no need to reload CR3 since setting PGE flushs TLB
+;mov rdx,cr3
+;mov cr3,rdx
+
+
+;load kernel
+
+
+
+
+
+
+
 
 hlt
 
@@ -1196,3 +1233,163 @@ pop rsi
 ret
 
 
+PmmAlloc:
+
+push rsi
+push rbx
+
+xor rcx,rcx
+mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
+lodsq
+mov rbx,rax
+lodsd
+mov ecx,eax
+mov rsi,rbx
+shl rcx,12-1
+
+.find:
+lodsw
+bt ax,15
+jc .found
+
+loop .find
+
+call BugCheck
+int3
+
+.found:
+
+sub rsi,2
+xor rdx,rdx
+mov rax,rsi
+mov [rsi],dx
+
+sub rax,rbx
+
+shl rax,12-1
+
+pop rbx
+pop rsi
+
+ret
+
+
+;MapAddress VirtualAddr,PhysicalAddr,attrib
+;PMM==0	change attrib
+;attrib==0 unmap
+MapAddress:
+
+
+
+mov eax,0x40000000		;1G
+
+cmp ecx,eax
+jae .fail
+
+bt rcx,47
+jnc .fail
+
+push rbx
+push rsi
+push rdi
+
+mov rbx,rdx		;PMM
+xor rsi,rsi
+
+test r8,r8
+cmovz rbx,r8
+
+mov esi,ecx		;VA within 1G
+
+
+mov rdi,HIGHADDR+PDT0
+mov rax,rsi
+xor dil,dil
+shr rax,21
+
+lea rdi,[rdi+rax*8]
+
+bt QWORD [rdi],0
+jnc .newPT
+
+mov rax,[rdi]
+mov rdi,HIGHADDR+PT_MAP_PT
+stosq
+
+mov rdi,TMP_PT_VBASE
+invlpg [rdi]
+
+jmp .next
+
+.fail:
+call BugCheck
+
+
+.newPT:
+
+test rbx,rbx
+jz .fail
+
+test r8,r8
+jz .end
+
+push r8
+
+;alloc new PT
+call PmmAlloc
+mov al,3
+stosq
+
+mov rdi,HIGHADDR+PT_MAP_PT
+stosq
+
+mov rdi,TMP_PT_VBASE
+xor rax,rax
+invlpg [rdi]
+mov rcx,PAGE_SIZE/8
+stosq
+
+mov rdi,TMP_PT_VBASE
+pop r8
+
+.next:
+shr rsi,12
+movzx rax,si
+and ax,0x01FF
+
+lea rdi,[rdi+rax*8]
+
+test rbx,rbx
+jnz .set
+
+mov rbx,[rdi]
+
+btc rbx,63
+and bx,0xF000
+
+test r8,r8
+jnz .set
+
+xor rax,rax
+stosq
+;PmmFree(rbx)
+
+jmp .end
+
+.set:
+
+;ASSERT(rbx is valid PMM)
+;ASSERT(r8 is valid attrib)
+or rbx,r8
+xchg [rdi],rbx
+
+;PmmFree(rbx)
+
+
+.end:
+
+pop rsi
+pop rdi
+pop rbx
+
+ret
