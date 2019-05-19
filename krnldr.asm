@@ -475,10 +475,18 @@ jnz memscan_loop
 and WORD [es:si],0xF000	;4K align
 
 
+;notify BIOS of long mode
+mov ax,0xEC00
+mov bx,2
+int 0x15
+
+
+;A20 gate
 mov dx,0x92
 in al,dx
 or al,2
-out dx,al	;A20 gate
+out dx,al
+
 
 xor cx,cx
 mov ax,gdt32_base
@@ -496,6 +504,7 @@ lgdt [ss:di]
 ;pg cd nw AM WP NE ET ts em MP PE
 mov eax,101_0000_0000_0011_0011_b
 mov cr0,eax
+
 
 jmp DWORD 0x0008:pe_entry	;sys cs
 
@@ -755,7 +764,7 @@ mov edx,0x80000103
 jbe .within4G
 
 call BugCheck
-
+int3
 .within4G:
 call map_page
 
@@ -926,12 +935,43 @@ ret
 [bits 64]
 
 HIGHADDR equ 0xFFFF_8000_0000_0000
-PMMWMP_VBASE equ 0xFFFF8000_00200000
+PMMWMP_VBASE equ HIGHADDR+0x00200000
+KRNL_VBASE equ HIGHADDR+0x02000000
 
 TMP_PT_VBASE equ HIGHADDR+0x9000
 CMN_BUF_VBASE equ HIGHADDR+0xA000
 PT_MAP_PT equ PT0+8*9
 BUF_MAP_PT equ PT0+8*0x0A
+
+KRNL_STK_GUARD equ HIGHADDR+0x1FF000
+KRNL_STK_TOP equ KRNL_STK_GUARD
+
+
+
+;PDPT	0x100 pages
+;PDT	0x20000 pages
+;2M alignment 
+
+
+;	virtual address of HIGHADDR
+;	00000000	00009000	lowPMM
+;	00009000	0000A000	TMP_PT
+;	0000A000	?			CMN_BUF
+;	?			00200000	krnlstk
+;	00200000	?			PMMWMP
+;	?			01000000	krnlheap ?
+;	01000000	02000000	PDPTmap
+;	02000000	?			KERNEL
+;	20000000	40000000	PDTmap
+
+
+
+
+
+
+
+
+
 
 align 16
 
@@ -985,7 +1025,7 @@ cmp ax,8
 jbe .unmap_low
 
 call BugCheck
-
+int3
 .unmap_low:
 
 mov rdi,HIGHADDR+PDPT0
@@ -1050,10 +1090,10 @@ xor rbx,rbx
 mov rcx,rsi
 mov rdx,rax
 call ReadCluster
-;mov rbx,rax		;rbx cur cluster
 mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov rdi,rsi
 mov ebx,[r8]
+shl ebx,9	;rbx cluster size
 cmp ebx,0x400
 jae .largecluster
 
@@ -1063,7 +1103,7 @@ mov rcx,rsi
 mov rdx,rax
 add rcx,rbx
 call ReadCluster
-
+add rdi,rbx
 .largecluster:
 
 mov [rsp+peinfo.curcluster],rax
@@ -1074,32 +1114,30 @@ cmp ax,'MZ'
 mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 jnz near .fail
 xor rdx,rdx
+add rdi,rbx
 mov edx,[rsi+0x3C]
-shl ebx,9	;rbx cluster size
 
 add rsi,rdx
-add rdi,rbx
 
 lodsd
 cmp eax,'PE'
 jnz near .fail
 
-lodsw
+lodsw	;machine
 cmp ax,0x8664
 jnz near .fail
 
-lodsw
+lodsw	;section count
 add rsi,0x0C
-;mov r13w,ax	;r13 section count & file alignment (needed?)
 mov [rsp+peinfo.section],ax
 
 lodsw	;opt header size
 cmp ax,0xF0
 jnz near .fail
 lodsw	;Characteristics
-bt ax,2
+bt ax,1		;executable
 jnc near .fail
-bt ax,12
+bt ax,12	;SYSTEM
 jnc near .fail
 
 lodsd
@@ -1108,41 +1146,40 @@ cmp ax,0x20B
 jnz near .fail
 
 lodsd	;entrypoint RVA
-;mov edx,eax
 mov [rsp+peinfo.entry],eax
 
 lodsd
-lodsq
-;mov r14,rax		;VBASE
+lodsq	;vbase
 mov [rsp+peinfo.vbase],rax
 
-lodsd
+lodsd	;section alignment
 cmp eax,0x1000
 jnz near .fail
-lodsd
+lodsd	;file alignment
 add rsi,0x14
-;mov r13w,ax	;r13 section count & file alignment (needed?)
 mov [rsp+peinfo.filealign],ax
 
-lodsd
+lodsd	;header size
 cmp rsi,rdi
 jae .fail
 cmp eax,0x400
 ja .fail
 
 lodsd
-lodsd
+lodsd	;(DLLCharacteristics<<16) | Subsystem
 bt eax,24	;DEP
 jnc .fail
 
 
 ;map vbase and stack
+;rbx cluster size
+
 
 
 
 .fail:
 call BugCheck
-
+int3
 
 hlt
 
@@ -1186,7 +1223,7 @@ out dx,al		;0x1F5
 
 shr eax,8
 inc dx
-btc eax,4
+btr eax,4
 or al,0xE0
 out dx,al		;0x1F6
 
@@ -1198,7 +1235,7 @@ xor ecx,ecx
 .wait:
 
 inc ecx
-jc BugCheck
+jz .fail
 
 pause
 
@@ -1206,11 +1243,11 @@ in al,dx
 test al,0x80
 jnz .wait
 test al,0010_0001_b
-jnz BugCheck
+jnz .fail
 test al,8
 jz .wait
 
-mov rcx,r8
+movzx rcx,r8b
 mov dx,0x1F0
 shl rcx,8		;*256
 rep insw
@@ -1219,6 +1256,9 @@ pop rdi
 
 ret
 
+.fail:
+call BugCheck
+int3
 
 
 ;ReadFile dst,cluster
@@ -1245,15 +1285,15 @@ mov rdx,rax
 inc r8
 call ReadSector
 xor rcx,rcx
-pop rax
+pop rax		;remainder
 mov ecx,[rbx+4*rax]
 
 mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-pop rax
+pop rax		;cur cluster
 
 mov r8d,DWORD [r9]
 xchg rcx,rbx
-
+;rbx nextcluster rcx dst
 mul r8d
 mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
 
@@ -1269,7 +1309,7 @@ xor rax,rax
 
 cmp ebx,0x0FFFFFF8
 
-cmovnb rax,rbx
+cmovb rax,rbx
 
 
 pop rbx
@@ -1280,18 +1320,17 @@ ret
 ;GetFile filename,buf
 ;return cluster
 GetFile:	
-
 push rsi
 push rdi
 push rbx
 
-mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
-xor rsi,rsi
-mov rdi,rcx
-mov esi,DWORD [r8]
-mov rcx,rdx
-mov rdx,rsi
-
+;mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
+mov rsi,rdx		;buf
+mov rdi,rcx		;filename
+xor rdx,rdx
+;mov esi,DWORD [r8]
+mov rcx,rsi		;buf
+mov dl,2
 
 call ReadCluster
 
@@ -1339,7 +1378,7 @@ jmp .ret
 .next:
 
 add rsi,0x20
-and rsi,0x1F
+and sil,(~ 0x1F)
 
 test esi,ebx
 jnz .match
@@ -1512,8 +1551,8 @@ xchg [rdi],rbx
 
 .end:
 
-pop rsi
 pop rdi
+pop rsi
 pop rbx
 
 ret
