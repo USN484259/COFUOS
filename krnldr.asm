@@ -1053,12 +1053,13 @@ mov cr4,rdx
 
 
 struc peinfo
-.curpmm		resq 1
-.curcluster	resq 1
+.headerpmm	resq 1
 .vbase		resq 1
 .entry		resd 1
+.offset		resd 1
+.curcluster	resd 1
 .section	resw 1
-.filealign	resw 1
+.clusterlen	resw 1
 
 endstruc
 
@@ -1076,7 +1077,7 @@ mov rdx,rax
 mov rcx,rsi
 mov r8,0x80000000_00000003
 ;mov r12,rax		;r12 PMM
-mov [rsp+peinfo.curpmm],eax
+mov [rsp+peinfo.headerpmm],rax
 call MapPage
 
 mov rcx,strkrnl
@@ -1093,30 +1094,19 @@ call ReadCluster
 mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov rdi,rsi
 mov ebx,[r8]
+
+mov [rsp+peinfo.curcluster],eax
 shl ebx,9	;rbx cluster size
-cmp ebx,0x400
-jae .largecluster
-
-test rax,rax
-jz near .fail
-mov rcx,rsi
-mov rdx,rax
-add rcx,rbx
-call ReadCluster
-add rdi,rbx
-.largecluster:
-
-mov [rsp+peinfo.curcluster],rax
 
 ;verify PE header
 mov ax,[rsi]
+mov [rsp+peinfo.clusterlen],bx
 cmp ax,'MZ'
-mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 jnz near .fail
 xor rdx,rdx
 add rdi,rbx
 mov edx,[rsi+0x3C]
-
+mov [rsp+peinfo.offset],ebx
 add rsi,rdx
 
 lodsd
@@ -1133,17 +1123,20 @@ mov [rsp+peinfo.section],ax
 
 lodsw	;opt header size
 cmp ax,0xF0
-jnz near .fail
+jnz .fail
 lodsw	;Characteristics
 bt ax,1		;executable
-jnc near .fail
-bt ax,12	;SYSTEM
-jnc near .fail
+jnc .fail
+
+;SYSTEM flag may be deprecated
+
+;bt ax,12	;SYSTEM
+;nc near .fail
 
 lodsd
 add rsi,0x0C
 cmp ax,0x20B
-jnz near .fail
+jnz .fail
 
 lodsd	;entrypoint RVA
 mov [rsp+peinfo.entry],eax
@@ -1153,17 +1146,48 @@ lodsq	;vbase
 mov [rsp+peinfo.vbase],rax
 
 lodsd	;section alignment
-cmp eax,0x1000
-jnz near .fail
-lodsd	;file alignment
-add rsi,0x14
-mov [rsp+peinfo.filealign],ax
+add rsi,0x18
+cmp eax,PAGE_SIZE
+jnz .fail
+;lodsd	;file alignment
+;add rsi,0x14
+;mov [rsp+peinfo.filealign],ax	;needed ?
+
+;xor rbx,rbx
 
 lodsd	;header size
 cmp rsi,rdi
 jae .fail
-cmp eax,0x400
+
+movzx rdx,WORD [rsp+peinfo.clusterlen]
+
+cmp eax,PAGE_SIZE
+mov ebx,eax		;header size
 ja .fail
+
+.loadheader:
+
+sub rbx,rdx
+jbe .smallheader
+
+
+mov rdx,[rsp+peinfo.curcluster]
+mov rcx,rdi
+test rdx,rdx
+jz .fail
+call ReadCluster
+movzx rdx,WORD [rsp+peinfo.clusterlen]
+
+add rdi,rdx
+add [rsp+peinfo.offset],edx
+
+jmp .loadheader
+
+.fail:
+call BugCheck
+int3
+
+.smallheader:
 
 lodsd
 lodsd	;(DLLCharacteristics<<16) | Subsystem
@@ -1174,12 +1198,84 @@ jnc .fail
 ;map vbase and stack
 ;rbx cluster size
 
+lodsd	;stkrev
+
+cmp eax,0x100000	;1M
+mov edx,eax
+ja .fail
+
+lodsd	;stkrev high
+test eax,eax
+jnz .fail
+
+xor rcx,rcx
+lodsd	;stkcmt
+cmp eax,edx
+mov rdi,KRNL_STK_TOP
+ja .fail
+mov ecx,eax
+
+lodsd	;stkcmt high
+
+shr ecx,12	;rcx commit page count
+test eax,eax
+jnz .fail
+
+cmp ecx,0x100	;1M=256 pages
+ja .fail
+
+
+;no heap support
+lodsq
+test rax,rax
+jnz .fail
+lodsq
+test rax,rax
+jnz .fail
+
+lodsd
+lodsd	;datadir cnt
+
+shl eax,3
+add rsi,rax		;skip datadir
+
+
+.makestk:
+
+push rcx
+
+sub rdi,PAGE_SIZE
+call PmmAlloc
+mov r8,0x80000000_00000003
+mov rdx,rax
+mov rcx,rdi
+call MapPage
+
+pop rcx
+
+loop .makestk
+
+;change rsp just before jmp to krnl
 
 
 
-.fail:
-call BugCheck
-int3
+
+;map header to vbase
+
+mov rcx,[rsp+peinfo.vbase]
+mov rdx,[rsp+peinfo.headerpmm]
+mov r8,0x80000000_00000001
+call MapPage
+
+
+
+;process sections
+
+
+.section:
+
+
+
 
 hlt
 
