@@ -84,7 +84,7 @@ struc sysinfo
 .FAT_table		resd 1
 .FAT_data		resd 1
 .FAT_cluster	resd 1
-
+.PE_filekrnl	resd 16
 endstruc
 
 align 4
@@ -966,10 +966,13 @@ KRNL_STK_TOP equ KRNL_STK_GUARD
 
 
 
+struc peinfo
+.headerpmm	resq 1
+.vbase		resq 1
+.entry		resd 1
+.section	resd 1
 
-
-
-
+endstruc
 
 
 
@@ -1052,23 +1055,6 @@ mov cr4,rdx
 ;mov cr3,rdx
 
 
-struc peinfo
-.headerpmm	resq 1
-.vbase		resq 1
-.entry		resd 1
-.offset		resd 1
-.curcluster	resd 1
-.section	resw 1
-.clusterlen	resw 1
-
-endstruc
-
-
-
-load_kernel:
-mov rbp,rsp
-
-sub rsp,0x20
 
 
 call PmmAlloc
@@ -1080,38 +1066,118 @@ mov r8,0x80000000_00000003
 mov [rsp+peinfo.headerpmm],rax
 call MapPage
 
-mov rcx,strkrnl
-mov rdx,rsi
-call GetFile
+find_krnl:
+
+mov rcx,rsi
+mov rdx,2
+call ReadCluster
+
+mov rbx,rax
+xor rcx,rcx
+add rbx,rsi
+xor rax,rax
+
+jmp .findfile
+
+.fail:
+call BugCheck
+int3
+
+.next:
+add rsi,0x20
+and sil,(~ 0x1F)
+
+.findfile:
+
+cmp rsi,rbx
+jae .fail
+
+cmp BYTE [rsi],0
+jz .fail
+
+mov rdi,strkrnl
+mov cl,11
+
+.name:
+lodsb
+xor al,[rdi]
+test al,(~ 0x20)
+jnz .next
+inc rdi
+loop .name
+
+lodsb
+test al,0x10
+jnz .fail
+
+add rsi,8
+lodsw
+shl eax,16
+add rsi,4
+lodsw
+
+;rax firstcluster
 
 test rax,rax
-jz near .fail
+jz .fail
 
-xor rbx,rbx
+cmp eax,0x0FFFFFF8
+jae .fail
+
+mov rdi,HIGHADDR+SYSINFO_BASE+sysinfo.PE_filekrnl
+mov rsi,CMN_BUF_VBASE
+
+.load_cluster:
+
+xor rdx,rdx
+mov ecx,128
+stosd
+xor r8,r8
+div ecx
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_header
+mov rbx,rdx		;remainder
 mov rcx,rsi
 mov rdx,rax
-call ReadCluster
-mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-mov rdi,rsi
-mov ebx,[r8]
+inc r8
+add edx,[r9]
 
-mov [rsp+peinfo.curcluster],eax
-shl ebx,9	;rbx cluster size
+call ReadSector
+
+mov eax,[rsi+4*rbx]
+
+test eax,eax
+jz .fail
+
+cmp eax,0x0FFFFFF8
+jb .load_cluster
+
+
+
+
+mov rbp,rsp
+sub rsp,0x20
+
+
+mov rcx,rsi
+xor rdx,rdx
+mov rdi,rsi
+mov r8,0x200
+call ReadFile
+add rdi,rax
+
 
 ;verify PE header
 mov ax,[rsi]
-mov [rsp+peinfo.clusterlen],bx
-cmp ax,'MZ'
-jnz near .fail
 xor rdx,rdx
-add rdi,rbx
+cmp ax,'MZ'
+jnz .fail
+
 mov edx,[rsi+0x3C]
-mov [rsp+peinfo.offset],ebx
 add rsi,rdx
 
 lodsd
 cmp eax,'PE'
-jnz near .fail
+jnz .fail
 
 lodsw	;machine
 cmp ax,0x8664
@@ -1119,7 +1185,7 @@ jnz near .fail
 
 lodsw	;section count
 add rsi,0x0C
-mov [rsp+peinfo.section],ax
+mov [rsp+peinfo.section],eax
 
 lodsw	;opt header size
 cmp ax,0xF0
@@ -1147,7 +1213,7 @@ mov [rsp+peinfo.vbase],rax
 
 lodsd	;section alignment
 add rsi,0x18
-cmp eax,PAGE_SIZE
+test eax,~(PAGE_SIZE-1)
 jnz .fail
 ;lodsd	;file alignment
 ;add rsi,0x14
@@ -1156,38 +1222,22 @@ jnz .fail
 ;xor rbx,rbx
 
 lodsd	;header size
+xor r8,r8
 cmp rsi,rdi
 jae .fail
 
-movzx rdx,WORD [rsp+peinfo.clusterlen]
-
-cmp eax,PAGE_SIZE
-mov ebx,eax		;header size
-ja .fail
-
-.loadheader:
-
-sub rbx,rdx
+sub eax,0x200
+mov rdx,r8
 jbe .smallheader
 
-
-mov rdx,[rsp+peinfo.curcluster]
 mov rcx,rdi
-test rdx,rdx
-jz .fail
-call ReadCluster
-movzx rdx,WORD [rsp+peinfo.clusterlen]
-
-add rdi,rdx
-add [rsp+peinfo.offset],edx
-
-jmp .loadheader
-
-.fail:
-call BugCheck
-int3
+mov dx,0x200
+mov r8d,eax
+call ReadFile
+add rdi,rax
 
 .smallheader:
+
 
 lodsd
 lodsd	;(DLLCharacteristics<<16) | Subsystem
@@ -1208,20 +1258,19 @@ lodsd	;stkrev high
 test eax,eax
 jnz .fail
 
-xor rcx,rcx
 lodsd	;stkcmt
 cmp eax,edx
 mov rdi,KRNL_STK_TOP
 ja .fail
-mov ecx,eax
+mov ebx,eax
 
 lodsd	;stkcmt high
 
-shr ecx,12	;rcx commit page count
+shr ebx,12	;rcx commit page count
 test eax,eax
 jnz .fail
 
-cmp ecx,0x100	;1M=256 pages
+cmp ebx,0x100	;1M=256 pages
 ja .fail
 
 
@@ -1242,7 +1291,6 @@ add rsi,rax		;skip datadir
 
 .makestk:
 
-push rcx
 
 sub rdi,PAGE_SIZE
 call PmmAlloc
@@ -1251,13 +1299,10 @@ mov rdx,rax
 mov rcx,rdi
 call MapPage
 
-pop rcx
-
-loop .makestk
+dec ebx
+jns .makestk
 
 ;change rsp just before jmp to krnl
-
-
 
 
 ;map header to vbase
@@ -1268,14 +1313,76 @@ mov r8,0x80000000_00000001
 call MapPage
 
 
-
 ;process sections
-
 
 .section:
 
+mov ecx,[rsp+peinfo.section]
+dec ecx
+js .end
+
+mov [rsp+peinfo.section],ecx
 
 
+lodsq	;name
+lodsd	;originsize
+xor rax,rax
+mov rdi,[rsp+peinfo.vbase]
+
+lodsd	;RVA
+add rdi,rax		;section vbase
+
+lodsd	;size
+xor rdx,rdx
+test ax,~(PAGE_SIZE-1)
+mov ebx,eax
+jz .section_aligned
+
+add eax,PAGE_SIZE
+
+.section_aligned:
+mov edx,eax
+
+lodsd	;offset
+shl rbx,32
+add rsi,0x0C
+mov ebx,eax		;rbx	( size<<32 ) | offset
+
+mov r8,0x80000000_00000000
+lodsd	;attrib
+
+bt eax,25	;discard
+jc .section
+
+bt eax,29	;X
+jnc .section_nx
+xor r8,r8
+
+.section_nx:
+bt eax,31	;W
+jnc .section_nw
+or r8b,0010_b
+.section_nw:
+inc r8b
+mov rcx,rdi		;vbase
+shr edx,12		;page count
+
+call VirtualAlloc
+
+xor rdx,rdx
+mov r8,rbx
+mov rcx,rdi		;dst
+mov edx,ebx		;offset
+shr r8,32		;size
+
+
+call ReadFile
+
+
+jmp .section
+
+
+.end:
 
 hlt
 
@@ -1358,136 +1465,34 @@ int3
 
 
 ;ReadFile dst,cluster
-;return next cluster
+;return clustersize
 ReadCluster:
 
-push rbx
-push rdx
-
-xor rax,rax
-mov r8d,128
-xchg rdx,rax
-mov rbx,rcx	;dst
-div r8d
-
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
-
-add eax,DWORD [r9]
-xor r8,r8
-push rdx	;remainder
-
-;rcx dst
-mov rdx,rax
-inc r8
-call ReadSector
-xor rcx,rcx
-pop rax		;remainder
-mov ecx,[rbx+4*rax]
-
 mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-pop rax		;cur cluster
+sub rdx,2
+movzx r8,WORD [r9]
+mov rax,r8
 
-mov r8d,DWORD [r9]
-xchg rcx,rbx
-;rbx nextcluster rcx dst
-mul r8d
+mul edx
+
 mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
-
-add eax,DWORD [r9]
-
-sub eax,r8d
-sub eax,r8d
-
 mov rdx,rax
+push r8
+add edx,[r9]
+
 call ReadSector
-
-xor rax,rax
-
-cmp ebx,0x0FFFFFF8
-
-cmovb rax,rbx
-
-
-pop rbx
+pop rax
+shl rax,9
 
 ret
 
 
-;GetFile filename,buf
-;return cluster
-GetFile:	
-push rsi
-push rdi
-push rbx
+;ReadFile dst,off,size
+;WARNING WILL OVERWRITE [clustersize] bytes of data
+;return ( write_tail - dst )
+ReadFile:
 
-;mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
-mov rsi,rdx		;buf
-mov rdi,rcx		;filename
-xor rdx,rdx
-;mov esi,DWORD [r8]
-mov rcx,rsi		;buf
-mov dl,2
-
-call ReadCluster
-
-mov r8,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-mov ebx,DWORD [r8]
-mov rdx,rdi		;filename
-shl ebx,9
-xor rcx,rcx
-dec ebx			;cluster mask
-
-xor rax,rax
-.match:
-
-cmp BYTE [rsi],0
-jz .fail
-
-mov rdi,rdx
-mov cl,11
-
-.name:
-lodsb
-xor al,[rdi]
-
-test al,(~0x20)
-jnz .next
-inc rdi
-loop .name
-
-
-lodsb
-test al,0x10
-jnz .fail
-
-add rsi,8
-lodsw	;+0x14
-
-shl eax,16
-add rsi,4
-lodsw
-
-jmp .ret
-
-
-
-.next:
-
-add rsi,0x20
-and sil,(~ 0x1F)
-
-test esi,ebx
-jnz .match
-
-.fail:
-xor rax,rax
-
-.ret:
-
-
-pop rbx
-pop rdi
-pop rsi
+;TODO
 
 ret
 
@@ -1650,5 +1655,13 @@ xchg [rdi],rbx
 pop rdi
 pop rsi
 pop rbx
+
+ret
+
+;VirtualAlloc vbase,pagecount,attrib
+VirtualAlloc:
+
+;TODO
+
 
 ret
