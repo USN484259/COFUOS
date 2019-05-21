@@ -17,6 +17,7 @@ PMMSCAN_BASE equ 0x1000
 ISR_STK equ 0x02000
 
 PAGE_SIZE equ 0x1000
+SECTOR_SIZE equ 0x200
 
 PL4T equ 0x03000
 
@@ -1056,6 +1057,9 @@ mov cr4,rdx
 
 
 
+mov rbp,rsp
+sub rsp,0x20
+
 
 call PmmAlloc
 mov rsi,CMN_BUF_VBASE
@@ -1067,12 +1071,15 @@ mov [rsp+peinfo.headerpmm],rax
 call MapPage
 
 find_krnl:
-
+xor rdx,rdx
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
+xor r8,r8
 mov rcx,rsi
-mov rdx,2
-call ReadCluster
+mov edx,[r9]
+inc r8
+call ReadSector
 
-mov rbx,rax
+mov rbx,SECTOR_SIZE
 xor rcx,rcx
 add rbx,rsi
 xor rax,rax
@@ -1134,7 +1141,7 @@ mov ecx,128
 stosd
 xor r8,r8
 div ecx
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_header
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
 mov rbx,rdx		;remainder
 mov rcx,rsi
 mov rdx,rax
@@ -1153,15 +1160,10 @@ jb .load_cluster
 
 
 
-
-mov rbp,rsp
-sub rsp,0x20
-
-
 mov rcx,rsi
 xor rdx,rdx
 mov rdi,rsi
-mov r8,0x200
+mov r8,SECTOR_SIZE
 call ReadFile
 add rdi,rax
 
@@ -1185,7 +1187,9 @@ jnz near .fail
 
 lodsw	;section count
 add rsi,0x0C
+test eax,eax
 mov [rsp+peinfo.section],eax
+jz .fail
 
 lodsw	;opt header size
 cmp ax,0xF0
@@ -1213,7 +1217,7 @@ mov [rsp+peinfo.vbase],rax
 
 lodsd	;section alignment
 add rsi,0x18
-test eax,~(PAGE_SIZE-1)
+test eax,(PAGE_SIZE-1)
 jnz .fail
 ;lodsd	;file alignment
 ;add rsi,0x14
@@ -1226,12 +1230,12 @@ xor r8,r8
 cmp rsi,rdi
 jae .fail
 
-sub eax,0x200
+sub eax,SECTOR_SIZE
 mov rdx,r8
 jbe .smallheader
 
 mov rcx,rdi
-mov dx,0x200
+mov dx,SECTOR_SIZE
 mov r8d,eax
 call ReadFile
 add rdi,rax
@@ -1266,7 +1270,7 @@ mov ebx,eax
 
 lodsd	;stkcmt high
 
-shr ebx,12	;rcx commit page count
+shr ebx,12	;rbx commit page count
 test eax,eax
 jnz .fail
 
@@ -1300,7 +1304,7 @@ mov rcx,rdi
 call MapPage
 
 dec ebx
-jns .makestk
+jnz .makestk
 
 ;change rsp just before jmp to krnl
 
@@ -1317,13 +1321,6 @@ call MapPage
 
 .section:
 
-mov ecx,[rsp+peinfo.section]
-dec ecx
-js .end
-
-mov [rsp+peinfo.section],ecx
-
-
 lodsq	;name
 lodsd	;originsize
 xor rax,rax
@@ -1334,7 +1331,7 @@ add rdi,rax		;section vbase
 
 lodsd	;size
 xor rdx,rdx
-test ax,~(PAGE_SIZE-1)
+test ax,(PAGE_SIZE-1)
 mov ebx,eax
 jz .section_aligned
 
@@ -1346,9 +1343,9 @@ mov edx,eax
 lodsd	;offset
 shl rbx,32
 add rsi,0x0C
-mov ebx,eax		;rbx	( size<<32 ) | offset
+or ebx,eax		;rbx	( size<<32 ) | offset
 
-mov r8,0x80000000_00000000
+mov r12,0x80000000_00000000
 lodsd	;attrib
 
 bt eax,25	;discard
@@ -1356,18 +1353,22 @@ jc .section
 
 bt eax,29	;X
 jnc .section_nx
-xor r8,r8
+xor r12,r12
 
 .section_nx:
 bt eax,31	;W
 jnc .section_nw
-or r8b,0010_b
+or r12b,0010_b
 .section_nw:
-inc r8b
-mov rcx,rdi		;vbase
-shr edx,12		;page count
+inc r12b
 
+mov r8,0x80000000_00000003
+shr edx,12		;page count
+mov rcx,rdi		;vbase
+mov r13,rdx		;page count
 call VirtualAlloc
+
+
 
 xor rdx,rdx
 mov r8,rbx
@@ -1375,21 +1376,30 @@ mov rcx,rdi		;dst
 mov edx,ebx		;offset
 shr r8,32		;size
 
-
 call ReadFile
 
+mov rbx,r13
 
-jmp .section
+.section_attrib:
+
+mov rcx,rdi
+xor rdx,rdx
+mov r8,r12
+call MapPage
+
+
+add rdi,PAGE_SIZE
+dec rbx
+jnz .section_attrib
+
+dec DWORD [rsp+peinfo.section]
+jnz .section
+
 
 
 .end:
 
-hlt
 
-
-
-
-align 16
 
 
 BugCheck:
@@ -1464,37 +1474,75 @@ call BugCheck
 int3
 
 
-;ReadFile dst,cluster
-;return clustersize
-ReadCluster:
-
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-sub rdx,2
-movzx r8,WORD [r9]
-mov rax,r8
-
-mul edx
-
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
-mov rdx,rax
-push r8
-add edx,[r9]
-
-call ReadSector
-pop rax
-shl rax,9
-
-ret
 
 
 ;ReadFile dst,off,size
-;WARNING WILL OVERWRITE [clustersize] bytes of data
-;return ( write_tail - dst )
+;NOTE works but low efficiency
+;return size
 ReadFile:
 
-;TODO
+test dx,0x1FF
+jnz .fail
+
+test r8w,0x1FF
+jnz .fail
+
+push r8		;size
+shr rdx,9	;in sector
+shr r8,9	;in sector
+
+push rsi
+push rdi
+push rbx
+
+
+mov rsi,rdx		;offset in sector
+mov rdi,rcx		;dst
+mov rbx,r8		;size in sector
+
+
+.read:
+xor rdx,rdx
+mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+mov rax,rsi
+div DWORD [r9]
+
+mov rcx,rdx	;remainder
+mov eax,[r9+4+4*rax]
+
+sub eax,2
+
+mul DWORD [r9]
+
+test edx,edx
+mov edx,eax
+jnz .fail
+
+
+add edx,[r9-4]	;edx sector of target cluster
+xor r8,r8
+add edx,ecx		;target sector
+inc r8
+mov rcx,rdi
+call ReadSector
+
+add rdi,SECTOR_SIZE
+inc rsi
+
+dec rbx
+jnz .read
+
+
+pop rbx
+pop rdi
+pop rsi
+pop rax		;size
 
 ret
+
+.fail:
+call BugCheck
+int3
 
 
 PmmAlloc:
@@ -1661,7 +1709,30 @@ ret
 ;VirtualAlloc vbase,pagecount,attrib
 VirtualAlloc:
 
-;TODO
+push rsi
+push rdi
+push rbx
 
+mov rsi,r8		;attrib
+mov rdi,rcx		;vbase
+mov rbx,rdx		;pagecount
+
+.map:
+call PmmAlloc
+mov r8,rsi		;attrib
+mov rcx,rdi		;vaddr
+mov rdx,rax		;paddr
+call MapPage
+
+add rdi,PAGE_SIZE
+
+dec rbx
+jnz .map
+
+
+
+pop rbx
+pop rdi
+pop rsi
 
 ret
