@@ -971,8 +971,10 @@ struc peinfo
 .headerpmm	resq 1
 .vbase		resq 1
 .entry		resd 1
-.section	resd 1
-
+.section	resw 1
+.sec_attrib	resw 1
+.sec_size	resd 1
+.sec_off	resd 1
 endstruc
 
 
@@ -1016,15 +1018,15 @@ LM_high:
 mov rdx,TR_selector
 ltr [rdx]
 
+mov r12,HIGHADDR+SYSINFO_BASE
 
 
-
-mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
+;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
 mov rax,PMMWMP_VBASE
-mov [rcx],rax
+mov [r12+sysinfo.PMM_wmp_vbase],rax
 
-mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-mov ax,[rcx]
+;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+mov ax,[r12+sysinfo.FAT_cluster]
 cmp ax,8
 jbe .unmap_low
 
@@ -1038,9 +1040,10 @@ stosq
 
 ;ebable PGE SMEP disable WRGSBASE
 
-mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.cpu
+;mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.cpu
+mov eax,[r12+sysinfo.cpu]
 mov rdx,cr4
-lodsd
+;lodsd
 bt eax,7
 jnc .nosmep
 bts rdx,20	;SMEP
@@ -1072,10 +1075,10 @@ call MapPage
 
 find_krnl:
 xor rdx,rdx
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
+;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
 xor r8,r8
 mov rcx,rsi
-mov edx,[r9]
+mov edx,[r12+sysinfo.FAT_data]
 inc r8
 call ReadSector
 
@@ -1141,12 +1144,12 @@ mov ecx,128
 stosd
 xor r8,r8
 div ecx
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
+;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
 mov rbx,rdx		;remainder
 mov rcx,rsi
 mov rdx,rax
 inc r8
-add edx,[r9]
+add edx,[r12+sysinfo.FAT_table]
 
 call ReadSector
 
@@ -1187,8 +1190,8 @@ jnz near .fail
 
 lodsw	;section count
 add rsi,0x0C
-test eax,eax
-mov [rsp+peinfo.section],eax
+test ax,ax
+mov [rsp+peinfo.section],ax
 jz .fail
 
 lodsw	;opt header size
@@ -1292,6 +1295,7 @@ lodsd	;datadir cnt
 shl eax,3
 add rsi,rax		;skip datadir
 
+mov rbp,rdi
 
 .makestk:
 
@@ -1330,77 +1334,95 @@ lodsd	;RVA
 add rdi,rax		;section vbase
 
 lodsd	;size
-xor rdx,rdx
+xor rbx,rbx
 test ax,(PAGE_SIZE-1)
-mov ebx,eax
+mov [rsp+peinfo.sec_size],eax	;size in file
 jz .section_aligned
 
 add eax,PAGE_SIZE
 
 .section_aligned:
-mov edx,eax
+mov ebx,eax		;size in memory
 
 lodsd	;offset
-shl rbx,32
 add rsi,0x0C
-or ebx,eax		;rbx	( size<<32 ) | offset
+;or ebx,eax		;rbx	( size<<32 ) | offset
+mov [rsp+peinfo.sec_off],eax
 
-mov r12,0x80000000_00000000
 lodsd	;attrib
-
-bt eax,25	;discard
-jc .section
-
-bt eax,29	;X
-jnc .section_nx
-xor r12,r12
-
-.section_nx:
-bt eax,31	;W
-jnc .section_nw
-or r12b,0010_b
-.section_nw:
-inc r12b
+shr eax,16
+bt eax,9	;discard
+jc .section_discard
+mov [rsp+peinfo.sec_attrib],ax
 
 mov r8,0x80000000_00000003
-shr edx,12		;page count
+shr ebx,12		;page count
 mov rcx,rdi		;vbase
-mov r13,rdx		;page count
+mov rdx,rbx
 call VirtualAlloc
 
 
 
-xor rdx,rdx
-mov r8,rbx
+xor r8,r8
+
+mov edx,[rsp+peinfo.sec_off]	;offset
 mov rcx,rdi		;dst
-mov edx,ebx		;offset
-shr r8,32		;size
+mov r8d,[rsp+peinfo.sec_size]	;size
 
 call ReadFile
 
-mov rbx,r13
+mov [rsp+peinfo.sec_size],ebx	;pagecount
+mov dx,WORD [rsp+peinfo.sec_attrib]
+xor rbx,rbx
+
+bt dx,13	;X
+jc .attrib_X
+bts rbx,63
+
+.attrib_X:
+
+bt dx,15	;W
+
+jnc .attrib_W
+bts rbx,1
+
+.attrib_W:
+
+inc rbx
 
 .section_attrib:
-
 mov rcx,rdi
 xor rdx,rdx
-mov r8,r12
+mov r8,rbx
 call MapPage
 
 
 add rdi,PAGE_SIZE
-dec rbx
+dec DWORD [rsp+peinfo.sec_size]
 jnz .section_attrib
 
-dec DWORD [rsp+peinfo.section]
+.section_discard:
+
+dec WORD [rsp+peinfo.section]
 jnz .section
 
 
+;unmap CMN_BUF
+mov rcx,CMN_BUF_VBASE
+xor rdx,rdx
+xor r8,r8
+call MapPage
 
-.end:
+xor rdx,rdx
+mov rcx,[rsp+peinfo.vbase]
+mov edx,[rsp+peinfo.entry]
+mov rsp,rbp
+add rdx,rcx
 
 
+call rdx	;rcx module base
 
+nop
 
 BugCheck:
 
@@ -1503,23 +1525,23 @@ mov rbx,r8		;size in sector
 
 .read:
 xor rdx,rdx
-mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov rax,rsi
-div DWORD [r9]
+div DWORD [r12+sysinfo.FAT_cluster]
 
 mov rcx,rdx	;remainder
-mov eax,[r9+4+4*rax]
+mov eax,[r12+sysinfo.PE_filekrnl+4*rax]
 
 sub eax,2
 
-mul DWORD [r9]
+mul DWORD [r12+sysinfo.FAT_cluster]
 
 test edx,edx
 mov edx,eax
 jnz .fail
 
 
-add edx,[r9-4]	;edx sector of target cluster
+add edx,[r12+sysinfo.FAT_data]	;edx sector of target cluster
 xor r8,r8
 add edx,ecx		;target sector
 inc r8
@@ -1616,7 +1638,7 @@ mov esi,ecx		;VA within 1G
 
 mov rdi,HIGHADDR+PDT0
 mov rax,rsi
-xor dil,dil
+;xor dil,dil
 shr rax,21
 
 lea rdi,[rdi+rax*8]
