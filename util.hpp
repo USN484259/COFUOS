@@ -28,4 +28,20 @@ namespace UOS{
 		return (a>b) ? a : b;
 	}
 	
+	
+	template<typename T>
+	size_t match(T a,T b,size_t cnt){
+		size_t i=0;
+		for (;i<cnt;i++){
+			if (*a==*b)
+				;
+			else
+				break;
+			++a;
+			++b;
+		}
+		return i;
+	}
+	
+
 };

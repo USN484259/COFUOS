@@ -6,6 +6,9 @@ typedef unsigned long long qword;
 
 
 namespace UOS{
+	
+	typedef void (*fun)(void);
+	
 	template<typename A,typename B>
 	struct pair{
 		A first;

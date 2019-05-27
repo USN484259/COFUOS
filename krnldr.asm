@@ -991,7 +991,7 @@ mov fs,ax
 mov gs,ax
 mov ss,ax
 mov rsp,HIGHADDR+ISR_STK
-mov rbp,rsp
+;mov rbp,rsp
 
 mov rdx,LM_high
 
@@ -1074,8 +1074,7 @@ mov [rsp+peinfo.headerpmm],rax
 call MapPage
 
 find_krnl:
-xor rdx,rdx
-;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_data
+;xor rdx,rdx
 xor r8,r8
 mov rcx,rsi
 mov edx,[r12+sysinfo.FAT_data]
@@ -1085,7 +1084,7 @@ call ReadSector
 mov rbx,SECTOR_SIZE
 xor rcx,rcx
 add rbx,rsi
-xor rax,rax
+;xor rax,rax
 
 jmp .findfile
 
@@ -1173,7 +1172,7 @@ add rdi,rax
 
 ;verify PE header
 mov ax,[rsi]
-xor rdx,rdx
+;xor rdx,rdx
 cmp ax,'MZ'
 jnz .fail
 
@@ -1229,16 +1228,16 @@ jnz .fail
 ;xor rbx,rbx
 
 lodsd	;header size
-xor r8,r8
+;xor r8,r8
 cmp rsi,rdi
 jae .fail
 
 sub eax,SECTOR_SIZE
-mov rdx,r8
+;mov rdx,r8
 jbe .smallheader
 
 mov rcx,rdi
-mov dx,SECTOR_SIZE
+mov edx,SECTOR_SIZE
 mov r8d,eax
 call ReadFile
 add rdi,rax
@@ -1327,22 +1326,29 @@ call MapPage
 
 lodsq	;name
 lodsd	;originsize
-xor rax,rax
+;xor rax,rax
 mov rdi,[rsp+peinfo.vbase]
+mov [rsp+peinfo.sec_size],eax
+mov ecx,eax		;originsize
 
 lodsd	;RVA
 add rdi,rax		;section vbase
 
 lodsd	;size
-xor rbx,rbx
-test ax,(PAGE_SIZE-1)
+test eax,eax
 mov [rsp+peinfo.sec_size],eax	;size in file
+cmovnz ecx,eax
+
+
+
+
+test cx,(PAGE_SIZE-1)
 jz .section_aligned
 
-add eax,PAGE_SIZE
+add ecx,PAGE_SIZE
 
 .section_aligned:
-mov ebx,eax		;size in memory
+mov ebx,ecx		;size in memory
 
 lodsd	;offset
 add rsi,0x0C
@@ -1363,13 +1369,14 @@ call VirtualAlloc
 
 
 
-xor r8,r8
-
-mov edx,[rsp+peinfo.sec_off]	;offset
-mov rcx,rdi		;dst
 mov r8d,[rsp+peinfo.sec_size]	;size
-
+mov edx,[rsp+peinfo.sec_off]	;offset
+test r8d,r8d
+mov rcx,rdi		;dst
+jz .nofile
 call ReadFile
+
+.nofile:
 
 mov [rsp+peinfo.sec_size],ebx	;pagecount
 mov dx,WORD [rsp+peinfo.sec_attrib]
@@ -1413,11 +1420,12 @@ xor rdx,rdx
 xor r8,r8
 call MapPage
 
-xor rdx,rdx
+;xor rdx,rdx
 mov rcx,[rsp+peinfo.vbase]
 mov edx,[rsp+peinfo.entry]
 mov rsp,rbp
 add rdx,rcx
+sub rsp,0x20
 
 
 call rdx	;rcx module base
@@ -1425,7 +1433,10 @@ call rdx	;rcx module base
 nop
 
 BugCheck:
-
+mov dx,0x92
+in al,dx
+or al,1
+out dx,al
 hlt
 jmp BugCheck
 
@@ -1572,7 +1583,7 @@ PmmAlloc:
 push rsi
 push rbx
 
-xor rcx,rcx
+;xor rcx,rcx
 mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
 lodsq
 mov rbx,rax
@@ -1594,7 +1605,7 @@ int3
 .found:
 
 sub rsi,2
-xor rdx,rdx
+xor edx,edx
 mov rax,rsi
 mov [rsi],dx
 
@@ -1628,7 +1639,7 @@ push rsi
 push rdi
 
 mov rbx,rdx		;PMM
-xor rsi,rsi
+;xor rsi,rsi
 
 test r8,r8
 cmovz rbx,r8
@@ -1680,7 +1691,7 @@ stosq
 mov rdi,TMP_PT_VBASE
 xor rax,rax
 invlpg [rdi]
-mov rcx,PAGE_SIZE/8
+;mov rcx,PAGE_SIZE/8
 stosq
 
 mov rdi,TMP_PT_VBASE
@@ -1698,10 +1709,13 @@ jnz .set
 
 mov rbx,[rdi]
 
-btc rbx,63
+btr rbx,63
 and bx,0xF000
 
 test r8,r8
+
+invlpg [rbx]
+
 jnz .set
 
 xor rax,rax
@@ -1758,3 +1772,5 @@ pop rdi
 pop rsi
 
 ret
+
+
