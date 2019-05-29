@@ -599,7 +599,7 @@ jnc abort
 bt edx,11	;SYSENTER
 jnc abort
 
-bt edx,9	;APIC	TODO
+bt edx,9	;APIC
 jnc abort
 
 bt edx,6	;PAE

@@ -1,18 +1,17 @@
 
-
+#include "hal.hpp"
 #include "pe.hpp"
 #include "list.hpp"
 #include "heap.hpp"
+#include "apic.hpp"
 
 using namespace UOS;
 
-extern "C" void buildIDT(...);
 
-void exception_dispatch(qword,qword){}
-void interrupt_dispatch(qword){}
-
+//qword apic_vbase=0xFFFF800000010000;
 
 heap syspool;
+APIC apic(reinterpret_cast<byte*>(0xFFFF800000010000));
 
 
 __declspec(noreturn)
@@ -24,9 +23,7 @@ void krnlentry(void* module_base){
 	while(*globalConstructor)
 		(*globalConstructor++)();
 	
-	buildIDT(exception_dispatch,interrupt_dispatch);
-	
-	new(&syspool) heap();
+	buildIDT();
 	
 	list<qword> lst;
 	auto it=lst.begin();

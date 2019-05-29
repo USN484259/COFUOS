@@ -13,12 +13,12 @@ void* UOS::peGetSection(const void* imgBase,const char* name){
 			break;
 		p+=*(dword*)(p+0x3C);
 		
-		if ('PE'!=*(dword*)p)
+		if (0x4550!=*(dword*)p)	//'PE'
 			break;
 		
 		unsigned cnt= *(word*)(p+0x06);
 		
-		p+=*(word*)(p+0x14);
+		p+=0x18+*(word*)(p+0x14);
 		
 		//p+=0x74;
 		//p+=*(dword*)p * 8;

@@ -21,3 +21,4 @@ extern "C" qword IF_get(void);
 
 
 #define IF_assert(c) assert(IF_get()?c:!c)
+#define page_assert(p) assert(0==((qword)p & 0xFFF))
