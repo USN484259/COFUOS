@@ -1,4 +1,8 @@
 #pragma once
+
+#define HIGHADDR(x) ( 0xFFFF800000000000 | (x) )
+
+
 namespace UOS{
 	
 	template<typename T>
@@ -43,5 +47,6 @@ namespace UOS{
 		return i;
 	}
 	
+	extern "C" void* memset(void*,int,size_t);
 
 };

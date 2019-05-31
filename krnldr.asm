@@ -1,12 +1,12 @@
 IA32_EFER equ 0xC0000080
-
+IA32_APIC_BASE equ 0x1B
 
 TSS_BASE equ 0x0000
 TSS_LIM equ 0x200
 GDT_BASE equ 0x0200
 GDT_LIM equ 0x200	;64 entries
 IDT_BASE equ 0x0400
-IDT_LIM equ 0x400	;128 entries
+IDT_LIM equ 0x400	;64 entries
 
 SYSINFO_BASE equ 0x0800
 
@@ -64,28 +64,73 @@ section code vstart=0x2000
 
 [bits 16]
 
-jmp entry
+
+
+push cs
+pop ds
+cld
+
+xor cx,cx
+mov bx,0x7C00
+mov es,cx
+
+
+;	ds	->	cur code segment
+;	es	->	flat address
+cmp WORD [es:bx+0x200-2],0xAA55
+jz near BSP_entry
+
+xor dx,dx
+mov bx,SYSINFO_BASE+sysinfo.MP_lock
+inc dx
+
+AP_entry:
+;acquire lock
+
+xor ax,ax
+pause
+lock cmpxchg [es:bx],dx
+jnz AP_entry
+
+inc WORD [es:bx+2]	;MP_cnt
+
+
+mov ss,cx
+mov sp,ISR_STK
+
+jmp AP_PE
+
 
 
 struc sysinfo
 .sig			resq 1
 .PMM_avl_top	resq 1
+
 .PMM_wmp_vbase	resq 1
 .PMM_wmp_page	resd 1
 .cpu			resd 1
+
 .bus			resw 1
 .port			resw 7
+
 .VBE_bpp		resw 1
 .VBE_mode		resw 1
 .VBE_width		resw 1
 .VBE_height		resw 1
 .VBE_addr		resd 1
 .VBE_lim		resd 1
+
 .FAT_header		resd 1
 .FAT_table		resd 1
 .FAT_data		resd 1
 .FAT_cluster	resd 1
-.PE_filekrnl	resd 16
+
+.PE_filekrnl:
+.MP_lock		resw 1
+.MP_cnt			resw 1
+.AP_entry		resd 1
+.krnlbase		resq 1
+
 endstruc
 
 align 4
@@ -251,16 +296,9 @@ mov [es:si+4],ecx
 ret
 
 
-entry:
-
-push cs
-pop ds
-cld
-
-xor cx,cx
-mov es,cx
+BSP_entry:
 mov ss,cx
-mov sp,0x7c00
+mov sp,bx	;0x7C00
 
 ;	ds	->	cur code segment
 ;	es	->	flat address
@@ -482,6 +520,11 @@ mov bx,2
 int 0x15
 
 
+
+
+AP_PE:
+
+
 ;A20 gate
 mov dx,0x92
 in al,dx
@@ -546,11 +589,15 @@ mov ebp,esp		;stack frame
 
 
 
-
-
-
 push 10_0000_0000_0000_0000_0010_b
 popfd
+
+mov ecx,IA32_APIC_BASE
+rdmsr
+
+bt eax,8	;BSP
+jnc near AP_LM
+
 
 ;save ports
 mov esi,0x0400
@@ -637,16 +684,6 @@ jnc abort
 
 ;TODO  test all necessary functionalities
 
-;enable PAE
-mov eax,cr4
-bts eax,5
-mov cr4,eax
-
-mov ecx,IA32_EFER
-rdmsr
-or ax,0000_1001_0000_0001_b		;NXE LME SCE
-wrmsr
-
 
 
 
@@ -667,6 +704,11 @@ call zeromemory
 mov eax,ISR_STK
 add edi,4
 stosd
+
+;zeroing IDT
+mov edi,IDT_BASE
+mov ecx,IDT_LIM
+call zeromemory
 
 
 ;paging init
@@ -879,6 +921,18 @@ mov edi,PMMWMP_PBASE+2*0x100
 mov ecx,[SYSINFO_BASE+sysinfo.PMM_wmp_page]
 rep stosw
 
+AP_LM:
+
+;enable PAE
+mov eax,cr4
+bts eax,5
+mov cr4,eax
+
+mov ecx,IA32_EFER
+rdmsr
+or ax,0000_1001_0000_0001_b		;NXE LME SCE
+wrmsr
+
 
 
 mov eax,PL4T
@@ -1018,25 +1072,14 @@ LM_high:
 mov rdx,TR_selector
 ltr [rdx]
 
-mov r12,HIGHADDR+SYSINFO_BASE
 
 
-;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
-mov rax,PMMWMP_VBASE
-mov [r12+sysinfo.PMM_wmp_vbase],rax
 
-;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
-mov ax,[r12+sysinfo.FAT_cluster]
-cmp ax,8
-jbe .unmap_low
 
-call BugCheck
-int3
-.unmap_low:
-
-mov rdi,HIGHADDR+PDPT0
-xor rax,rax
-stosq
+;unmap lowaddr
+;mov rdi,HIGHADDR+PDPT0
+;xor rax,rax
+;stosq
 
 ;ebable PGE SMEP disable WRGSBASE
 
@@ -1057,6 +1100,44 @@ mov cr4,rdx
 ;no need to reload CR3 since setting PGE flushs TLB
 ;mov rdx,cr3
 ;mov cr3,rdx
+
+mov r12,HIGHADDR+SYSINFO_BASE
+
+
+mov ecx,IA32_APIC_BASE
+rdmsr
+
+bt eax,8	;BSP
+jc .BSP
+
+mov ecx,[r12+sysinfo.AP_entry]
+mov rdx,[r12+sysinfo.krnlbase]
+mov rbp,rsp
+add rdx,rcx
+sub rsp,0x20
+call rdx
+
+jmp BugCheck
+
+
+.BSP:
+
+
+
+;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
+mov rax,PMMWMP_VBASE
+mov [r12+sysinfo.PMM_wmp_vbase],rax
+
+;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+mov ax,[r12+sysinfo.FAT_cluster]
+cmp ax,8
+jbe .unmap_low
+
+call BugCheck
+int3
+.unmap_low:
+
+
 
 
 
@@ -1427,6 +1508,7 @@ mov rsp,rbp
 add rdx,rcx
 sub rsp,0x20
 
+;	at 0x2a6f
 
 call rdx	;rcx module base
 
