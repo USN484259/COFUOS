@@ -38,16 +38,17 @@ APIC::APIC(byte* vbase) : base(vbase){
 	
 }
 
-#pragma optimize( "", off )
+//#pragma optimize( "", off )
+__declspec(noinline)
 dword APIC::read(size_t off){
 	return *(dword*)(base+off);
 }
-
+__declspec(noinline)
 void APIC::write(size_t off,dword val){
 	*(dword*)(base+off)=val;
 }
 
-#pragma optimize( "", on )
+//#pragma optimize( "", on )
 /*
 
 APIC::~APIC(void){

@@ -9,7 +9,10 @@ namespace UOS{
 	
 		static const size_t ICR;
 		
+		__declspec(noinline)
 		dword read(size_t);
+		
+		__declspec(noinline)
 		void write(size_t,dword);
 		
 		public:

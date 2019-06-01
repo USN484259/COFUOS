@@ -1,4 +1,5 @@
 #pragma once
+#include "types.hpp"
 
 #define HIGHADDR(x) ( 0xFFFF800000000000 | (x) )
 
@@ -32,6 +33,15 @@ namespace UOS{
 		return (a>b) ? a : b;
 	}
 	
+	template<typename T>
+	bool equal(const T& a,const T& b){
+		return a==b;
+	}
+	template<typename T>
+	bool not_equal(const T& a,const T& b){
+		return a!=b;
+	}
+	
 	
 	template<typename T>
 	size_t match(T a,T b,size_t cnt){
@@ -46,7 +56,5 @@ namespace UOS{
 		}
 		return i;
 	}
-	
-	extern "C" void* memset(void*,int,size_t);
 
 };

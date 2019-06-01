@@ -1,22 +1,47 @@
-#include "exception.hpp"
-
-
+#include "types.hpp"
+#include "hal.hpp"
 using namespace UOS;
 
 
-exception::exception(const char* s) : msg(s){}
+#ifdef _DEBUG
 
-exception::exception(void) : msg("unknown"){}
-
-exception::~exception(void){}
-
-const char* exception::what(void) const{
-	return msg;
+void kdb_init(word port){
+	io_outb(port+1,0);
+	io_outb(port+3,0x80);
+	io_outb(port+0,2);
+	io_outb(port+1,0);
+	io_outb(port+3,0x03);
+	io_outb(port+2,0xC7);
+	io_outb(port+4,0x0B);	//?????
+	
+	dbgbreak();
+	
 }
 
-exception& exception::operator=(const exception& sor){
-	msg=sor.msg;
-	return *this;
+
+void kdb_break(qword id,qword errcode,qword* context){
+	
+	
+	
+	
+	
 }
 
-out_of_range::out_of_range(void) : exception("out of range"){}
+#endif
+
+
+
+extern "C"
+void dispatch_exception(qword id,qword errcode,qword* context){
+
+//special errcode indicates BugCheck call
+
+#ifdef _DEBUG
+	kdb_break(id,errcode,context);
+#endif
+	//TODO handle exceptions here
+
+}
+
+
+

@@ -40,7 +40,7 @@ inline size_t heap::align_size(BLOCK index){
 }
 
 heap::BLOCK heap::category(size_t req){
-	assert(req);
+	assertinv(0,req);
 	BLOCK res=nomem;
 
 	do{
@@ -60,8 +60,8 @@ void* heap::get(BLOCK index){
 	node* cur;
 	if (pool[index]){
 		cur=pool[index];
-		assert(!cur->prev);
-		assert(!(reinterpret_cast<size_t>(cur) & align_mask(index)));
+		assertinv(nullptr,cur->prev);
+		assert(0,reinterpret_cast<size_t>(cur) & align_mask(index));
 		pool[index]=cur->next;
 		if (pool[index])
 			pool[index]->prev=nullptr;
@@ -85,7 +85,7 @@ void* heap::get(BLOCK index){
 }
 
 void heap::put(void* base,BLOCK index){
-	assert(!(reinterpret_cast<size_t>(base) & align_mask(index)));
+	assert(0,reinterpret_cast<size_t>(base) & align_mask(index));
 	
 	node* cur=pool[index];
 	while(cur){
@@ -111,7 +111,7 @@ bool heap::expand(void* base,size_t len){
 	
 	//assume page alignment
 	
-	assert(!(reinterpret_cast<size_t>(base) & align_mask(15)));	//m1
+	assert(0,reinterpret_cast<size_t>(base) & align_mask(15));	//m1
 	
 	while(len>=align_size(0)){	//b32
 		BLOCK cur=category(len);
@@ -133,18 +133,19 @@ void* heap::allocate(size_t req){
 	BLOCK cur=category(req);
 	if (req & align_mask(cur))
 		cur++;
-	assert(cur<nomem);
+	assertless(cur,nomem);
 	return get(cur);
 	
 }
 
 void heap::release(void* base,size_t req){
-	assert(req <= align_size(15));	//m1
+	//assert(req <= align_size(15));	//m1
+	assertless(req,align_size(15)+1);
 	BLOCK cur=category(req);
 	if (req & align_mask(cur))
 		cur++;
-	assert(cur<nomem);
-	assert(!(reinterpret_cast<size_t>(base) & align_mask(cur)));
+	assertless(cur,nomem);
+	assert(0,reinterpret_cast<size_t>(base) & align_mask(cur));
 	put(base,cur);
 
 }

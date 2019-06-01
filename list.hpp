@@ -1,7 +1,6 @@
 #pragma once
 #include "types.hpp"
 #include "assert.hpp"
-#include "exception.hpp"
 #include "heap.hpp"
 #include "util.hpp"
 //#include "iterator.hpp"
@@ -90,25 +89,29 @@ namespace UOS{
 		T& front(void) {
 			if (head)
 				return head->payload;
-			throw out_of_range();
+			BugCheck(out_of_range,reinterpret_cast<qword>(this),0);
+			//throw out_of_range();
 		}
 		
 		const T& front(void) const{
 			if (head)
 				return head->payload;
-			throw out_of_range();
+			BugCheck(out_of_range,reinterpret_cast<qword>(this),0);
+			//throw out_of_range();
 		}
 		
 		T& back(void) {
 			if (tail)
 				return tail->payload;
-			throw out_of_range();
+			BugCheck(out_of_range,reinterpret_cast<qword>(this),0);
+			//throw out_of_range();
 		}
 		
 		const T& back(void) const{
 			if (tail)
 				return tail->payload;
-			throw out_of_range();
+			BugCheck(out_of_range,reinterpret_cast<qword>(this),0);
+			//throw out_of_range();
 		}
 		
 		void clear(void){
@@ -127,7 +130,7 @@ namespace UOS{
 		void push_front(const T& val){
 			head=new node{nullptr,head,val};
 			if (!tail){
-				assert(!count);
+				assertinv(0,count);
 				tail=head;
 			}
 			count++;
@@ -136,7 +139,7 @@ namespace UOS{
 		void push_back(const T& val){
 			tail=new node{tail,nullptr,val};
 			if (!head){
-				assert(!count);
+				assertinv(0,count);
 				head=tail;
 			}
 			count++;
@@ -150,7 +153,7 @@ namespace UOS{
 			delete cur;
 			count--;
 			if (!head){
-				assert(!count);
+				assertinv(0,count);
 				tail=head;
 			}
 		}
@@ -163,7 +166,7 @@ namespace UOS{
 			delete cur;
 			count--;
 			if (!tail){
-				assert(!count);
+				assertinv(0,count);
 				head=tail;
 			}
 		}

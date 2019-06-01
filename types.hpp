@@ -15,5 +15,13 @@ namespace UOS{
 		B second;
 	};
 
+	enum status{
+		success,
+		bad_assert,
+		null_ptr,
+		bad_alloc,
+		out_of_range
+
+	};
 
 }
