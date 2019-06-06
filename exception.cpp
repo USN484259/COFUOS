@@ -6,15 +6,15 @@ using namespace UOS;
 #ifdef _DEBUG
 
 void kdb_init(word port){
-	io_outb(port+1,0);
-	io_outb(port+3,0x80);
-	io_outb(port+0,2);
-	io_outb(port+1,0);
-	io_outb(port+3,0x03);
-	io_outb(port+2,0xC7);
-	io_outb(port+4,0x0B);	//?????
+	__outbyte(port+1,0);
+	__outbyte(port+3,0x80);
+	__outbyte(port+0,2);
+	__outbyte(port+1,0);
+	__outbyte(port+3,0x03);
+	__outbyte(port+2,0xC7);
+	__outbyte(port+4,0x0B);	//?????
 	
-	dbgbreak();
+	__debugbreak();
 	
 }
 

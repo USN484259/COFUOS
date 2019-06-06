@@ -4,27 +4,24 @@
 
 namespace UOS{
 
-	class APIC{
-		byte const* base;	//virtual base
-	
-		static const size_t ICR;
+	volatile class APIC{
+		//byte const* base;	//virtual base
+
 		
-		__declspec(noinline)
 		dword read(size_t);
 		
-		__declspec(noinline)
 		void write(size_t,dword);
 		
 		public:
-		APIC(byte*);
+		APIC(void);
 		//~APIC(void);
-		
-		
+		byte id(void);
+		void mp_break(void);
 		
 		
 	};
 
-
+	extern APIC* apic;
 
 
 }

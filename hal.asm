@@ -10,29 +10,7 @@ global buildIDT
 
 global memset
 global zeromemory
-global IF_get
-global IF_set
-global CR3_get
-global CR3_set
-global _invlpg
-global io_inb
-global io_inw
-global io_ind
-global io_outb
-global io_outw
-global io_outd
 
-global _rdmsr
-global _wrmsr
-
-global _invlpg
-
-
-global _cmpxchgb
-global _cmpxchgw
-global _cmpxchgd
-
-global dbgbreak
 
 global BugCheck
 
@@ -196,6 +174,7 @@ IDT_BASE equ 0x0400
 IDT_LIM equ 0x400	;64 entries
 
 
+;TODO	rcx as MP id
 buildIDT:
 push rsi
 push rdi
@@ -221,8 +200,6 @@ loop .exception
 mov rcx,12*2
 xor rax,rax
 rep stosq	;gap
-
-
 
 
 mov rax,(IDT_LIM-1) << 48
@@ -283,135 +260,6 @@ ret
 
 
 
-
-
-;IF_get return IF
-IF_get:
-
-pushf
-xor rax,rax
-pop rdx
-bt rdx,9	;IF
-setc al
-ret
-
-
-
-;IF_set rcx state
-;return oldstate
-IF_set:
-
-xor rax,rax
-pushf
-test rcx,rcx
-pop rdx
-jz .z
-;cmovnz rax,0x0200	;IF
-mov eax,0x0200
-.z:
-btr rdx,9	;IF
-setc cl
-
-or rdx,rax
-
-push rdx
-movzx rax,cl
-popf
-
-ret
-
-
-CR3_get:
-mov rax,cr3
-ret
-
-CR3_set:
-mov rax,cr3
-mov cr3,rcx
-ret
-
-
-io_inb:
-
-mov rdx,rcx
-in al,dx
-ret
-
-io_inw:
-
-mov rdx,rcx
-in ax,dx
-ret
-
-io_ind:
-
-mov rdx,rcx
-in eax,dx
-ret
-
-io_outb:
-mov rax,rdx
-mov rdx,rcx
-out dx,al
-ret
-
-io_outw:
-mov rax,rdx
-mov rdx,rcx
-out dx,ax
-ret
-
-io_outd:
-mov rax,rdx
-mov rdx,rcx
-out dx,eax
-ret
-
-
-_rdmsr:
-
-rdmsr
-
-shl rdx,32
-or rax,rdx
-ret
-
-_wrmsr:
-
-mov rax,rdx
-shr rdx,32
-wrmsr
-ret
-
-
-_invlpg:
-
-invlpg [rcx]
-add rcx,0x1000
-cmp rdx,rcx
-jae _invlpg
-ret
-
-
-_cmpxchgb:
-mov rax,rdx
-lock cmpxchg [rcx],r8b
-ret
-
-_cmpxchgw:
-mov rax,rdx
-lock cmpxchg [rcx],r8w
-ret
-
-_cmpxchgd:
-mov rax,rdx
-lock cmpxchg [rcx],r8d
-ret
-
-
-dbgbreak:
-int3
-ret
 
 ;BugCheck status,arg1,arg2
 BugCheck:

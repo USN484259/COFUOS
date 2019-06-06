@@ -26,15 +26,15 @@ namespace UOS{
 		dword FAT_data;
 		dword FAT_cluster;
 		
-		word MP_lock;
-		word MP_cnt;
-		dword AP_entry;
 		qword krnlbase;
-	
-	
+		dword AP_entry;
+		word MP_cnt;
+		word MP_lock;
+		//byte[] MP_id
 	
 	};
-
+	
+	extern SYSINFO* sysinfo;
 
 
 }

@@ -14,7 +14,7 @@ SYSINFO_BASE equ 0x0800
 PMMSCAN_BASE equ 0x1000
 
 
-ISR_STK equ 0x02000
+ISR_STK equ 0x03000
 
 PAGE_SIZE equ 0x1000
 SECTOR_SIZE equ 0x200
@@ -29,9 +29,10 @@ PDT0 equ 0x06000
 PT0	equ 0x07000
 
 PT_BASE equ 0x3000
-PT_LEN equ (0x8000-PT_BASE)
 
 PT_PMM equ 0x8000
+
+PT_LEN equ (0x9000-PT_BASE)
 
 
 PMMWMP_PBASE equ 0x100000
@@ -41,8 +42,8 @@ PMMWMP_PBASE equ 0x100000
 
 
 ;	000000		001000		R	TSS & GDT & IDT & sysinfo
-;	001000		002000		RW	ISR stack
-;	002000		003000		RX	loader		RW	video PT ?
+;	001000		002000		RW CD WT	MP sync area
+;	002000		003000		RWX	loader & ISR stack
 ;	003000		004000		RW	PL4T
 ;	004000		005000		RW	PDPT low
 ;	005000		006000		RW	PDPT high
@@ -126,11 +127,11 @@ struc sysinfo
 .FAT_cluster	resd 1
 
 .PE_filekrnl:
-.MP_lock		resw 1
-.MP_cnt			resw 1
-.AP_entry		resd 1
 .krnlbase		resq 1
-
+.AP_entry		resd 1
+.MP_cnt			resw 1
+.MP_lock		resw 1
+.MP_id:
 endstruc
 
 align 4
@@ -756,11 +757,17 @@ call map_page
 mov edi,PT0
 xor ebx,ebx
 mov edx,0x80000103
-mov cl,2
+inc ecx
 call map_page
 
+mov ebx,0x1000
+mov edx,0x8000011B	;CD WT
+inc ecx
+call map_page
+
+
 mov ebx,0x2000
-mov edx,0x101
+mov edx,0x103
 inc ecx
 call map_page
 
@@ -993,10 +1000,10 @@ HIGHADDR equ 0xFFFF_8000_0000_0000
 PMMWMP_VBASE equ HIGHADDR+0x00200000
 KRNL_VBASE equ HIGHADDR+0x02000000
 
-TMP_PT_VBASE equ HIGHADDR+0x9000
-CMN_BUF_VBASE equ HIGHADDR+0xA000
-PT_MAP_PT equ PT0+8*9
-BUF_MAP_PT equ PT0+8*0x0A
+TMP_PT_VBASE equ HIGHADDR+0x10000
+CMN_BUF_VBASE equ HIGHADDR+0x11000
+PT_MAP_PT equ PT0+8*0x10
+BUF_MAP_PT equ PT0+8*0x11
 
 KRNL_STK_GUARD equ HIGHADDR+0x1FF000
 KRNL_STK_TOP equ KRNL_STK_GUARD
@@ -1010,9 +1017,10 @@ KRNL_STK_TOP equ KRNL_STK_GUARD
 
 ;	virtual address of HIGHADDR
 ;	00000000	00009000	lowPMM
-;	00009000	0000A000	TMP_PT
-;	0000A000	?			CMN_BUF
-;	?			00200000	krnlstk
+;	00009000	00010000	MP_ISR
+;	00010000	00011000	TMP_PT
+;	00011000	?			CMN_BUF
+;	?			00200000	krnlstk for all MPs
 ;	00200000	?			PMMWMP
 ;	?			01000000	krnlheap ?
 ;	01000000	02000000	PDPTmap

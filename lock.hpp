@@ -3,17 +3,43 @@
 
 namespace UOS{
 
-	class IF_guard{
+	class interrupt_guard{
 		const qword state;
 	public:
-		IF_guard(void);
-		~IF_guard(void);
+		interrupt_guard(void);
+		~interrupt_guard(void);
 		
-		bool status(void) const;
+		bool lock_state(void) const;
 		
 	};
-
-
+	
+	
+	class mutex{
+		volatile dword m;
+		
+	public:
+		mutex(void);
+		void lock(void);
+		void unlock(void);
+		
+		bool lock_state(void) const;
+		
+		
+	};
+	
+	
+	template<typename L>
+	class lock_guard{
+		L& lck;
+	public:
+		lock_guard(L& l) : lck(l){
+			l.lock();
+		}
+		~lock_guard(void){
+			lck.unlock();
+		}
+		
+	};
 
 
 }

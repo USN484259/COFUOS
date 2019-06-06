@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include "lock.hpp"
 
 void* operator new(size_t);
 void* operator new(size_t,void*);
@@ -20,7 +21,7 @@ namespace UOS{
 		static const BLOCK bitoff,nomem;
 		
 		node* pool[16];
-		
+		mutex m;
 		
 	protected:
 	
@@ -44,7 +45,7 @@ namespace UOS{
 		
 	};
 	
-	
+	extern heap syspool;
 	
 	
 }

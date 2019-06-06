@@ -4,8 +4,6 @@
 
 using namespace UOS;
 
-extern heap syspool;
-
 
 void* operator new(size_t len){
 	return syspool.allocate(len);
@@ -109,6 +107,7 @@ bool heap::expand(void* base,size_t len){
 	else
 		return false;
 	
+	lock_guard<mutex> lck(m);
 	//assume page alignment
 	
 	assert(0,reinterpret_cast<size_t>(base) & align_mask(15));	//m1
@@ -130,6 +129,9 @@ bool heap::expand(void* base,size_t len){
 void* heap::allocate(size_t req){
 	if (req > align_size(15))	//m1
 		return nullptr;
+	
+	lock_guard<mutex> lck(m);
+		
 	BLOCK cur=category(req);
 	if (req & align_mask(cur))
 		cur++;
@@ -141,6 +143,9 @@ void* heap::allocate(size_t req){
 void heap::release(void* base,size_t req){
 	//assert(req <= align_size(15));	//m1
 	assertless(req,align_size(15)+1);
+	
+	lock_guard<mutex> lck(m);
+	
 	BLOCK cur=category(req);
 	if (req & align_mask(cur))
 		cur++;

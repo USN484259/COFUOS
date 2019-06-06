@@ -3,26 +3,45 @@
 #include "sysinfo.hpp"
 #include "util.hpp"
 #include "assert.hpp"
+#include "mp.hpp"
+#include "lock.hpp"
 
 using namespace UOS;
 
-extern SYSINFO* sysinfo;
+
+PM::type PM::operator| (const PM::type& a,const PM::type& b){
+	return (PM::type)((qword)a | b);
+}
 
 
-void* PM::allocate(void){
-	word* base=(word*)sysinfo->PMM_wmp_vbase;
+void* PM::allocate(type t){
+	volatile word* base=(word*)sysinfo->PMM_wmp_vbase;
 	size_t cnt=sysinfo->PMM_wmp_page*2048;
 	
+	word id=PS::id();
+	//TODO currently zero page not supported
 	while(cnt--){
 		word cur=*base;
 		if (cur & 0x8000){
-			if (cur==_cmpxchgw(base,cur,PS::id()))
-				return (void*)((qword)(base-(word*)sysinfo->PMM_wmp_vbase)*0x1000);
+			//if (cur==_cmpxchgw(base,cur,PS::id())){
+			if (cur == _InterlockedCompareExchange16(base,id,cur)){
+				void* ret=(void*)((qword)(base-(word*)sysinfo->PMM_wmp_vbase)*0x1000);
+				if (t & zero_page)
+					VM::window(ret).zero();
+				return ret;
+			}
 		}
 
 		base++;
 	}
-	return nullptr;
+	if (t & must_succeed)
+		;
+	else
+		return nullptr;
+	
+	//TODO xchg pages if possible
+	BugCheck(bad_alloc,0,(qword)t);
+
 }
 
 void PM::release(void* p){
@@ -30,49 +49,366 @@ void PM::release(void* p){
 	size_t off=(qword)p >> 12;
 	assertless (off,sysinfo->PMM_wmp_page*2048);
 	
-	word self=PS::id();
-	self=_cmpxchgw((word*)sysinfo->PMM_wmp_vbase+off,self,(word)0x8000);
-	assert(self,PS::id());
+	word id=PS::id();
+	
+	//self=_cmpxchgw((word*)sysinfo->PMM_wmp_vbase+off,self,(word)0x8000);
+	word tmp = _InterlockedCompareExchange16((word*)sysinfo->PMM_wmp_vbase+off,0x8000,id);
+	assert(id,tmp);
+}
+
+VM::VMG* VM::sys = (VM::VMG*)HIGHADDR(0x5000);
+
+VM::window::window(void* pm){
+	vbase=(byte*)sys->reserve(nullptr,1);
+	sys->map(vbase,pm,PAGE_WRITE | PAGE_NX);
+}
+
+VM::window::~window(void){
+	sys->release(vbase,1);
+}
+
+void VM::window::zero(void){
+	zeromemory(vbase,0x1000);
 }
 
 
-VMG::VMG(void) : p(1),w(1),u(1),wt(0),cd(0),a(0),bmp_l(0),l(0),bmp_m(0),pdt(0),bmp_h(0),xd(0) {
-	void* pm=PM::allocate();
-	if (!pm)	//TODO exhg page if possible
-		BugCheck(bad_alloc,reinterpret_cast<qword>(this),0);
-	pdt=(qword)pm >> 12;
+byte* VM::VMG::base(void){
+	return (byte*)(highaddr*HIGHADDR(0)+index*0x40000000);
+
+}
+
+qword* VM::VMG::table(void){
+	return (qword*)(base()+0x1000*(offset*0x10+1));
+	
+}
+
+byte* VM::VMG::bitmap(void){
+	return base()+0x1000*(offset*0x10+2);
+}
+
+void VM::VMG::lock(void){
+	volatile byte* lck=(volatile byte*)this + 7;
+	
+	while(true){
+		volatile byte expected=*lck & ~0x20;
+		
+		//if (expected == _cmpxchgb(lck,expected,expected | 0x20) )
+		if (expected == _InterlockedCompareExchange8(lck,expected | 0x20,expected))
+			break;
+	
+	}
+	assert(1,sync);
+	
+}
+
+void VM::VMG::unlock(void){
+	assert(1,sync);
+	
+	volatile byte* lck=(volatile byte*)this + 7;
+	
+	byte expected= *lck | 0x20;
+	//expected=_cmpxchgb(lck,expected,expected & ~0x20);
+	expected = _InterlockedCompareExchange8(lck,expected & ~0x20,expected);
+	
+	assertinv(0,expected & 0x20);
+
+}
+
+
+VM::VMG::VMG(bool k,word id) : present((MP_assert(true),0)),writable(1),user(1),writethrough(0),cachedisable(0),accessed(0),highaddr(k),largepage(0),offset(0),pmpdt(0),index((assertless(id,512),id)),sync(0),xcutedisable(0) {
+	using namespace PM;
+	void* d=allocate(must_succeed);
+	void* t=allocate(must_succeed);
 	{
-		VM::window(pm);
+		VM::window w(d);
+		w.zero();
+		w.at<qword>(0) = (qword)t | 0x03;
 		
+	}
+	{
 		
+		VM::window w(t);
+		w.zero();
+		w.at<qword>(1) = (qword)d | PAGE_PRESENT | PAGE_WRITE | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);
 		
+		void* p=allocate(must_succeed);
+		w.at<qword>(2) = (qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);
+		{
+			VM::window wp(p);
+			wp.zero();
+			wp.at<word>(0) = (word)0x3FF;
+		}
+		
+		for (size_t i=3;i<10;i++){
+			p = allocate(zero_page | must_succeed);
+			w.at<qword>(i) = (qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);
+		}
+		
+	}
+	pmpdt=(qword)d >> 12;
+	present=1;
+}
+
+
+
+bool VM::VMG::bitscan(size_t& req,size_t bitcount){
+	assert(1,sync);
+	byte* bmp=bitmap();
+	size_t res = req ? req : 0;
+	size_t cnt = bitcount;
+	size_t i = res/8;
+	assertinv(0,res%8);
+	for (;i<0x8000;i++){
+		if (cnt<8){
+			byte mask=BITMASK(cnt);
+			
+			if (bmp[i] & mask)
+				;
+			else{
+				cnt=0;
+				break;
+			}
+			
+			if (bitcount==cnt){
+				for (size_t j=1;j<cnt;j++){
+					mask<<=1;
+					res++;
+					if (bmp[i] & mask)
+						;
+					else{
+						cnt=0;
+						break;
+					}
+				}
+				if (0==cnt)
+					break;
+				
+			}
+		}
+		else{
+			if (0==bmp[i]){
+				if (cnt-=8)
+					continue;
+				else
+					break;
+			}
+		}
+		if (req)
+			return false;
+		
+		cnt=bitcount;
+		res=(i+1)*8;
+	}
+	if (cnt)
+		return false;
+	
+	for (i=0;i<bitcount;i++){
+		bmp[i+res/8]=0xFF;
+	}
+	
+	bmp[i+res/8] |= BITMASK(bitcount%8)<<(res%8);
+	
+	req=res;
+	
+	return true;
+	
+}
+
+void VM::VMG::bitclear(size_t off,size_t bitcount){
+	assert(1,sync);
+	assertless(off+bitcount , 0x8000*8);
+	
+	byte* bmp=bitmap();
+	
+	if (off & 7){	//misaligned heading
+		byte mask=~BITMASK(off & 7);
+		
+		assert(mask,bmp[off/8] & mask);
+		
+		bmp[off/8] &= ~mask;
+		
+	}
+	assert(0,off & 7);
+	while(bitcount>=8){
+		assert(0xFF,bmp[off/8]);
+		
+		bmp[off/8]=0;
+		off+=8;
+		bitcount-=8;
+		
+	}
+	
+	
+	if (bitcount){	//misaligned tailing
+		byte mask=BITMASK(bitcount);
+		
+		assert(mask,bmp[off/8] & mask);
+		
+		bmp[off/8] &= ~mask;
+		
+	}
+	
+	
+}
+
+
+qword VM::VMG::PTE_set(volatile qword* dst,void* pm,qword attrib){
+	assert(1,sync);
+	MP_assert(true);
+	
+	assert(0,attrib & ~0x800000000000019F);
+	assert(0,(qword)pm & 0xFFF0000000000FFF);
+	
+	//return _xchgq(dst,(qword)pm | attrib);
+	return _InterlockedExchange64(dst,(qword)pm | attrib);
+}
+
+
+
+void* VM::VMG::reserve(void* fixbase,size_t pagecount){
+	assertinv(0,pagecount);
+	//assert(0,attrib & ~0x80000000000011E);
+	page_assert(fixbase);
+	
+	size_t off=fixbase ? ((qword)fixbase >> 12) & BITMASK(18) : 0;
+	
+	lock_guard<VMG> lck(*this);
+	
+	if (!bitscan(off,pagecount))
+		return nullptr;
+	
+	assertless(off+pagecount,8*0x8000);
+	
+	size_t cur=off;
+	volatile qword* pdt=table();
+	while(pagecount){
+		if (pdt[cur/0x200] & 1)
+			;
+		else{	//new PT
+			assert(0,pdt[cur/0x200]);
+			using namespace PM;
+			void* pm=allocate(zero_page | must_succeed);
+			PTE_set(pdt+(cur/0x200),pm,PAGE_PRESENT | PAGE_WRITE | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0) );
+			
+		}
+		
+		assertinv(0,pdt[cur/200] & 0x000FFFFFFFFFF000);
+		window w((void*)(pdt[cur/200] & 0x000FFFFFFFFFF000));
+		
+		size_t border=(cur+0x200) & ~0x1FF;
+
+		while (pagecount && cur<border){
+			qword oldval = PTE_set(&w.at<qword>(cur % 0x200),nullptr,PAGE_WRITE);
+			
+			assert(0,oldval);
+			
+			pagecount--,cur++;
+		}
+		
+	}
+	
+	
+	return (void*)(base()+0x1000*off);
+}
+
+void VM::VMG::release(void* base,size_t pagecount){
+	assertinv(0,pagecount);
+	page_assert(base);
+	assertinv(nullptr,base);
+	
+	lock_guard<VMG> lck(*this);
+	
+	size_t off=((qword)base >> 12) & BITMASK(18);
+
+	bitclear(off,pagecount);
+	
+	volatile qword* pdt=table();
+	while(pagecount){
+		assertinv(0,pdt[off/200] & 1);
+		assertinv(0,pdt[off/200] & 0x000FFFFFFFFFF000);
+		
+		window w((void*)(pdt[off/200] & 0x000FFFFFFFFFF000));
+		
+		size_t border = (off+0x200) & ~0x1FF;
+		
+		while(pagecount && off < border){
+			qword cur=_InterlockedExchange64(&w.at<qword>(off % 0x200),0);
+			assertinv(0,cur & 1);
+			
+			if (cur & 0x4000000000000000){	//shall release PM
+				PM::release((void*)(cur & 0x000FFFFFFFFFF000));
+			}
+			
+			
+			pagecount--,off++;
+		}
 		
 	}
 	
 }
 
-
-word VMG::bmpraw(void) const{
-	return bmp_l | (bmp_m<<1) | (bmp_h << 5);
-}
-
-word VMG::bmpraw(word val){
-	word old = bmp_l | (bmp_m<<1) | (bmp_h << 5);
-	bmp_l=val & 1;
-	bmp_m=(val>>1) & 0x0F;
-	bmp_h=val>>5;
-	return old;
-}
-
-qword VMG::bmp(void) const{
-	return (qword)bmpraw() << (12+2);
+void VM::VMG::commit(void* base,size_t pagecount,qword attrib){
+	assertinv(0,pagecount);
+	page_assert(base);
+	assertinv(nullptr,base);
 	
+	//assert(0,attrib & 0x800000000000011F);
+	attrib = (attrib & 0x800000000000011F) | PAGE_PRESENT | PAGE_COMMIT;
+	if (highaddr)
+		attrib &= ~PAGE_USER;
+	
+	lock_guard<VMG> lck(*this);
+	
+	size_t off=((qword)base >> 12) & BITMASK(18);
+
+	volatile qword* pdt=table();
+	while(pagecount){
+		assertinv(0,pdt[off/200] & 1);
+		assertinv(0,pdt[off/200] & 0x000FFFFFFFFFF000);
+		
+		window w((void*)(pdt[off/200] & 0x000FFFFFFFFFF000));
+		
+		size_t border = (off+0x200) & ~0x1FF;
+		
+		while(pagecount && off < border){
+			qword cur = w.at<qword>(off % 0x200);
+			
+			assertinv(0,cur);
+			assert(0,cur & 1);
+			
+			using namespace PM;
+			
+			PTE_set(&w.at<qword>(off % 0x200),allocate(must_succeed),attrib);
+			
+			pagecount--,off++;
+		}
+	}
 }
 
-qword VMG::bmp(qword val){
-	assert(0,val & 0x3FFF);
-	return (qword)bmpraw(val>>(12+2)) <<(12+2);
+void VM::VMG::map(void* vbase,void* pm,qword attrib){
+	page_assert(vbase);
+	page_assert(pm);
+	assertinv(nullptr,vbase);
+	assertinv(nullptr,pm);
 	
-	
-}
+	attrib = (attrib & 0x800000000000011F) | 1;
+	if (highaddr)
+		attrib &= ~PAGE_USER;
 
+	lock_guard<VMG> lck(*this);
+	size_t off=((qword)vbase >> 12) & BITMASK(18);
+	volatile qword* pdt=table();
+	
+	assertinv(0,pdt[off/200] & 1);
+	assertinv(0,pdt[off/200] & 0x000FFFFFFFFFF000);
+	
+	window w((void*)(pdt[off/200] & 0x000FFFFFFFFFF000));
+	
+	
+	qword cur = w.at<qword>(off % 0x200);
+	
+	assertinv(0,cur);
+	assert(0,cur & 1);
+	
+	PTE_set(&w.at<qword>(off % 0x200),pm,attrib);
+}
