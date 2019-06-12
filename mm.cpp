@@ -13,6 +13,12 @@ PM::type PM::operator| (const PM::type& a,const PM::type& b){
 	return (PM::type)((qword)a | b);
 }
 
+bool PM::spy(void* dst,qword base,size_t len){
+	//TODO
+	
+	return false;
+	
+}
 
 void* PM::allocate(type t){
 	volatile word* base=(word*)sysinfo->PMM_wmp_vbase;
@@ -57,6 +63,15 @@ void PM::release(void* p){
 }
 
 VM::VMG* VM::sys = (VM::VMG*)HIGHADDR(0x5000);
+
+
+bool VM::spy(void* dst,qword base,size_t len){
+	//TODO
+	
+	return false;
+	
+}
+
 
 VM::window::window(void* pm){
 	vbase=(byte*)sys->reserve(nullptr,1);

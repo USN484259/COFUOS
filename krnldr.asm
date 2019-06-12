@@ -9,7 +9,7 @@ IDT_BASE equ 0x0400
 IDT_LIM equ 0x400	;64 entries
 
 SYSINFO_BASE equ 0x0800
-
+MPCTRL_BASE equ 0x1000
 
 PMMSCAN_BASE equ 0x1000
 
@@ -59,50 +59,6 @@ PMMWMP_PBASE equ 0x100000
 
 
 
-
-
-section code vstart=0x2000
-
-[bits 16]
-
-
-
-push cs
-pop ds
-cld
-
-xor cx,cx
-mov bx,0x7C00
-mov es,cx
-
-
-;	ds	->	cur code segment
-;	es	->	flat address
-cmp WORD [es:bx+0x200-2],0xAA55
-jz near BSP_entry
-
-xor dx,dx
-mov bx,SYSINFO_BASE+sysinfo.MP_lock
-inc dx
-
-AP_entry:
-;acquire lock
-
-xor ax,ax
-pause
-lock cmpxchg [es:bx],dx
-jnz AP_entry
-
-inc WORD [es:bx+2]	;MP_cnt
-
-
-mov ss,cx
-mov sp,ISR_STK
-
-jmp AP_PE
-
-
-
 struc sysinfo
 .sig			resq 1
 .PMM_avl_top	resq 1
@@ -130,9 +86,71 @@ struc sysinfo
 .krnlbase		resq 1
 .AP_entry		resd 1
 .MP_cnt			resw 1
-.MP_lock		resw 1
+				resw 1
 .MP_id:
 endstruc
+
+
+struc mpctrl
+.guard		resw 1
+.owner		resw 1
+.command	resw 1
+.count		resw 1
+endstruc
+
+
+
+
+section code vstart=0x2000
+
+[bits 16]
+
+
+
+push cs
+pop ds
+cld
+
+xor cx,cx
+mov bx,0x7C00
+mov es,cx
+
+
+;	ds	->	cur code segment
+;	es	->	flat address
+cmp WORD [es:bx+0x200-2],0xAA55
+jz near BSP_entry
+
+xor dx,dx
+mov bx,MPCTRL_BASE+mpctrl.guard
+inc dx
+
+AP_entry:
+;acquire lock
+
+xor ax,ax
+pause
+lock cmpxchg [es:bx],dx
+jnz AP_entry
+
+;inc WORD [es:bx+2]	;MP_cnt
+
+mov ss,cx
+mov sp,ISR_STK
+
+mov di,SYSINFO_BASE+sysinfo.MP_cnt
+
+cmp WORD [es:di],8
+jb near AP_PE	;currently support less than 8 processors
+
+xor ax,ax
+lock mov [es:bx],ax
+
+cli
+.reset:
+hlt
+jmp .reset
+
 
 align 4
 
@@ -960,7 +978,8 @@ jnc abort
 
 
 ;load GDTR and jmp to 64-bit mode
-xor eax,eax
+;xor eax,eax
+mov eax,0xFFFF8000
 mov edx,GDT_BASE
 mov ecx,(GDT_LIM-1)<<16
 push eax
@@ -1081,9 +1100,6 @@ mov rdx,TR_selector
 ltr [rdx]
 
 
-
-
-
 ;unmap lowaddr
 ;mov rdi,HIGHADDR+PDPT0
 ;xor rax,rax
@@ -1118,11 +1134,15 @@ rdmsr
 bt eax,8	;BSP
 jc .BSP
 
+
+
+
 mov ecx,[r12+sysinfo.AP_entry]
 mov rdx,[r12+sysinfo.krnlbase]
 mov rbp,rsp
 add rdx,rcx
 sub rsp,0x20
+movzx rcx,WORD [r12+sysinfo.MP_cnt]
 call rdx
 
 jmp BugCheck

@@ -5,6 +5,8 @@
 
 namespace UOS{
 	volatile class MP{
+		word guard;
+		word owner;
 		word command;
 		word count;
 		/*
@@ -22,7 +24,8 @@ namespace UOS{
 		void lock(void);
 		void unlock(void);
 		bool lock_state(void) const;
-		void reply(void);
+		void sync(word,void* = nullptr,size_t = 0);
+		void reply(word);
 		
 	};
 	

@@ -2,7 +2,6 @@
 #include "assert.hpp"
 using namespace UOS;
 
-extern "C" qword IF_set(qword);
 
 
 interrupt_guard::interrupt_guard(void) : state(__readeflags() & 0x0200){
@@ -16,10 +15,6 @@ interrupt_guard::~interrupt_guard(void){
 		_enable();
 }
 
-bool interrupt_guard::lock_state(void) const{
-	__assume(0==(state & ~0x0200));
-	return state?true:false;
-}
 
 mutex::mutex(void) : m(0){}
 

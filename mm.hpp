@@ -9,6 +9,9 @@ namespace UOS{
 		
 		type operator| (const type&,const type&);
 		
+		
+		bool spy(void* dst,qword base,size_t len);
+		
 		void* allocate(type = (type)0);
 		void release(void*);
 	}
@@ -17,7 +20,7 @@ namespace UOS{
 	namespace VM{
 		
 		//enum attribute : qword {page_write=0x02,page_user=0x04,page_writethrough=0x08,page_cachedisable=0x10,page_global=0x100,page_noexecute=0x8000000000000000};
-
+		bool spy(void* dst,qword base,size_t len);
 		
 		volatile class VMG{
 			qword present:1;

@@ -9,7 +9,6 @@ namespace UOS{
 		interrupt_guard(void);
 		~interrupt_guard(void);
 		
-		bool lock_state(void) const;
 		
 	};
 	

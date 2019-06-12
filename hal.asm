@@ -10,7 +10,11 @@ global buildIDT
 
 global memset
 global zeromemory
+global memcpy
 
+global serial_peek
+global serial_get
+global serial_put
 
 global BugCheck
 
@@ -118,6 +122,10 @@ align 16
 
 exception_entry:
 
+;SS
+;rsp
+;rflags
+;CS
 ;rip
 ;errcode
 ;exp#
@@ -257,8 +265,71 @@ pop rdi
 mov rax,r9
 ret
 
+;void* memcpy(void*,const void*,size_t);
+memcpy:
+
+push rdi
+push rsi
+
+mov rdi,rcx
+mov rsi,rdx
+mov rcx,r8
+mov rax,rdi
+shr rcx,3
+rep movsq
+
+and r8b,7
+movzx rcx,r8b
+jnz .misaligned
+
+pop rsi
+pop rdi
+ret
+
+.misaligned:
+
+rep movsb
+pop rsi
+pop rdi
+ret
 
 
+;byte serial_peek(word);
+serial_peek:
+mov dx,cx
+add dx,5
+in al,dx
+
+and al,1
+ret
+
+;byte serial_get(word);
+serial_get:
+pause
+call serial_peek
+test al,al
+jz serial_get
+
+mov dx,cx
+in al,dx
+ret
+
+;void serial_put(word,byte);
+serial_put:
+mov r8,rdx
+mov dx,cx
+add dx,5
+
+.wait:
+pause
+in al,dx
+test al,0x20
+jz .wait
+
+mov dx,cx
+mov rax,r8
+out dx,al
+ret
 
 
 ;BugCheck status,arg1,arg2

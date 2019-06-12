@@ -21,9 +21,15 @@ extern "C"{
 	
 	void* memset(void*,int,size_t);
 	void* zeromemory(void*,size_t);
+	void* memcpy(void*,const void*,size_t);
 
 	void buildIDT(qword);
 	
+	
+	byte serial_get(word);
+	void serial_put(word,byte);
+	byte serial_peek(word);
+
 	__declspec(noreturn)
 	int BugCheck(UOS::status,qword,qword);
 
@@ -38,6 +44,16 @@ extern "C"{
 	void __outword(word,word);
 	void __outdword(word,dword);
 	
+	void __stosb(byte*, byte, size_t);
+	void __stosw(word*, word, size_t);
+	void __stosd(dword*, dword, size_t);
+	void __stosq(qword*, qword, size_t);
+
+	void __movsb(byte*, const byte*, size_t);
+	void __movsw(word*, const word*, size_t);
+	void __movsd(dword*, const dword*, size_t);
+	void __movsq(qword*, const qword*, size_t);
+
 	qword _readcr3(void);
 	void _writecr3(qword);
 	
@@ -73,41 +89,3 @@ extern "C"{
 #pragma warning(default:4391)
 	
 }
-/*
-extern "C"{
-	
-	void* memset(void*,int,size_t);
-	void* zeromemory(void*,size_t);
-	
-	void buildIDT(void);
-	qword IF_get(void);
-	byte io_inb(word port);
-	word io_inw(word port);
-	dword io_ind(word port);
-	void io_outb(word port,byte val);
-	void io_outw(word port,word val);
-	void io_outd(word port,dword val);
-	
-	qword CR3_get(void);
-	qword CR3_set(qword);
-	
-	qword _rdmsr(dword);
-	qword _wrmsr(dword,qword);
-	
-	#pragma message("invlpg in ISR via IPI")
-	void _invlpg(qword,qword);
-	
-	byte _cmpxchgb(volatile byte*,byte,byte);
-	word _cmpxchgw(volatile word*,word,word);
-	dword _cmpxchgd(volatile dword*,dword,dword);
-	
-	dword _xchgd(dword* dst,dword val);
-	qword _xchgq(qword* dst,qword val);
-	
-	void dbgbreak(void);
-	
-	__declspec(noreturn)
-	int BugCheck(UOS::status,qword,qword);
-
-}
-*/

@@ -11,7 +11,7 @@
 using namespace UOS;
 
 __declspec(noreturn)
-void AP_entry(void);
+void AP_entry(word);
 
 
 //qword apic_vbase=0xFFFF800000010000;
@@ -48,7 +48,6 @@ void krnlentry(void* module_base){
 	sysinfo->krnlbase=(qword)module_base;
 	sysinfo->AP_entry=(qword)AP_entry-(qword)module_base;
 	sysinfo->MP_cnt=1;
-	sysinfo->MP_lock=0;
 	
 	*(byte*)(sysinfo+1)=apic->id();
 
@@ -56,14 +55,18 @@ void krnlentry(void* module_base){
 }
 
 __declspec(noreturn)
-void AP_entry(void){
+void AP_entry(word pid){
 	__assume(sysinfo==(SYSINFO*)HIGHADDR(0x0800));
 	__assume(mp==(MP*)HIGHADDR(0x1000));
 	__assume(apic==(APIC*)HIGHADDR(0xFEE00000));
-
+	
+	
+	buildIDT(pid);
 	apic=new((byte*)HIGHADDR(0xFEE00000)) APIC;
 	
-	
+	*((byte*)(sysinfo+1)+pid) = apic->id();
+	assert(pid,sysinfo->MP_cnt);
+	sysinfo->MP_cnt++;
 	
 	
 }

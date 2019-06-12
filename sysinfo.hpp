@@ -28,8 +28,8 @@ namespace UOS{
 		
 		qword krnlbase;
 		dword AP_entry;
-		word MP_cnt;
-		word MP_lock;
+		dword MP_cnt;
+
 		//byte[] MP_id
 	
 	};
