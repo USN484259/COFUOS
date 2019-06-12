@@ -2,18 +2,17 @@
 #include <exception>
 #include <string>
 #include <mutex>
-
+//#include "event.h"
+#include "..\..\types.hpp"
 #include "Windows.h"
 
 class Pipe {
 	HANDLE hPipe;
 	DWORD avl;
 	std::mutex m;
-	static const DWORD interval;
-	class bad_packet : public std::exception {};
-
+	//Event w;
 	byte get(void);
-	void put(byte);
+	//void put(byte);
 	void wait(void);
 	bool peek(void);
 
@@ -26,5 +25,5 @@ public:
 
 	void read(std::string&);
 	void write(const std::string&);
-
+	//void wake(void);
 };

@@ -1,16 +1,15 @@
 #pragma once
-#include "..\..\types.hpp"
 #include <string>
 #include "windows.h"
 #include "dbghelp.h"
 #pragma comment(lib,"Dbghelp.lib")
 
+#include "..\..\types.hpp"
+
 class Symbol {
 	static const HANDLE id;
-	DWORD64 base;
+	qword base;
 public:
-
-
 
 	Symbol(const char*);
 	~Symbol(void);

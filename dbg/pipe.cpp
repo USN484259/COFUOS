@@ -2,8 +2,7 @@
 #include <stdexcept>
 #include <sstream>
 using namespace std;
-
-const DWORD Pipe::interval = 5000;
+using namespace UOS;
 
 
 Pipe::Pipe(const char* name) : avl(0),hPipe(CreateFile(name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)) {
@@ -17,14 +16,10 @@ Pipe::~Pipe(void) {
 }
 
 byte Pipe::get(void) {
-	DWORD cnt = interval / 100;
 	while (!peek()) {
-		if (cnt--)
 			Sleep(100);
-		else
-			throw bad_packet();
 	}
-
+	DWORD cnt;
 	byte buf;
 	if (!ReadFile(hPipe, &buf, 1, &cnt, NULL) || cnt != 1)
 		throw runtime_error("ReadFile");
@@ -35,16 +30,6 @@ byte Pipe::get(void) {
 
 }
 
-void Pipe::put(byte c) {
-	DWORD size;
-	if (!WriteFile(hPipe, &c, 1, &size, NULL) || size != 1)
-		throw runtime_error("WriteFile");
-}
-
-void Pipe::wait(void) {
-	while (!peek())
-		Sleep(500);
-}
 
 bool Pipe::peek(void) {
 	if (!avl) {
@@ -55,58 +40,53 @@ bool Pipe::peek(void) {
 	return avl ? true : false;
 }
 
+
+void Pipe::wait(void) {
+	while (!peek())
+		this_thread::yield();
+}
+
+
 void Pipe::read(string& buf) {
-	wait();
-	lock_guard<mutex> lck(m);
 	while (true) {
-		try {
-			while (get() != '$');
-			buf.clear();
-			BYTE checksum = 0;
-			while (true) {
-				byte c = get();
-				while (c == '#') {
-					byte t = get();
-					if (!peek()) {
-						if (t == checksum) {
-							put('+');
-							return;
-						}
-						else
-							throw bad_packet();
-					}
-					checksum += c;
-					buf += (char)c;
-					c = t;
-				}
-				checksum += c;
-				buf += (char)c;
-			}
-		}
-		catch (bad_packet&) {
-			put('-');
-		}
 		wait();
+
+		while (get() != '$');
+		byte chk_req = get();
+		byte chk_rel = '$';
+		word len = get();
+		chk_rel += (byte)len;
+		byte cur = get();
+		chk_rel += cur;
+		if (cur >= 4)	//should less than 1KB
+			continue;
+		len |= (word)cur << 8;
+		buf.clear();
+		while (len--) {
+			cur = get();
+			chk_rel += cur;
+			buf += cur;
+		}
+		if (chk_rel == chk_req)
+			return;
 
 	}
 }
 
 void Pipe::write(const string& sor) {
-	string str("$");
-	byte checksum = 0;
+	string str("$\0\0\0",4);
+	byte checksum = '$';
 	for (auto it = sor.cbegin(); it != sor.cend(); ++it) {
 		str += *it;
 		checksum += *it;
 	}
-	str += '#';
-	str += (char)checksum;
-	lock_guard<mutex> lck(m);
-	do {
-		DWORD len;
-		if (!WriteFile(hPipe, str.c_str(), str.size(), &len, NULL) || len != str.size())
-			throw runtime_error("WriteFile");
-		wait();
-	} while (get() != '+');
+	checksum += (str.at(2) = (byte)sor.size());
+	checksum += (str.at(3) = (byte)(sor.size() >> 8));
+	str.at(1) = checksum;
 
+	DWORD len;
+	lock_guard<mutex> lck(m);
+	if (!WriteFile(hPipe, str.c_str(), str.size(), &len, NULL) || len != str.size())
+		throw runtime_error("WriteFile");
 }
 
