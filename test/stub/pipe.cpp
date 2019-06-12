@@ -61,7 +61,7 @@ bool Pipe::peek(void) {
 size_t Pipe::read(void* dst, size_t lim) {
 
 	while (!peek())
-		Sleep(500);
+		Sleep(50);
 
 	DWORD len;
 	if (!ReadFile(hPipe, dst, lim, &len, NULL))

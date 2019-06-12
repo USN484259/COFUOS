@@ -2,9 +2,13 @@
 #include <string>
 #include <stdexcept>
 #include <sstream>
+#include <ctime>
+#include <cmath>
 #include "pipe.h"
 #include "..\..\sysinfo.hpp"
 #include "..\..\context.hpp"
+#include "..\..\mm.hpp"
+
 
 using namespace std;
 using namespace UOS;
@@ -25,7 +29,10 @@ int main(int argc,char** argv) {
 		pipe = new Pipe(argv[1]);
 		UOS::CONTEXT context = { 0 };
 
+		srand(time(NULL));
+
 		context.rip = 0xFFFF800002002000;
+		context.rsp = 0xFFFF800001FFE000;
 
 		while (true) {
 			dispatch_exception(3, 0, &context);
@@ -53,4 +60,25 @@ void serial_put(word, byte val) {
 extern "C"
 byte serial_peek(word port) {
 	return pipe->peek() ? 1 : 0;
+}
+
+void gen(byte* dst, size_t len) {
+	while (len--) {
+		*dst++ = rand();
+	}
+}
+
+
+bool VM::spy(void* dst, qword base, size_t len) {
+	if (base < 0xFFFF800000000000)
+		return false;
+	gen((byte*)dst, len);
+	return true;
+}
+
+bool PM::spy(void* dst, qword base, size_t len) {
+	if (base > 0x4000000)
+		return false;
+	gen((byte*)dst, len);
+	return true;
 }
