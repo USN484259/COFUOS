@@ -43,6 +43,7 @@ void Debugger::reg_dump(const UOS::CONTEXT& p) {
 }
 
 
+
 void Debugger::packet_dump(const string& str) {
 	unsigned cnt = 0;
 	for (auto it = str.cbegin(); it != str.cend(); ++it, ++cnt) {
@@ -86,103 +87,161 @@ void Debugger::w::fin(void) {
 }
 
 
+bool Debugger::resolve(qword& res, const string& str) {
+	if (str.at(0) == '0' && str.at(1) == 'x') {
+		res = strtoull(str.c_str(), nullptr, 0);
+		return true;
+	}
+	res = symbol.resolve(str);
+	return res ? true : false;
+}
+
 
 void Debugger::pump(void) {
 	string str;
 	while (init == false)
 		this_thread::yield();
+	try {
+		while (!quit) {
+			pipe.read(str);
 
-	while (!quit) {
-		pipe.read(str);
-
-		istringstream ss(str);
-		ss.exceptions(ios::badbit | ios::failbit | ios::eofbit);
-		try {
-			switch (ss.get()) {
-			case 'A':	//address
-				ss.read((char*)&cur_addr, sizeof(qword));
-				cout << "at 0x" << hex << cur_addr;
-				if (symbol.resolve(cur_addr, str))
-					cout << '\t' << str;
-				cout << endl;
-				control.fin();
-				break;
-			case 'C':	//comfirm
-				control.fin();
-				continue;
-			case 'B':	//breakpoint
-			{
-				static const char* breakname[] = { "DE","DB","NMI","BP","OF","BR","UD","NM","DF","??","TS","NP","SS","GP","PF","??","MF","AC","MC","XM" };
-
-				byte type = ss.get();
-				cout << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type << endl;
-
-				ui_break.notify();
-				continue;
-				//control transfer
-				//ui_lock.notify_one();
-				//break;
-			}
-			case 'P':	//print
-				cout << ss.rdbuf() << endl;
-				continue;
-			case 'T':	//stack
-			{
-				byte count = ss.get();
-				while (count--) {
-					qword addr;
-					ss.read((char*)&addr, sizeof(qword));
-					cout << hex << addr;
-					if (symbol.resolve(addr, str))
+			istringstream ss(str);
+			ss.exceptions(ios::badbit | ios::failbit | ios::eofbit);
+			try {
+				switch (ss.get()) {
+				case 'A':	//address
+					ss.read((char*)&cur_addr, sizeof(qword));
+					cout << "at 0x" << hex << cur_addr;
+					if (symbol.resolve(cur_addr, str))
 						cout << '\t' << str;
 					cout << endl;
-				}
-
-				break;
-			}
-			case 'M':	//memory
-			{
-				qword base;
-				word count;
-				ss.read((char*)&base, sizeof(qword));
-				ss.read((char*)&count, sizeof(word));
-				while (count--) {
-					if (base & 0x0F)
-						;
-					else
-						cout << endl << hex << base << '\t';
-
-					byte c = ss.get();
-					cout << hexchar[(c >> 4)] << hexchar[(c & 0x0F)] << ' ';
-					base++;
-				}
-				cout << endl;
-				break;
-			}
-			case 'I':	//info
-				switch (ss.get()) {
-				case 'R':	//reg
+					control.fin();
+					break;
+				case 'C':	//comfirm
+					control.fin();
+					continue;
+				case 'B':	//breakpoint
 				{
-					UOS::CONTEXT reg;
-					ss.read((char*)&reg, sizeof(UOS::CONTEXT));
-					reg_dump(reg);
+					static const char* breakname[] = { "DE","DB","NMI","BP","OF","BR","UD","NM","DF","??","TS","NP","SS","GP","PF","??","MF","AC","MC","XM" };
+
+					byte type = ss.get();
+					cout << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type << endl;
+
+					ui_break.notify();
+					continue;
+					//control transfer
+					//ui_lock.notify_one();
+					//break;
+				}
+				case 'P':	//print
+					cout << ss.rdbuf() << endl;
+					continue;
+				case 'T':	//stack
+				{
+					byte count = ss.get();
+					while (count--) {
+						qword addr;
+						ss.read((char*)&addr, sizeof(qword));
+						cout << hex << addr;
+						if (symbol.resolve(addr, str))
+							cout << '\t' << str;
+						cout << endl;
+					}
+
 					break;
 				}
+				case 'M':	//memory
+				{
+					qword base;
+					word count;
+					ss.read((char*)&base, sizeof(qword));
+					ss.read((char*)&count, sizeof(word));
+					if (count < 16) {
+						cout << hex << base << '\t';
+						while (count--) {
+							byte c = ss.get();
+							cout << hexchar[(c >> 4)] << hexchar[(c & 0x0F)] << ' ';
+						}
+						cout << endl;
+					}
+					else {
+						if (base & 0x0F) {
+							cout << hex << (base & ~0x0F) << '\t';
+							str.assign(3 * (base & 0x0F), ' ');
+							cout << str;
+						}
+						while (count--) {
+							if (base & 0x0F)
+								;
+							else
+								cout << endl << hex << base << '\t';
 
-
-
-
+							byte c = ss.get();
+							cout << hexchar[(c >> 4)] << hexchar[(c & 0x0F)] << ' ';
+							base++;
+						}
+						cout << endl;
+					}
+					break;
 				}
-				break;
+				case 'I':	//info
+					switch (ss.get()) {
+					case 'R':	//reg
+					{
+						UOS::CONTEXT reg;
+						ss.read((char*)&reg, sizeof(UOS::CONTEXT));
+						reg_dump(reg);
+						break;
+					}
+					case 'D':	//DR
+					{
+						DR_STATE dr;
+
+						ss.read((char*)&dr, sizeof(DR_STATE));
+						/*
+						cout << "last bp state:\t";
+						if (DR_state.dr6 & 1)
+							cout << "B0\t";
+						if (DR_state.dr6 & 2)
+							cout << "B1\t";
+						if (DR_state.dr6 & 4)
+							cout << "B2\t";
+						if (DR_state.dr6 & 8)
+							cout << "B3\t";
+						if (DR_state.dr6 & 0xF000)
+							cout << "B?\t";
+						cout << endl;
+						*/
+						qword mask = 0x03;
+
+						for (int i = 0; i <= 3; i++, mask <<= 2) {
+							if (dr.dr7 & mask) {
+								cout << i << "\tat\t" << hex << dr.dr[i];
+								if (symbol.resolve(dr.dr[i], str))
+									cout << '\t' << str;
+								cout << endl;
+							}
+						}
+						break;
+					}
+
+
+
+					}
+					break;
+				}
+				//this_thread::yield();
+				ui_reply.notify();
+
 			}
-			//this_thread::yield();
-			ui_reply.notify();
+			catch (ios::failure&) {
+				;
+			}
 
 		}
-		catch (ios::failure&) {
-			;
-		}
-
+	}
+	catch (exception& e) {
+		cerr << typeid(e).name() << '\t' << e.what() << endl;
 	}
 }
 
@@ -220,7 +279,8 @@ void Debugger::run(void) {
 				cout << "B symbol\tset breakpoint" << endl;
 				cout << "R\tshow registers" << endl;
 				cout << "C\tcontrol registers" << endl;
-				cout << "D\tdebug registers" << endl;
+				cout << "D id\tdelete breakpoint" << endl;
+				cout << "L\tlist breakpoints" << endl;
 				cout << "X\tSSE registers" << endl;
 				cout << "E\tprocessor environment" << endl;
 				cout << "V base len\tvirtual memory" << endl;
@@ -256,28 +316,34 @@ void Debugger::run(void) {
 			}
 			case 'B':	//breakpoint
 			{
-				string sym;
-				ss >> sym;
-				if (sym.empty()) {
+				ss >> str;
+				if (str.empty()) {
 					cout << "B symbol/address" << endl;
 					continue;
 				}
 				qword addr = 0;
-				if (sym.at(0) == '0' && sym.at(1) == 'x') {
-					addr = strtoull(sym.c_str(), NULL, 0);
-				}
-				else {
-					addr = symbol.resolve(sym);
-				}
-
-				if (!addr) {
-					cout << "unresolved symbol:\t" << sym << endl;
+				if (!resolve(addr,str)){
+					cout << "unresolved symbol:\t" << str << endl;
 					continue;
 				}
 
-				str = "BA";
+				str = "B+";
 				str.append((char*)&addr, sizeof(qword));
 
+				break;
+			}
+			case 'D':	//delete breakpoint
+			{
+				unsigned i = 0;
+				ss >> i;
+				if (i && i <= 3)
+					;
+				else {
+					cout << "index out of range" << endl;
+					continue;
+				}
+				str = "B-";
+				str += (byte)i;
 				break;
 			}
 			case 'R':	//regs
@@ -286,7 +352,7 @@ void Debugger::run(void) {
 			case 'C':	//cr
 				str = "IC";
 				break;
-			case 'D':	//dr
+			case 'L':	//dr
 				str = "ID";
 				break;
 			case 'X':	//sse
@@ -299,11 +365,18 @@ void Debugger::run(void) {
 			{
 				qword base = 0;
 				word size = 0;
-				ss >> hex >> base >> dec >> size;
+				ss >> str >> dec >> size;
+				//ss >> hex >> base >> dec >> size;
 				if (!size) {
 					cout << "v base len" << endl;
 					continue;
 				}
+
+				if (!resolve(base, str)) {
+					cout<< "unresolved symbol:\t" << str << endl;
+					continue;
+				}
+
 				ss.str(string());
 				ss.clear();
 				ss << 'V';
@@ -317,11 +390,17 @@ void Debugger::run(void) {
 			{
 				qword base = 0;
 				word size = 0;
-				ss >> hex >> base >> dec >> size;
+				ss >> str >> dec >> size;
+				//ss >> hex >> base >> dec >> size;
 				if (!size) {
 					cout << "m base len" << endl;
 					continue;
 				}
+				if (!resolve(base, str)) {
+					cout << "unresolved symbol:\t" << str << endl;
+					continue;
+				}
+
 				ss.str(string());
 				ss.clear();
 				ss << 'M';
@@ -340,7 +419,7 @@ void Debugger::run(void) {
 					ss.str(string());
 					ss << '\"' << line.first << "\" -n" << dec << line.second;
 					str = ss.str();
-					ShellExecute(NULL, "open", editor.c_str(), str.c_str(), NULL, SW_SHOW);
+					ShellExecute(NULL, "open", editor.c_str(), str.c_str(), NULL, SW_SHOWNA);
 				}
 				continue;
 			}

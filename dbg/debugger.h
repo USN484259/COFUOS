@@ -63,12 +63,12 @@ class Debugger {
 
 
 	void reg_dump(const UOS::CONTEXT& p);
-
 	void packet_dump(const std::string& str);
 
 
 	void pump(void);
 
+	bool resolve(qword&, const std::string&);
 
 public:
 	Debugger(const char* p, const char* s, const char* e);
