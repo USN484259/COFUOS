@@ -28,28 +28,30 @@ void krnlentry(void* module_base){
 
 	buildIDT(0);
 
-#ifdef _DEBUG
-	void kdb_init(word);
-	kdb_init(sysinfo->ports[0]);
-#endif
-
-	apic = new((byte*)HIGHADDR(0xFEE00000)) APIC;
-	
-	
 	//globals construct
 	const char strCRT[8]={'.','C','R','T',0};
 	fun* globalConstructor = (fun*)peGetSection(module_base,strCRT);
 	assertinv(nullptr,globalConstructor);
 	while(*globalConstructor)
 		(*globalConstructor++)();
-	
-	
-	//MP setup
+
 	sysinfo->krnlbase=(qword)module_base;
 	sysinfo->AP_entry=(qword)AP_entry-(qword)module_base;
 	sysinfo->MP_cnt=1;
 	
+	mp=new((byte*)HIGHADDR(0x1000)) MP();
+	
+
+#ifdef _DEBUG
+	void kdb_init(word);
+	kdb_init(sysinfo->ports[0]);
+#endif
+
+	//MP setup
+	apic = new((byte*)HIGHADDR(0xFEE00000)) APIC;
 	*(byte*)(sysinfo+1)=apic->id();
+	
+	
 
 
 }

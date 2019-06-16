@@ -24,12 +24,15 @@ extern "C"{
 	void* memcpy(void*,const void*,size_t);
 
 	void buildIDT(qword);
-	
-	
+	byte DR_match(void);
+	void DR_get(void*);
+	void DR_set(const void*);
+
 	byte serial_get(word);
 	void serial_put(word,byte);
 	byte serial_peek(word);
 
+	void dbgprint(const char*);
 	__declspec(noreturn)
 	int BugCheck(UOS::status,qword,qword);
 
@@ -79,10 +82,13 @@ extern "C"{
 	dword _InterlockedExchange(volatile dword*,dword);
 	qword _InterlockedExchange64(volatile qword*,qword);
 	
-	byte _InterlockedIncrement8(volatile byte*);
 	word _InterlockedIncrement16(volatile word*);
 	dword _InterlockedIncrement(volatile dword*);
 	qword _InterlockedIncrement64(volatile qword*);
+	
+	word _InterlockedDecrement16(volatile word*);
+	dword _InterlockedDecrement(volatile dword*);
+	qword _InterlockedDecrement64(volatile qword*);
 	
 	void _mm_pause(void);
 	void __debugbreak(void);

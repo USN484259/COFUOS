@@ -10,9 +10,9 @@ namespace UOS{
 	
 	SYSINFO* sysinfo=(SYSINFO*)HIGHADDR(0x0800);
 
-	MP* mp=(MP*)HIGHADDR(0x1000);
+	MP* mp=nullptr;
 
-	APIC* apic;
+	APIC* apic=nullptr;
 
 	heap syspool;
 

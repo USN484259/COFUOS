@@ -6,7 +6,9 @@ extern dispatch_exception
 
 
 global buildIDT
-
+global DR_match
+global DR_get
+global DR_set
 
 global memset
 global zeromemory
@@ -18,7 +20,6 @@ global serial_put
 
 global BugCheck
 
-ISR_STK_ALTER equ HIGHADDR+0x1800
 
 section .text
 
@@ -151,7 +152,7 @@ mov rcx,[rbp+8*15]	;exp#
 mov rax,ISR_exception
 mov rdx,[rbp+8*16]	;errcode
 sub rcx,rax
-mov rsp,ISR_STK_ALTER
+and sp,0xF800	;lower 2K
 shr rcx,3	;8 byte alignment
 mov r8,rbp	;context
 call dispatch_exception
@@ -217,6 +218,60 @@ pop rax
 pop rax
 
 pop rdi
+pop rsi
+ret
+
+DR_match:
+;pushf
+;cli
+mov rax,dr6
+test al,1	;B0
+jz .end
+mov rdx,dr7
+and dl,0xFC
+mov dr7,rdx
+.end:
+;popf
+ret
+
+
+DR_get:
+
+push rdi
+mov rdi,rcx
+mov rax,dr0
+stosq
+mov rax,dr1
+stosq
+mov rax,dr2
+stosq
+mov rax,dr3
+stosq
+mov rax,dr6
+stosq
+mov rax,dr7
+stosq
+
+pop rdi
+ret
+
+
+DR_set:
+push rsi
+mov rsi,rcx
+lodsq
+mov dr0,rax
+lodsq
+mov dr1,rax
+lodsq
+mov dr2,rax
+lodsq
+mov dr3,rax
+lodsq
+mov dr6,rax
+lodsq
+mov dr7,rax
+
 pop rsi
 ret
 

@@ -45,6 +45,8 @@ APIC::APIC(void){
 }
 
 byte APIC::id(void){
+	if (nullptr == this)
+		return 0;
 	return read(IDR) >> 24;
 
 }
@@ -60,6 +62,7 @@ void APIC::write(size_t off,dword val){
 
 void APIC::mp_break(void){
 	//TODO send IPI here
-	
+	if (nullptr==this)
+		return;
 	
 }

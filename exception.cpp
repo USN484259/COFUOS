@@ -2,7 +2,9 @@
 #include "hal.hpp"
 #include "sysinfo.hpp"
 #include "context.hpp"
+#include "lock.hpp"
 #include "mm.hpp"
+#include "mp.hpp"
 
 
 #undef assert
@@ -14,6 +16,10 @@ using namespace UOS;
 
 static const char* hexchar = "0123456789ABCDEF";
 
+
+bool kdb_enable = false;
+
+
 void kdb_init(word port) {
 	__outbyte(port + 1, 0);
 	__outbyte(port + 3, 0x80);
@@ -23,7 +29,7 @@ void kdb_init(word port) {
 	__outbyte(port + 2, 0xC7);
 	__outbyte(port + 4, 0x0B);	//?????
 
-
+	kdb_enable = true;
 	__debugbreak();
 }
 
@@ -77,10 +83,11 @@ void kdb_send(word port, const byte* sor, size_t len) {
 
 
 void kdb_break(byte id,qword errcode,CONTEXT* context){
-	byte buf[0x800];
+
+	DR_match();
+
+	byte buf[0x400];
 	size_t len=0;
-	
-	
 	
 	buf[len++]='B';
 	buf[len++] = id;
@@ -90,8 +97,11 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 	bool quit = false;
 
 	while(!quit){
-		len = kdb_recv(sysinfo->ports[0], buf, 0x800);
-		
+		len = kdb_recv(sysinfo->ports[0], buf, 0x400-1);
+		if (!len)
+			continue;
+
+		buf[len] = 0;
 		switch (buf[0]) {
 		case 'W':	//where
 			buf[0] = 'A';
@@ -99,7 +109,8 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 			len = 9;
 			break;
 		case 'S':	//step
-			//TODO set DR0
+			context->rflags |= 0x10100;		//TF RF
+
 		case 'G':	//go
 			quit = true;
 		case 'P':	//pause
@@ -107,32 +118,90 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 			len = 1;
 			break;
 		case 'Q':	//debugger quit
-			//TODO shut stub here
+			kdb_enable=false;
 
 			quit = true;
 			buf[0] = 'C';
 			len = 1;
 			break;
+		case 'B':	//breakpoint
+			switch (buf[1]) {
+			case '+':
+			{
+				if (len < 10) {
+					dbgprint("bad packet");
+					continue;
+				}
+				interrupt_guard ig;
+				DR_STATE dr;
+				DR_get(&dr);
+
+				qword mask = 0x0C;
+				unsigned i;
+				for (i = 1; i <= 3; i++, mask <<= 2) {
+					if (dr.dr7 & mask)
+						continue;
+					dr.dr[i] = *(qword*)(buf + 2);
+					dr.dr7 |= mask;
+					DR_set(&dr);
+					break;
+				}
+				if (i > 3) {
+					dbgprint("breakpoint slot full");
+				}
+
+				break;
+			}
+			case '-':
+			{
+				if (len < 3) {
+					dbgprint("bad packet");
+					break;
+				}
+				interrupt_guard ig;
+				DR_STATE dr;
+				qword mask = 0x03 << (2*buf[2]);
+				DR_get(&dr);
+
+				if (dr.dr7 & mask) {
+					dr.dr7 &= ~mask;
+					DR_set(&dr);
+				}
+				else
+					dbgprint("no matching breakpoint");
+
+				break;
+			}
+			default:
+				dbgprint("bad packet");
+				continue;
+			}
+			buf[0] = 'I';
+			buf[1] = 'D';
 		case 'I':	//info
 			switch (buf[1]) {
 			case 'R':
-				__movsq((qword*)(buf + 2), (const qword*)context, sizeof(CONTEXT) / 8);
+				memcpy(buf + 2, context, sizeof(CONTEXT));
 				len = 2 + sizeof(CONTEXT);
 				break;
+			case 'D':	//dr
+				DR_get(buf+2);
+				len = 2 + sizeof(qword) * 6;
+				break;
 			default:
-				//bad packet
+				dbgprint("bad packet");
 				continue;
 			}
 			break;
-		case 'B':	//breakpoint
-			//TODO edit bp in DR
 
-			continue;
 		case 'T':	//stack
+			if (len < 10) {
+				dbgprint("bad packet");
+				continue;
+			}
 			if (!VM::spy(buf + 2, context->rsp, buf[1] * 8)) {
-				buf[0] = 'A';
-				__movsb(buf, (const byte*)"Pmemory gap", 12);
-				len = 12;
+				dbgprint("memory gap");
+				continue;
 			}
 			else {
 				len = 2 + 8 * buf[1];
@@ -140,14 +209,17 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 
 			break;
 		case 'V':	//vm
+			if (len < 11) {
+				dbgprint("bad packet");
+				continue;
+			}
 			if ((len = *(word*)(buf + 9)) > 0x7C0) {
-				__movsb(buf, (const byte*)"Ptoo large", 11);
-				len = 11;
-				break;
+				dbgprint("too large");
+				continue;
 			}
 			if (!VM::spy(buf + 11, *(qword*)(buf + 1), len)) {
-				__movsb(buf, (const byte*)"Pmemory gap", 12);
-				len = 12;
+				dbgprint("memory gap");
+				continue;
 			}
 			else {
 				buf[0] = 'M';
@@ -155,14 +227,17 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 			}
 			break;
 		case 'M':	//pm
+			if (len < 11) {
+				dbgprint("bad packet");
+				continue;
+			}
 			if ((len = *(word*)(buf + 9)) > 0x7C0) {
-				__movsb(buf, (const byte*)"Ptoo large", 11);
-				len = 11;
-				break;
+				dbgprint("too large");
+				continue;
 			}
 			if (!PM::spy(buf + 11, *(qword*)(buf + 1), len)) {
-				__movsb(buf, (const byte*)"Pbad memory", 12);
-				len = 12;
+				dbgprint("bad memory");
+				continue;
 			}
 			else {
 				buf[0] = 'M';
@@ -170,8 +245,8 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 			}
 			break;
 		default:
-			__movsb(buf, (const byte*)"Punknown command", 17);
-			len = 17;
+			dbgprint("unknown command");
+			continue;
 		}
 
 		kdb_send(sysinfo->ports[0], buf, len);
@@ -187,13 +262,34 @@ extern "C"
 void dispatch_exception(byte id,qword errcode,CONTEXT* context){
 
 //special errcode indicates BugCheck call
+	lock_guard<MP> lck(*mp);
+	mp->sync(MP::CMD::pause);
 
-	kdb_break(id,errcode,context);
+	//clear TF
+	context->rflags &= ~0x100;
+	if (kdb_enable)
+		kdb_break(id,errcode,context);
 
-
+	mp->sync(MP::CMD::resume);
 	//TODO handle exceptions here
 
 }
 
 
+void dbgprint(const char* str){
+	byte buf[0x200] = { 'P' };
+	size_t len = 1;
+	
+	lock_guard<MP> lck(*mp);
+	interrupt_guard ig;
 
+	while (len < 0x200) {
+		if (buf[len++] = *str++)
+			;
+		else
+			break;
+	}
+
+	kdb_send(sysinfo->ports[0], buf, len);
+
+}

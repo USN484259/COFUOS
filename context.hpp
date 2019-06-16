@@ -30,4 +30,19 @@ namespace UOS {
 
 	};
 
+
+	struct DR_STATE{
+		union {
+			struct {
+				qword dr0;
+				qword dr1;
+				qword dr2;
+				qword dr3;
+			};
+			qword dr[4];
+		};
+		qword dr6;
+		qword dr7;
+	};
+
 }

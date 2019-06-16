@@ -20,12 +20,16 @@ namespace UOS{
 		void trigger(void);
 		
 	public:
+		enum CMD : word {resume=0xF0,pause=0xFF};
+		
+		
+		MP(void);
 		
 		void lock(void);
 		void unlock(void);
 		bool lock_state(void) const;
-		void sync(word,void* = nullptr,size_t = 0);
-		void reply(word);
+		void sync(CMD,void* = nullptr,size_t = 0);
+		void reply(CMD);
 		
 	};
 	
