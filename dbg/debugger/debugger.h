@@ -3,7 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include "pipe.h"
-#include "symbol.h"
+#include "..\sqlite.h"
 #include "event.h"
 #include "..\..\context.hpp"
 
@@ -40,7 +40,8 @@ Quit debug
 
 class Debugger {
 	Pipe pipe;
-	Symbol symbol;
+	//Symbol symbol;
+	Sqlite sql;
 	std::string editor;
 	std::string command;
 	qword cur_addr;
@@ -56,10 +57,21 @@ class Debugger {
 		std::condition_variable avl;
 	public:
 		w(Pipe&);
-		void put(const char*);
+		void put(const std::string&);
 		void fin(void);
 
 	}control;
+
+	struct Symbol{
+		qword address;
+		std::string disasm;
+		int length;
+		int line;
+		std::string file;
+		std::string source;
+		std::string symbol;
+		qword base;
+	};
 
 
 	void reg_dump(const UOS::CONTEXT& p);
@@ -68,10 +80,10 @@ class Debugger {
 
 	void pump(void);
 
-	bool resolve(qword&, const std::string&);
-
+	bool expression2addr(qword&, const std::string&);
+	bool addr2symbol(qword,Symbol&);
 public:
-	Debugger(const char* p, const char* s, const char* e);
+	Debugger(const char* p, const char* d, const char* e);
 	~Debugger(void);
 	void run(void);
 	void pause(void);

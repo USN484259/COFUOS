@@ -60,7 +60,7 @@ void Debugger::packet_dump(const string& str) {
 
 Debugger::w::w(Pipe& p) : pipe(p) {}
 
-void Debugger::w::put(const char* str) {
+void Debugger::w::put(const string& str) {
 	unique_lock<mutex> lck(m);
 	while(!data.empty())
 		avl.wait(lck);
@@ -86,14 +86,93 @@ void Debugger::w::fin(void) {
 	avl.notify_all();
 }
 
+bool Debugger::addr2symbol(qword addr, Debugger::Symbol& symbol) {
+	sql.command("select Asm.address,Asm.disasm,Asm.length,Asm.line,File.name,Symbol.symbol,Symbol.address from Asm,file,Symbol where Asm.fileid=File.id and Asm.address between Symbol.address and Symbol.address+Symbol.length and Asm.address=?1");
+	sql << addr;
+	if (!sql.step())
+		return false;
+	sql >> symbol.address >> symbol.disasm >> symbol.length >> symbol.line >> symbol.file >> symbol.symbol >> symbol.base;
+	sql.command("select Source.text from Source,Asm where Source.fileid=Asm.fileid and Source.line=Asm.line and Asm.address=?1");
+	sql << symbol.address;
+	if (sql.step())
+		sql >> symbol.source;
 
-bool Debugger::resolve(qword& res, const string& str) {
+	return true;
+}
+
+bool Debugger::expression2addr(qword& res, const string& s) {
+
+	istringstream ss(s);
+	string str;
+
+	qword base = cur_addr;
+	unsigned index = 0;
+	int off = 0;
+	do{
+		char c = ss.get();
+		switch (c) {
+		case istringstream::traits_type::eof():
+			break;
+		case '+':
+			ss >> dec >> off;
+			break;
+		case '-':
+			ss >> dec >> off;
+			off = -off;
+			break;
+		case '#':
+			ss >> dec >> index;
+			break;
+		//case '%':
+		case '_':
+		case '\\':
+			str += '\\';
+		default:
+			str += c;
+			continue;
+		}
+		if (!str.empty()) {
+			if (str.at(0) == '0' && (~0x20 & str.at(1)) == 'X') {
+				base = strtoull(str.c_str(), nullptr, 0);
+			}
+			else {
+				sql.command("select address from Symbol where symbol like ?1 escape \'\\\' order by address");
+				sql << str;
+				if (!sql.step())
+					return false;
+
+				do {
+					if (!index)
+						break;
+				} while (index-- && sql.step());
+				if (index)
+					return false;
+
+				sql >> base;
+
+			}
+			str.clear();
+		}
+	} while (ss.good());
+
+	res = base + off;
+	return true;
+/*
 	if (str.at(0) == '0' && str.at(1) == 'x') {
 		res = strtoull(str.c_str(), nullptr, 0);
 		return true;
 	}
-	res = symbol.resolve(str);
-	return res ? true : false;
+	//TODO complex expressions
+	sql.command("select address from Symbol where symbol=?1 order by address");
+	sql << str;
+	if (sql.step()) {
+		sql >> res;
+		return true;
+	}
+
+	//res = symbol.resolve(str);
+	return false;
+	*/
 }
 
 
@@ -110,13 +189,18 @@ void Debugger::pump(void) {
 			try {
 				switch (ss.get()) {
 				case 'A':	//address
+				{
 					ss.read((char*)&cur_addr, sizeof(qword));
 					cout << "at 0x" << hex << cur_addr;
-					if (symbol.resolve(cur_addr, str))
-						cout << '\t' << str;
+					Symbol symbol;
+					if (addr2symbol(cur_addr, symbol)) {
+						cout << '\t' << symbol.symbol << " + " << hex << (symbol.address - symbol.base) << endl;
+						cout << '\t' << symbol.disasm << "\t;\t" << symbol.source;
+					}
 					cout << endl;
 					control.fin();
 					break;
+				}
 				case 'C':	//comfirm
 					control.fin();
 					continue;
@@ -143,8 +227,11 @@ void Debugger::pump(void) {
 						qword addr;
 						ss.read((char*)&addr, sizeof(qword));
 						cout << hex << addr;
-						if (symbol.resolve(addr, str))
-							cout << '\t' << str;
+						Symbol symbol;
+						if (addr2symbol(addr, symbol))
+							cout << '\t' << symbol.symbol << '+' << hex << (symbol.address - symbol.base);
+						//if (symbol.resolve(addr, str))
+						//	cout << '\t' << str;
 						cout << endl;
 					}
 
@@ -198,27 +285,20 @@ void Debugger::pump(void) {
 						DR_STATE dr;
 
 						ss.read((char*)&dr, sizeof(DR_STATE));
-						/*
-						cout << "last bp state:\t";
-						if (DR_state.dr6 & 1)
-							cout << "B0\t";
-						if (DR_state.dr6 & 2)
-							cout << "B1\t";
-						if (DR_state.dr6 & 4)
-							cout << "B2\t";
-						if (DR_state.dr6 & 8)
-							cout << "B3\t";
-						if (DR_state.dr6 & 0xF000)
-							cout << "B?\t";
-						cout << endl;
-						*/
+
 						qword mask = 0x03;
 
 						for (int i = 0; i <= 3; i++, mask <<= 2) {
 							if (dr.dr7 & mask) {
 								cout << i << "\tat\t" << hex << dr.dr[i];
-								if (symbol.resolve(dr.dr[i], str))
-									cout << '\t' << str;
+								Symbol symbol;
+								if (addr2symbol(dr.dr[i], symbol)) {
+									cout << '\t' << symbol.symbol << " + " << hex << (symbol.address - symbol.base) << endl;
+									cout << '\t' << symbol.disasm << "\t;\t" << symbol.source;
+
+								}
+								//if (symbol.resolve(dr.dr[i], str))
+								//	cout << '\t' << str;
 								cout << endl;
 							}
 						}
@@ -250,6 +330,7 @@ void Debugger::run(void) {
 	init = true;
 	while (!quit) {
 		ui_break.wait();
+		ui_reply.reset();
 		control.put("W");
 		ui_reply.wait(chrono::milliseconds(2000));
 
@@ -276,6 +357,8 @@ void Debugger::run(void) {
 				cout << "S\tstep" << endl;
 				//cout << "P\tpass" << endl;
 				cout << "T [count]\tstack dump" << endl;
+				cout << "U [base [len]]\tshow disassembly" << endl;
+				cout << "Y [symbol]\tsearch symbols" << endl;
 				cout << "B symbol\tset breakpoint" << endl;
 				cout << "R\tshow registers" << endl;
 				cout << "C\tcontrol registers" << endl;
@@ -285,7 +368,8 @@ void Debugger::run(void) {
 				cout << "E\tprocessor environment" << endl;
 				cout << "V base len\tvirtual memory" << endl;
 				cout << "M base len\tphysical memory" << endl;
-				cout << "O\topen source file" << endl;
+				//cout << "O\topen source file" << endl;
+				//cout << "O [addr [lines]]\tshow source" << endl;
 				continue;
 			case 'G':	//go
 				str = "G";
@@ -322,7 +406,7 @@ void Debugger::run(void) {
 					continue;
 				}
 				qword addr = 0;
-				if (!resolve(addr,str)){
+				if (!expression2addr(addr,str)){
 					cout << "unresolved symbol:\t" << str << endl;
 					continue;
 				}
@@ -372,7 +456,7 @@ void Debugger::run(void) {
 					continue;
 				}
 
-				if (!resolve(base, str)) {
+				if (!expression2addr(base, str)) {
 					cout<< "unresolved symbol:\t" << str << endl;
 					continue;
 				}
@@ -396,7 +480,7 @@ void Debugger::run(void) {
 					cout << "m base len" << endl;
 					continue;
 				}
-				if (!resolve(base, str)) {
+				if (!expression2addr(base, str)) {
 					cout << "unresolved symbol:\t" << str << endl;
 					continue;
 				}
@@ -410,14 +494,89 @@ void Debugger::run(void) {
 
 				break;
 			}
+			case 'Y':	//symbol
+			{
+				str = "%";
+				ss >> ws;
+				do {
+					char c = ss.get();
+					switch (c) {
+					case stringstream::traits_type::eof():
+					case ' ':
+						break;
+					case '_':
+					case '\\':
+						str += '\\';
+					default:
+						str += c;
+						continue;
+					}
+					break;
+				} while (true);
+				str += '%';
+
+				sql.command("select address,symbol from Symbol where symbol like ?1 escape \'\\\' order by address");
+				sql << str;
+				unsigned index = 0;
+				while (sql.step()) {
+					qword addr;
+					sql >> addr >> str;
+					cout << dec << index++ << '\t' << hex << addr << '\t' << str << endl;
+				}
+				continue;
+			}
+			case 'U':	//disasm
+			{
+				qword addr = cur_addr;
+				qword lim = 16;
+				str.clear();
+				ss >> str;
+				if (!str.empty()) {
+					if (!expression2addr(addr, str)) {
+						cout << "unresolved symbol:\t" << str << endl;
+						continue;
+					}
+					ss >> dec >> lim;
+				}
+				string filename;
+				std::pair<int, string> source;
+				Symbol symbol;
+				lim += addr;
+				do {
+					if (!addr2symbol(addr, symbol)) {
+						cout << hex << addr << "\t????\t(no assembly)" << endl;
+						break;
+					}
+					if (filename != symbol.file) {
+						cout << endl;
+						filename = symbol.file;
+						cout << "File :\t" << filename << endl;
+					}
+					if (source.first != symbol.line || source.second != symbol.source) {
+						cout << endl;
+						source.first = symbol.line;
+						source.second = symbol.source;
+						cout << "line " << dec << source.first << " :\t" << source.second << endl << endl;
+					}
+
+					cout << hex << symbol.address << '\t' << symbol.disasm << endl;
+
+					addr += symbol.length;
+				} while (addr<lim);
+				cout << endl;
+
+				continue;
+			}
 			case 'O':	//open source file
 			{
-				auto line = symbol.source(cur_addr);
-				if (!line.first)
+				Symbol symbol;
+				if (!addr2symbol(cur_addr,symbol) || symbol.source.empty())
+				//auto line = symbol.source(cur_addr);
+				//if (!line.first)
 					cout << "no source at " << hex << cur_addr << endl;
 				else {
 					ss.str(string());
-					ss << '\"' << line.first << "\" -n" << dec << line.second;
+					ss << '\"' << symbol.file << "\" -n" << dec << symbol.line;
 					str = ss.str();
 					ShellExecute(NULL, "open", editor.c_str(), str.c_str(), NULL, SW_SHOWNA);
 				}
@@ -433,10 +592,13 @@ void Debugger::run(void) {
 			byte c = str.at(0);
 			if (c == 'G' || c == 'S' || c=='Q') {
 				ui_break.reset();
-				control.put(str.c_str());
+				control.put(str);
 				break;
 			}
-
+			if (c == 'B') {
+				control.put(str);
+				continue;
+			}
 			pipe.write(str);
 			ui_reply.wait(chrono::milliseconds(2000));
 
@@ -445,7 +607,7 @@ void Debugger::run(void) {
 }
 
 
-Debugger::Debugger(const char* p, const char* s, const char* e) : pipe(p), symbol(s), editor(e), command("h"), control(pipe), quit(false),init(false) {
+Debugger::Debugger(const char* p, const char* d, const char* e) : pipe(p), sql(d,true), editor(e), command("h"), control(pipe), quit(false),init(false) {
 	thread(mem_fn(&Debugger::pump),this).detach();
 }
 
@@ -454,7 +616,7 @@ Debugger::~Debugger(void) {
 }
 
 void Debugger::pause(void) {
-	control.put("P");
+	control.put(string("P"));
 	ui_break.notify();
 }
 
