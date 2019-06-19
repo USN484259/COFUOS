@@ -112,9 +112,24 @@ int main(int argc,char** argv) {
 		cod_scanner cod(*sql,filelist);
 
 		file_finder finder;
+
 		finder.find("*.cod");
 		for (auto it = finder.begin(); it != finder.end(); ++it) {
-			cod.scan(*it);
+			cod.scan_cod(*it);
+		}
+		finder.clear();
+
+		finder.find("*.lst");
+		for (auto it = finder.begin(); it != finder.end(); ++it) {
+			string name = filepath(*it).name_ext();
+			if (filelist.find(name) != filelist.end())
+				throw runtime_error(*it);
+			filelist[name] = filelist.size() + 1;
+			sql->command("insert into File values(?1,?2)");
+			*sql << (int)filelist.size() << name;
+			sql->step();
+
+			cod.scan_lst(*it,filelist.size());
 		}
 
 

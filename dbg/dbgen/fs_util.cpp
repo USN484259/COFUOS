@@ -14,13 +14,13 @@ string filepath::path(void) const {
 
 string filepath::name_ext(void) const {
 	if (path_offset + 1 >= str.size())
-		return string();
+		return str;
 	return str.substr(path_offset + 1);
 }
 
 string filepath::name(void) const {
-	if (path_offset >= ext_offset || path_offset + 1 >= str.size())
-		return string();
+	if (path_offset >= ext_offset)
+		return str.substr(0, ext_offset);
 	return str.substr(path_offset + 1, ext_offset);
 }
 

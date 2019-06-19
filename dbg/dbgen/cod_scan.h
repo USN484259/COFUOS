@@ -5,12 +5,12 @@
 
 class cod_scanner {
 	Sqlite& sql;
-	std::map<std::string,int> filelist;
+	const std::map<std::string,int> filelist;
 public:
 	cod_scanner(Sqlite&,const std::map<std::string,int>&);
 
-	void scan(const std::string&);
+	void scan_cod(const std::string&);
 
-
+	void scan_lst(const std::string&,int);
 
 };
