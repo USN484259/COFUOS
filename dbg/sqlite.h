@@ -6,7 +6,6 @@
 class Sqlite {
 	sqlite3* con;
 	sqlite3_stmt* cmd;
-	const bool read_only;
 	bool in_transcation;
 	enum { SET, GET,FIN }status;
 	int index;

@@ -6,8 +6,8 @@ Sqlite::SQL_exception::SQL_exception(sqlite3* sql) : runtime_error(sqlite3_errms
 Sqlite::SQL_exception::SQL_exception(int code) : runtime_error(sqlite3_errstr(code)) {}
 Sqlite::SQL_exception::SQL_exception(const char* msg) : runtime_error(msg) {}
 
-Sqlite::Sqlite(const char* filename, bool rd) : con(nullptr), cmd(nullptr), read_only(rd), in_transcation(false) {
-	if (SQLITE_OK != sqlite3_open(filename, &con))
+Sqlite::Sqlite(const char* filename, bool read_only) : con(nullptr), cmd(nullptr), in_transcation(false) {
+	if (SQLITE_OK != sqlite3_open_v2(filename, &con, read_only ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE, nullptr))
 		throw SQL_exception(con);
 }
 
