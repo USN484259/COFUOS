@@ -128,7 +128,17 @@ void cod_scanner::scan_cod(const string& filename) {
 		throw runtime_error(filename);
 	int line = 0;
 	int fileid = 0;
-	unsigned __int64 addr = 0;
+	int off = -1;
+	//unsigned __int64 addr = 0;
+
+	struct Asm {
+		int len;
+		string disasm;
+		int fileid;
+		int line;
+	};
+	map<int, Asm> asm_line;
+
 #ifdef _DEBUG
 	cout << "\t$" << filename << endl;
 #endif
@@ -146,7 +156,7 @@ void cod_scanner::scan_cod(const string& filename) {
 
 		//disasm
 		if ('0'==str.at(0)) {
-			if (!line || !addr)
+			if (!line || off == -1)
 				throw runtime_error("bad cod format");
 
 			string disasm;
@@ -159,7 +169,7 @@ void cod_scanner::scan_cod(const string& filename) {
 						disasm += str;
 						continue;
 					}
-					if (str.size() > 2 || !isxdigit(str.at(0)) || !isxdigit(str.at(1))) {
+					if (str.size() > 2 || str.at(0)=='D' || !isxdigit(str.at(0)) || !isxdigit(str.at(1))) {
 						disasm = str;
 						continue;
 					}
@@ -179,29 +189,11 @@ void cod_scanner::scan_cod(const string& filename) {
 					break;
 			} while (sor.good());
 
-			addr += len;
+			asm_line[off] = Asm{ len,disasm,fileid,line };
 
-#error "function overload problem -> see heap.cod line 973 and line 1014"
+			off += len;
 
-			sql.command("select disasm,fileid,line from Asm where address=?1");
-			sql << addr;
-			if (sql.step()) {
-				string tmpstr;
-				int tmpid, tmpline;
-				sql >> tmpstr >> tmpid >> tmpline;
-				if (tmpstr == disasm && tmpid == fileid && tmpline == line)
-					continue;
-				ss.str(string());
-				ss.clear();
-				ss << disasm << '\t' << fileid << ' ' << line << " #mismatch# " << tmpstr << '\t' << tmpid << ' ' << tmpline;
-				str = ss.str();
-				throw runtime_error(str.c_str());
-			}
-
-			sql.command("insert into Asm values(?1,?2,?3,?4,?5)");
-			sql << addr << len << disasm << fileid << line;
-			sql.step();
-
+			//addr += len;
 			continue;
 		}
 
@@ -262,24 +254,91 @@ void cod_scanner::scan_cod(const string& filename) {
 
 			//cin >> ws;
 			if (str == "PROC") {
+				off = 0;
+				if (!asm_line.empty())
+					throw runtime_error("bad codd format");
+
+				break;
+			}
+			if (str == "ENDP") {
+				line = fileid = 0;
 
 				while (ss.good() && ss.get() != ';');
 				ss >> ws;
 				if (!ss.good())
-					str.swap(prev);
+					str = prev;
 				else
 					getline(ss, str, ',');
 
-				sql.command("select address from Symbol where symbol=?1");
+				sql.command("select address,length from Symbol where symbol=?1");
 				sql << str;
-				if (!sql.step())
+
+				while (sql.step()) {
+					unsigned __int64 addr;
+					int length;
+					sql >> addr >> length;
+
+					if (length == off) {
+
+						for (auto it = asm_line.cbegin(); it != asm_line.cend(); ++it) {
+
+							sql.command("select disasm,fileid,line from Asm where address=?1");
+							sql << addr+it->first;
+							if (sql.step()) {
+								string tmpstr;
+								int tmpid, tmpline;
+								sql >> tmpstr >> tmpid >> tmpline;
+								if (tmpstr == it->second.disasm && tmpid == it->second.fileid && tmpline == it->second.line)
+									continue;
+								ss.str(string());
+								ss.clear();
+								ss << it->second.disasm << '\t' << it->second.fileid << ' ' << it->second.line << " #mismatch# " << tmpstr << '\t' << tmpid << ' ' << tmpline;
+								str = ss.str();
+								throw runtime_error(str.c_str());
+							}
+
+							sql.command("insert into Asm values(?1,?2,?3,?4,?5)");
+							sql << addr+it->first << it->second.len << it->second.disasm << it->second.fileid << it->second.line;
+							sql.step();
+
+						}
+
+						sql.command("update Symbol set cppname=?1 where address=?2");
+						sql << prev << addr;
+						sql.step();
+
+						off = -1;
+						asm_line.clear();
+						break;
+					}
+					else {
+						cout << off << '\t' << length;
+					}
+				}
+				if (off != -1)
 					throw runtime_error(str.c_str());
-				sql >> addr;
-				continue;
-			}
-			if (str == "ENDP") {
-				line = fileid = 0;
-				addr = 0;
+
+
+//#pragma message("function overload problem -> see heap.cod line 973 and line 1014")
+//
+//				sql.command("select disasm,fileid,line from Asm where address=?1");
+//				sql << addr;
+//				if (sql.step()) {
+//					string tmpstr;
+//					int tmpid, tmpline;
+//					sql >> tmpstr >> tmpid >> tmpline;
+//					if (tmpstr == disasm && tmpid == fileid && tmpline == line)
+//						continue;
+//					ss.str(string());
+//					ss.clear();
+//					ss << disasm << '\t' << fileid << ' ' << line << " #mismatch# " << tmpstr << '\t' << tmpid << ' ' << tmpline;
+//					str = ss.str();
+//					throw runtime_error(str.c_str());
+//				}
+
+				//sql.command("insert into Asm values(?1,?2,?3,?4,?5)");
+				//sql << addr << len << disasm << fileid << line;
+				//sql.step();
 				break;
 			}
 		}

@@ -12,15 +12,26 @@ using namespace std;
 
 static const HANDLE id = (HANDLE)0xFF;
 
+DWORD64 base = 0;
 
 BOOL __stdcall OnEnumSymbol(PSYMBOL_INFO info, ULONG size, PVOID p) {
 	auto arg = (pair<Sqlite*, map<string,int>&>*)p;
 	Sqlite* sql = arg->first;
 	map<string,int>& filelist = arg->second;
+
 	try {
 
-		sql->command("insert into Symbol values (?1,?2,?3)");
-		*sql << info->Address << (int)info->Size << info->Name;
+		//{
+		//	wchar_t* type = nullptr;
+		//	if (SymGetTypeInfo(id, base, info->TypeIndex, TI_GET_SYMNAME, &type)) {
+
+		//		cout << type << endl;
+		//		LocalFree(type);
+		//	}
+		//}
+
+		sql->command("insert into Symbol values (?1,?2,?3,?4)");
+		*sql << info->Address << (int)info->Size << info->Name << info->Name;
 		sql->step();
 
 		IMAGEHLP_LINE64 line;
@@ -61,7 +72,7 @@ int main(int argc,char** argv) {
 		if (!SymInitialize(id, NULL, FALSE))
 			throw runtime_error("SymInitialize");
 		SymSetOptions(SYMOPT_FAIL_CRITICAL_ERRORS | SYMOPT_LOAD_LINES);
-		DWORD64 base = SymLoadModuleEx(id, NULL, argv[1], NULL, 0, 0, NULL, 0);
+		base = SymLoadModuleEx(id, NULL, argv[1], NULL, 0, 0, NULL, 0);
 		if (!base)
 			throw runtime_error("SymLoadModuleEx");
 
