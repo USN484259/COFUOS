@@ -30,6 +30,7 @@ void Sqlite::command(const char* sql) {
 		throw SQL_exception(con);
 	if (SQLITE_OK != sqlite3_prepare_v2(con, sql, -1, &cmd, nullptr))
 		throw SQL_exception(con);
+	buffer.clear();
 	status = SET;
 	index = 1;
 }
@@ -55,7 +56,8 @@ Sqlite& Sqlite::operator<<(unsigned __int64 val) {
 Sqlite& Sqlite::operator<<(const char* str) {
 	if (status != SET)
 		throw SQL_exception("<< not in SET mode");
-	int res = sqlite3_bind_text(cmd, index++, str, -1, nullptr);
+	
+	int res = sqlite3_bind_text(cmd, index++, (*buffer.insert(string(str)).first).c_str(), -1, nullptr);
 	if (res!=SQLITE_OK)
 		throw SQL_exception(res);
 	return *this;

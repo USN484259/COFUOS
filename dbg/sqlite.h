@@ -1,6 +1,7 @@
 #pragma once
 #include "sqlite3.h"
 #include <string>
+#include <unordered_set>
 #include <stdexcept>
 
 class Sqlite {
@@ -9,6 +10,7 @@ class Sqlite {
 	bool in_transcation;
 	enum { SET, GET,FIN }status;
 	int index;
+	std::unordered_set<std::string> buffer;
 public:
 	class SQL_exception : public std::runtime_error {
 	public:
