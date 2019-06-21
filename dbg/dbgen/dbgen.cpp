@@ -45,7 +45,7 @@ BOOL __stdcall OnEnumSymbol(PSYMBOL_INFO info, ULONG size, PVOID p) {
 			//str = str.substr(off);
 			string str = filepath(line.FileName).name_ext();
 			if (filelist.find(str) == filelist.end()){
-				filelist[str] = filelist.size() + 1;
+				filelist[str] = filelist.size();
 			//pair<deque<string>::iterator,bool> res=filelist.insert(str.substr(off));
 				sql->command("insert into File values(?1,?2)");
 				*sql << (int)filelist.size() << str;
@@ -135,7 +135,7 @@ int main(int argc,char** argv) {
 			string name = filepath(*it).name_ext();
 			if (filelist.find(name) != filelist.end())
 				throw runtime_error(*it);
-			filelist[name] = filelist.size() + 1;
+			filelist[name] = filelist.size();
 			sql->command("insert into File values(?1,?2)");
 			*sql << (int)filelist.size() << name;
 			sql->step();

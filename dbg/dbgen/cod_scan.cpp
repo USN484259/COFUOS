@@ -138,7 +138,7 @@ void cod_scanner::scan_cod(const string& filename) {
 		int line;
 	};
 	map<int, Asm> asm_line;
-
+	map<string, int> labels;
 #ifdef _DEBUG
 	cout << "\t$" << filename << endl;
 #endif
@@ -150,8 +150,9 @@ void cod_scanner::scan_cod(const string& filename) {
 		cout << str << endl;
 #endif
 		stringstream ss(str);
+		str.clear();
 		ss >> str;
-		if (!ss.good() || str.empty())
+		if (str.empty())
 			continue;
 
 		//disasm
@@ -244,7 +245,10 @@ void cod_scanner::scan_cod(const string& filename) {
 			continue;
 
 		}
-
+		if (*str.crbegin() == ':') {	//label
+			labels[str.substr(0,str.size()-1)] = off;
+			continue;
+		}
 
 		while (ss.good()) {
 			string prev;
@@ -257,9 +261,10 @@ void cod_scanner::scan_cod(const string& filename) {
 				off = 0;
 				if (!asm_line.empty())
 					throw runtime_error("bad codd format");
-
+				labels.clear();
 				break;
 			}
+
 			if (str == "ENDP") {
 				line = fileid = 0;
 
@@ -280,7 +285,7 @@ void cod_scanner::scan_cod(const string& filename) {
 
 					if (length == off) {
 
-						for (auto it = asm_line.cbegin(); it != asm_line.cend(); ++it) {
+						for (auto it = asm_line.begin(); it != asm_line.end(); ++it) {
 
 							sql.command("select disasm,fileid,line from Asm where address=?1");
 							sql << addr+it->first;
@@ -297,6 +302,24 @@ void cod_scanner::scan_cod(const string& filename) {
 								throw runtime_error(str.c_str());
 							}
 
+							//resolve jumps
+							if ((~0x20 & it->second.disasm.at(0)) == 'J') {
+								ss.str(it->second.disasm);
+								ss.clear();
+								ss >> str;
+								str.clear();
+								ss >> str;
+								if (str == "SHORT")
+									ss >> str;
+								auto st = labels.find(str);
+								if (st != labels.end()) {
+									ss.str(string());
+									ss.clear();
+									ss << "\t; " << hex << addr + st->second;
+									it->second.disasm += ss.str();
+								}
+							}
+
 							sql.command("insert into Asm values(?1,?2,?3,?4,?5)");
 							sql << addr+it->first << it->second.len << it->second.disasm << it->second.fileid << it->second.line;
 							sql.step();
@@ -311,9 +334,9 @@ void cod_scanner::scan_cod(const string& filename) {
 						asm_line.clear();
 						break;
 					}
-					else {
-						cout << off << '\t' << length;
-					}
+					//else {
+					//	cout << off << '\t' << length;
+					//}
 				}
 				if (off != -1)
 					throw runtime_error(str.c_str());
