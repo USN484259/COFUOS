@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
 		if (pipe && symbol && editor)
 			dbg = new Debugger(pipe, symbol, editor);
 		else {
-			cout << "dbg -p(pipe) -s(symbol) [-e(editor)]" << endl;
+			cout << "dbg -p(pipe) -d(database) [-e(editor)]" << endl;
 			throw runtime_error("too few arguments");
 		}
 		if (!SetConsoleCtrlHandler(OnCtrlC, TRUE))

@@ -63,16 +63,17 @@ class Debugger {
 	}control;
 
 	struct Symbol{
+		std::string symbol;
+		qword base;
 		qword address;
 		std::string disasm;
 		int length;
 		int line;
 		std::string file;
 		std::string source;
-		std::string symbol;
-		qword base;
 	};
 
+	static dword getnumber(std::istream&);
 
 	void reg_dump(const UOS::CONTEXT& p);
 	void packet_dump(const std::string& str);
@@ -81,7 +82,7 @@ class Debugger {
 	void pump(void);
 
 	bool expression2addr(qword&, const std::string&);
-	bool addr2symbol(qword,Symbol&);
+	unsigned addr2symbol(qword,Symbol&);
 public:
 	Debugger(const char* p, const char* d, const char* e);
 	~Debugger(void);

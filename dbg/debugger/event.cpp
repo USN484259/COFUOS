@@ -8,18 +8,18 @@ void Event::wait(void) {
 	if(!state) {
 		cv.wait(lck);
 	}
-	state = false;
+	//state = false;
 }
 
 cv_status Event::wait(chrono::microseconds ms) {
 	unique_lock<mutex> lck(m);
 	if (state) {
-		state = false;
+		//state = false;
 		return cv_status::no_timeout;
 	}
 	cv_status ret = cv.wait_for(lck, ms);
-	if (ret == cv_status::no_timeout)
-		state = false;
+	//if (ret == cv_status::no_timeout)
+		//state = false;
 	return ret;
 }
 

@@ -24,7 +24,11 @@ static const char* hexchar = "0123456789ABCDEF";
 //	return TRUE;
 //}
 
-
+dword Debugger::getnumber(istream& ss) {
+	string str;
+	ss >> str;
+	return strtoul(str.c_str(), nullptr, 0);
+}
 
 
 void Debugger::reg_dump(const UOS::CONTEXT& p) {
@@ -86,8 +90,28 @@ void Debugger::w::fin(void) {
 	avl.notify_all();
 }
 
-bool Debugger::addr2symbol(qword addr, Debugger::Symbol& symbol) {
-	sql.command("select Asm.address,Asm.disasm,Asm.length,Asm.line,File.name,Symbol.symbol,Symbol.address from Asm,file,Symbol where Asm.fileid=File.id and Asm.address between Symbol.address and Symbol.address+Symbol.length and Asm.address=?1");
+unsigned Debugger::addr2symbol(qword addr, Debugger::Symbol& symbol) {
+	sql.command("select symbol,address from Symbol where ?1 between address and address+length-1");
+	sql << addr;
+	if (!sql.step())
+		return 0;
+	sql >> symbol.symbol >> symbol.base;
+
+	sql.command("select address,disasm,length,line,name,id from Asm,File where Asm.fileid=File.id and ?1 between address and address+length-1");
+	sql << addr;
+	if (!sql.step())
+		return 1;
+	int id = 0;
+	sql >> symbol.address >> symbol.disasm >> symbol.length >> symbol.line >> symbol.file >> id;
+
+	sql.command("select text from Source where fileid=?1 and line=?2");
+	sql << id << symbol.line;
+	if (!sql.step())
+		return 2;
+	sql >> symbol.source;
+	return 3;
+/*
+	sql.command("select Asm.address,Asm.disasm,Asm.length,Asm.line,File.name,Symbol.symbol,Symbol.address from Asm,file,Symbol where Asm.fileid=File.id and Asm.address between Symbol.address and Symbol.address+Symbol.length-1 and Asm.address=?1");
 	sql << addr;
 	if (!sql.step())
 		return false;
@@ -98,6 +122,7 @@ bool Debugger::addr2symbol(qword addr, Debugger::Symbol& symbol) {
 		sql >> symbol.source;
 
 	return true;
+	*/
 }
 
 bool Debugger::expression2addr(qword& res, const string& s) {
@@ -114,14 +139,17 @@ bool Debugger::expression2addr(qword& res, const string& s) {
 		case istringstream::traits_type::eof():
 			break;
 		case '+':
-			ss >> dec >> off;
+			off = getnumber(ss);
+			//ss >> dec >> off;
 			break;
 		case '-':
-			ss >> dec >> off;
-			off = -off;
+			off = -(int)getnumber(ss);
+			//ss >> dec >> off;
+			//off = -off;
 			break;
 		case '#':
-			ss >> dec >> index;
+			index = getnumber(ss);
+			//ss >> dec >> index;
 			break;
 		//case '%':
 		case '_':
@@ -194,8 +222,11 @@ void Debugger::pump(void) {
 					cout << "at 0x" << hex << cur_addr;
 					Symbol symbol;
 					if (addr2symbol(cur_addr, symbol)) {
-						cout << '\t' << symbol.symbol << " + " << hex << (symbol.address - symbol.base) << endl;
-						cout << '\t' << symbol.disasm << "\t;\t" << symbol.source;
+						cout << '\t' << symbol.symbol << " + 0x" << hex << (cur_addr - symbol.base) << endl;
+						if (cur_addr == symbol.address)
+							cout << '\t' << symbol.disasm << "\t; " << symbol.source;
+						else
+							cout << "\t????\t(no assembly)";
 					}
 					cout << endl;
 					control.fin();
@@ -229,7 +260,7 @@ void Debugger::pump(void) {
 						cout << hex << addr;
 						Symbol symbol;
 						if (addr2symbol(addr, symbol))
-							cout << '\t' << symbol.symbol << '+' << hex << (symbol.address - symbol.base);
+							cout << '\t' << symbol.symbol << " + 0x" << hex << (addr - symbol.base);
 						//if (symbol.resolve(addr, str))
 						//	cout << '\t' << str;
 						cout << endl;
@@ -293,8 +324,11 @@ void Debugger::pump(void) {
 								cout << i << "\tat\t" << hex << dr.dr[i];
 								Symbol symbol;
 								if (addr2symbol(dr.dr[i], symbol)) {
-									cout << '\t' << symbol.symbol << " + " << hex << (symbol.address - symbol.base) << endl;
-									cout << '\t' << symbol.disasm << "\t;\t" << symbol.source;
+									cout << '\t' << symbol.symbol << " + 0x" << hex << (dr.dr[i] - symbol.base) << endl;
+									if (dr.dr[i] == symbol.address)
+										cout << '\t' << symbol.disasm << "\t; " << symbol.source;
+									else
+										cout << "\t????\t(no assembly)";
 
 								}
 								//if (symbol.resolve(dr.dr[i], str))
@@ -329,8 +363,8 @@ void Debugger::run(void) {
 	string str;
 	init = true;
 	while (!quit) {
-		ui_break.wait();
 		ui_reply.reset();
+		ui_break.wait();
 		control.put("W");
 		ui_reply.wait(chrono::milliseconds(2000));
 
@@ -344,7 +378,7 @@ void Debugger::run(void) {
 			else
 				command = str;
 			stringstream ss(str);
-
+			str.clear();
 			switch (~0x20 & ss.get()) {
 			case 'Q':	//quit
 				quit = true;
@@ -353,9 +387,9 @@ void Debugger::run(void) {
 			case 'H':	//help
 				cout << "Q\tquit" << endl;
 				cout << "H\thelp" << endl;
-				cout << "G\tgo" << endl;
+				cout << "G [symbol]\tgo" << endl;
 				cout << "S\tstep" << endl;
-				//cout << "P\tpass" << endl;
+				cout << "P\tpass" << endl;
 				cout << "T [count]\tstack dump" << endl;
 				cout << "U [base [len]]\tshow disassembly" << endl;
 				cout << "Y [symbol]\tsearch symbols" << endl;
@@ -368,12 +402,37 @@ void Debugger::run(void) {
 				cout << "E\tprocessor environment" << endl;
 				cout << "V base len\tvirtual memory" << endl;
 				cout << "M base len\tphysical memory" << endl;
-				//cout << "O\topen source file" << endl;
-				//cout << "O [addr [lines]]\tshow source" << endl;
+				cout << "O [symbol]\topen source file" << endl;
 				continue;
 			case 'G':	//go
+				ss >> str;
+				if (!str.empty()) {
+					qword addr = 0;
+					if (!expression2addr(addr, str)) {
+						cout << "unresolved symbol:\t" << str << endl;
+						continue;
+					}
+					str = "B=";
+					str.append((char*)&addr, sizeof(qword));
+					control.put(str);
+
+				}
 				str = "G";
 				break;
+			case 'P':	//pass
+
+				sql.command("select min(address) from Asm where address between ?1 and (select address+length-1 from Symbol where ?1 between address and address+length-1) and (line,fileid)!=(select line,fileid from Asm where ?1 between address and address+length-1)");
+				sql << cur_addr;
+				if (sql.step()) {
+					qword addr;
+					sql >> addr;
+					str = "B=";
+					str.append((char*)&addr, sizeof(qword));
+					control.put(str);
+
+					str = "G";
+					break;
+				}
 
 			case 'S':	//step in
 				str = "S";
@@ -387,8 +446,11 @@ void Debugger::run(void) {
 				//	break;
 			case 'T':	//stack
 			{
-				dword cnt = 8;
-				ss >> dec >> cnt;
+				dword cnt = getnumber(ss);
+				if (!cnt)
+					cnt = 8;
+				
+				//ss >> dec >> cnt;
 
 				if (cnt >= 0x100) {
 					cout << "Stack dump supports up to 255 levels" << endl;
@@ -449,7 +511,8 @@ void Debugger::run(void) {
 			{
 				qword base = 0;
 				word size = 0;
-				ss >> str >> dec >> size;
+				ss >> str;// >> dec >> size;
+				size = getnumber(ss);
 				//ss >> hex >> base >> dec >> size;
 				if (!size) {
 					cout << "v base len" << endl;
@@ -474,7 +537,8 @@ void Debugger::run(void) {
 			{
 				qword base = 0;
 				word size = 0;
-				ss >> str >> dec >> size;
+				ss >> str;// >> dec >> size;
+				size = getnumber(ss);
 				//ss >> hex >> base >> dec >> size;
 				if (!size) {
 					cout << "m base len" << endl;
@@ -528,54 +592,93 @@ void Debugger::run(void) {
 			case 'U':	//disasm
 			{
 				qword addr = cur_addr;
-				qword lim = 16;
-				str.clear();
+				qword lim = 0;
 				ss >> str;
 				if (!str.empty()) {
 					if (!expression2addr(addr, str)) {
 						cout << "unresolved symbol:\t" << str << endl;
 						continue;
 					}
-					ss >> dec >> lim;
+					lim = getnumber(ss);
+
+					//ss >> dec >> lim;
 				}
-				string filename;
-				std::pair<int, string> source;
+				if (!lim)
+					lim = 16;
+
+				//string filename;
+				//std::pair<int, string> source;
 				Symbol symbol;
 				lim += addr;
+				qword base = addr;
+				int lvl = addr2symbol(addr, symbol);
+				if (!lvl) {
+					cout << "unresolved address\t" << hex << addr << endl;
+					continue;
+				}
+				//symbol.address != addr) {
+				//	cout << hex << addr << "\t????\t(no assembly)" << endl;
+				//	continue;
+				//}
+				string filename(symbol.file);
+				std::pair<int, string> source;
+				string sym(symbol.symbol);
+
+				cout << sym << " + 0x" << hex << addr - symbol.base << endl << endl;
+
 				do {
-					if (!addr2symbol(addr, symbol)) {
-						cout << hex << addr << "\t????\t(no assembly)" << endl;
+					if (lvl < 2 || sym != symbol.symbol)
 						break;
-					}
+
 					if (filename != symbol.file) {
 						cout << endl;
 						filename = symbol.file;
 						cout << "File :\t" << filename << endl;
 					}
-					if (source.first != symbol.line || source.second != symbol.source) {
+					if (lvl == 3 && (source.first != symbol.line || source.second != symbol.source)) {
 						cout << endl;
 						source.first = symbol.line;
 						source.second = symbol.source;
 						cout << "line " << dec << source.first << " :\t" << source.second << endl << endl;
 					}
 
-					cout << hex << symbol.address << '\t' << symbol.disasm << endl;
+					cout << '+' << hex << addr - base << '\t' << addr << '\t';
+					if (symbol.address == addr)
+						cout << symbol.disasm << endl;
+					else
+						cout << "????\t(no assembly)" << endl;
 
-					addr += symbol.length;
-				} while (addr<lim);
+					addr = symbol.address + symbol.length;
+
+					//if (addr >= lim)
+					//	break;
+
+					//if (!addr2symbol(addr, symbol)) {
+					//	cout << hex << addr << "\t????\t(no assembly)" << endl;
+					//	break;
+					//}
+
+				} while (addr < lim && (lvl = addr2symbol(addr, symbol)));
 				cout << endl;
 
 				continue;
 			}
 			case 'O':	//open source file
 			{
+				ss >> str;
+				qword addr = cur_addr;
+				if (!expression2addr(addr, str)) {
+					cout << "unresolved symbol:\t" << str << endl;
+					continue;
+				}
 				Symbol symbol;
-				if (!addr2symbol(cur_addr,symbol) || symbol.source.empty())
+				if (3 != addr2symbol(cur_addr, symbol) || symbol.source.empty())
 				//auto line = symbol.source(cur_addr);
 				//if (!line.first)
 					cout << "no source at " << hex << cur_addr << endl;
 				else {
 					ss.str(string());
+					ss.clear();
 					ss << '\"' << symbol.file << "\" -n" << dec << symbol.line;
 					str = ss.str();
 					ShellExecute(NULL, "open", editor.c_str(), str.c_str(), NULL, SW_SHOWNA);
@@ -588,7 +691,7 @@ void Debugger::run(void) {
 				cout << "unknown command" << endl;
 				continue;
 			}
-
+			ui_reply.reset();
 			byte c = str.at(0);
 			if (c == 'G' || c == 'S' || c=='Q') {
 				ui_break.reset();
