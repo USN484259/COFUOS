@@ -47,6 +47,7 @@ class Debugger {
 	qword cur_addr;
 	std::atomic<bool> quit;
 	std::atomic<bool> init;
+	bool auto_open;
 	Event ui_break;
 	Event ui_reply;
 
@@ -70,7 +71,6 @@ class Debugger {
 		int length;
 		int line;
 		std::string file;
-		std::string source;
 	};
 
 	static dword getnumber(std::istream&);
@@ -82,7 +82,9 @@ class Debugger {
 	void pump(void);
 
 	bool expression2addr(qword&, const std::string&);
-	unsigned addr2symbol(qword,Symbol&);
+	bool addr2symbol(qword,Symbol&);
+
+	void open_source(const std::string&, int, bool = false);
 public:
 	Debugger(const char* p, const char* d, const char* e);
 	~Debugger(void);
