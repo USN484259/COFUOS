@@ -30,8 +30,8 @@ BOOL __stdcall OnEnumSymbol(PSYMBOL_INFO info, ULONG size, PVOID p) {
 		//	}
 		//}
 
-		sql->command("insert into Symbol values (?1,?2,?3,?4)");
-		*sql << info->Address << (int)info->Size << info->Name << info->Name;
+		sql->command("insert into Symbol values (?1,?2,?3)");
+		*sql << info->Address << (int)info->Size << info->Name;
 		sql->step();
 
 		IMAGEHLP_LINE64 line;
@@ -83,8 +83,8 @@ int main(int argc,char** argv) {
 		sql->step();
 		sql->command("delete from File");
 		sql->step();
-		sql->command("delete from Source");
-		sql->step();
+		//sql->command("delete from Source");
+		//sql->step();
 		sql->command("delete from Asm");
 		sql->step();
 		
