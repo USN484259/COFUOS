@@ -217,6 +217,31 @@ void cod_scanner::scan_cod(const string& filename) {
 
 			line = t;
 
+			while (ss.good() && ss.get() != ':');
+			ss >> ws;
+			if (!ss.good())
+				continue;
+			if (!fileid)
+				throw runtime_error("bad cod format");
+
+			getline(ss, str);
+
+			sql.command("select text from Source where fileid=?1 and line=?2");
+			sql << fileid << line;
+			if (sql.step()) {
+				string tmp;
+				sql >> tmp;
+				if (str == tmp)
+					continue;
+
+				str += " #mismatch# ";
+				str += tmp;
+				throw runtime_error(str.c_str());
+			}
+			sql.command("insert into Source values(?1,?2,?3)");
+			sql << fileid << line << str;
+			sql.step();
+
 			continue;
 
 		}
