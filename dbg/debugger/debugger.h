@@ -4,15 +4,14 @@
 #include <condition_variable>
 #include "pipe.h"
 #include "..\sqlite.h"
-#include "event.h"
+//#include "pump.h"
 #include "..\..\context.hpp"
 
 
 /*
 kernel commands
-At address
 Confirm
-Break type
+Break type addr errcode
 Print text
 
 kernel data
@@ -23,7 +22,6 @@ Mem base count {data}
 
 
 debugger commands
-Where
 Info catagory --reg cr dr sse ps
 Go
 Step
@@ -37,6 +35,16 @@ Quit debug
 
 */
 
+class fill_guard {
+	std::ostream& o;
+	char fill;
+public:
+	fill_guard(std::ostream&, char);
+	~fill_guard(void);
+
+};
+
+
 
 class Debugger {
 	Pipe pipe;
@@ -45,50 +53,64 @@ class Debugger {
 	std::string editor;
 	std::string command;
 	qword cur_addr;
-	std::atomic<bool> quit;
-	std::atomic<bool> init;
-	bool auto_open;
-	Event ui_break;
-	Event ui_reply;
 
-	class w{
-		Pipe& pipe;
-		std::string data;
-		std::mutex m;
-		std::condition_variable avl;
-	public:
-		w(Pipe&);
-		void put(const std::string&);
-		void fin(void);
+	//Pump pump;
 
-	}control;
+	//std::atomic<bool> quit;
+	//std::atomic<bool> init;
 
-	struct Symbol{
-		std::string symbol;
-		qword base;
+	std::atomic<bool> running;
+	bool auto_clear;
+	bool step_source;
+	bool step_pass;
+	std::pair<int, int> step_info;
+
+
+	struct Symbol {
 		qword address;
-		std::string disasm;
+		int length;
+		std::string symbol;
+
+	};
+
+	struct Disasm {
+		qword address;
 		int length;
 		int line;
-		std::string file;
+		int fileid;
+		std::string disasm;
 	};
+
+
+	void color(word);
 
 	static dword getnumber(std::istream&);
 
-	void reg_dump(const UOS::CONTEXT& p);
-	void packet_dump(const std::string& str);
+	void show_reg(const UOS::CONTEXT& p);
+	void show_packet(const std::string& str);
 
+	//void show_source(qword addr);
+	void show_source(qword addr, int line = 0);
 
-	void pump(void);
+	//void pump(void);
+	void stub(void);
+	bool ui(void);
 
-	bool expression2addr(qword&, const std::string&);
-	bool addr2symbol(qword,Symbol&);
+	void clear(bool = false);
 
-	void open_source(const std::string&, int, bool = false);
+	bool expression(qword&, const std::string&);
+	bool get_symbol(qword,Symbol&);
+	bool get_disasm(qword, Disasm&);
+	//bool get_source(const std::string& filename, int line, std::string& source);
+
+	//void open_source(const std::string&, int, bool = false);
+
+	void step_arm(bool pass);
+	bool step_check(void);
 public:
 	Debugger(const char* p, const char* d, const char* e);
-	~Debugger(void);
 	void run(void);
 	void pause(void);
 
 };
+

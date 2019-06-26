@@ -2,6 +2,7 @@
 #include <exception>
 #include <string>
 #include <mutex>
+#include <atomic>
 //#include "event.h"
 #include "..\..\types.hpp"
 #include "Windows.h"
