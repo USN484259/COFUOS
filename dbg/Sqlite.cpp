@@ -83,6 +83,16 @@ bool Sqlite::step(void) {
 	throw SQL_exception(res);
 }
 
+//Sqlite::type Sqlite::peek_type(void) {
+//	return peek_type(index);
+//}
+
+//Sqlite::type Sqlite::peek_type(int i) {
+//	if (status != GET)
+//		throw SQL_exception("peek in SET mode");
+//	return (type)sqlite3_column_type(cmd, i);
+//}
+
 Sqlite& Sqlite::operator >> (int& val) {
 	if (status != GET)
 		throw SQL_exception(">> in SET mode");

@@ -20,6 +20,7 @@ public:
 	};
 
 
+
 	Sqlite(const char*,bool = false);
 	~Sqlite(void);
 
@@ -29,6 +30,9 @@ public:
 	Sqlite& operator<<(const char*);
 	Sqlite& operator<<(const std::string&);
 	bool step(void);
+
+	//type peek_type(void);
+	//type peek_type(int);
 
 	Sqlite& operator>>(int&);
 	Sqlite& operator>>(unsigned __int64&);
