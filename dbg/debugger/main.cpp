@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
 
 
 	const char* pipe = nullptr;
-	const char* symbol = nullptr;
+	const char* database = nullptr;
 	const char* editor = "notepad.exe";
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] != '-')
@@ -28,8 +28,8 @@ int main(int argc, char** argv) {
 		case 'P':
 			pipe = argv[i] + 2;
 			break;
-		case 'S':
-			symbol = argv[i] + 2;
+		case 'D':
+			database = argv[i] + 2;
 			break;
 		case 'E':
 			editor = argv[i] + 2;
@@ -40,10 +40,10 @@ int main(int argc, char** argv) {
 	}
 
 	try {
-		if (pipe && symbol && editor)
-			dbg = new Debugger(pipe, symbol, editor);
+		if (pipe && database && editor)
+			dbg = new Debugger(pipe, database, editor);
 		else {
-			cout << "dbg -p(pipe) -s(symbol) [-e(editor)]" << endl;
+			cout << "dbg -p(pipe) -d(database) [-e(editor)]" << endl;
 			throw runtime_error("too few arguments");
 		}
 		if (!SetConsoleCtrlHandler(OnCtrlC, TRUE))

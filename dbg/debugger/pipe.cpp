@@ -1,6 +1,7 @@
 #include "pipe.h"
 #include <stdexcept>
 #include <sstream>
+#include <thread>
 using namespace std;
 using namespace UOS;
 
@@ -50,7 +51,6 @@ void Pipe::wait(void) {
 void Pipe::read(string& buf) {
 	while (true) {
 		wait();
-
 		while (get() != '$');
 		byte chk_req = get();
 		byte chk_rel = '$';
@@ -88,5 +88,7 @@ void Pipe::write(const string& sor) {
 	lock_guard<mutex> lck(m);
 	if (!WriteFile(hPipe, str.c_str(), str.size(), &len, NULL) || len != str.size())
 		throw runtime_error("WriteFile");
+
+	return;
 }
 
