@@ -17,7 +17,7 @@ namespace UOS{
 		FF	lock
 		*/
 		
-		void trigger(void);
+		void trigger(void)volatile;
 		
 	public:
 		enum CMD : word {resume=0xF0,pause=0xFF};
@@ -25,16 +25,16 @@ namespace UOS{
 		
 		MP(void);
 		
-		void lock(void);
-		void unlock(void);
-		bool lock_state(void) const;
-		void sync(CMD,void* = nullptr,size_t = 0);
-		void reply(CMD);
+		void lock(void)volatile;
+		void unlock(void)volatile;
+		bool lock_state(void) const volatile;
+		void sync(CMD,void* = nullptr,size_t = 0)volatile;
+		void reply(CMD)volatile;
 		
 	};
 	
 	
-	extern MP* mp;
+	extern volatile MP* mp;
 	
 	
 }

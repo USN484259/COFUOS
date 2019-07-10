@@ -1,7 +1,6 @@
 #pragma once
 #include "types.hpp"
 
-
 namespace UOS{
 	struct SYSINFO{
 		qword sig;
@@ -28,13 +27,14 @@ namespace UOS{
 		
 		qword krnlbase;
 		dword AP_entry;
-		dword MP_cnt;
-
+		word MP_cnt;
+		word reserved;
+		
 		//byte[] MP_id
 	
 	};
 	
-	extern SYSINFO* sysinfo;
+	extern volatile SYSINFO* const sysinfo;
 
 
 }

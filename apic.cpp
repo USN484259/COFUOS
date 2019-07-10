@@ -1,5 +1,5 @@
 #include "apic.hpp"
-#include "hal.hpp"
+#include "constant.hpp"
 #include "assert.hpp"
 
 using namespace UOS;
@@ -44,23 +44,23 @@ APIC::APIC(void){
 	
 }
 
-byte APIC::id(void){
+byte APIC::id(void)volatile{
 	if (nullptr == this)
 		return 0;
 	return read(IDR) >> 24;
 
 }
 
-dword APIC::read(size_t off){
+dword APIC::read(size_t off)volatile{
 	return *(dword*)((byte*)this+off);
 }
 
 
-void APIC::write(size_t off,dword val){
+void APIC::write(size_t off,dword val)volatile{
 	*(dword*)((byte*)this+off)=val;
 }
 
-void APIC::mp_break(void){
+void APIC::mp_break(void)volatile{
 	//TODO send IPI here
 	if (nullptr==this)
 		return;

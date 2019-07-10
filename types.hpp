@@ -8,7 +8,8 @@ typedef unsigned long long qword;
 namespace UOS{
 	
 	typedef void (*fun)(void);
-	
+	//typedef void (*exception_handler)(void* addr,void* stk,qword type,qword argu);
+
 	template<typename A,typename B>
 	struct pair{
 		A first;
@@ -20,7 +21,8 @@ namespace UOS{
 		bad_assert,
 		null_ptr,
 		bad_alloc,
-		out_of_range
+		out_of_range,
+		unhandled_exception
 
 	};
 

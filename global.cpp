@@ -4,18 +4,22 @@
 #include "mp.hpp"
 #include "apic.hpp"
 #include "heap.hpp"
+#include "mm.hpp"
+#include "constant.hpp"
+
 
 namespace UOS{
 	
 	
-	SYSINFO* sysinfo=(SYSINFO*)HIGHADDR(0x0800);
+	volatile SYSINFO* const sysinfo=(SYSINFO*)SYSINFO_BASE;
 
-	MP* mp=nullptr;
+	volatile MP* mp=nullptr;
 
-	APIC* apic=nullptr;
+	volatile APIC* apic=nullptr;
 
 	heap syspool;
 
-	
+	volatile VM::VMG* const VM::sys = (VM::VMG*)HIGHADDR(PDPT_HIGH_PBASE);
+
 	
 }

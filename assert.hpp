@@ -23,4 +23,4 @@
 
 #define IF_assert(c) assert(c,IF_get())
 #define page_assert(p) assert(0,(qword)p & 0xFFF)
-#define MP_assert(s) assert(s,mp->lock_state())
+#define MP_assert(s) assert(s,mp?mp->lock_state():s)

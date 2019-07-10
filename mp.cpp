@@ -2,6 +2,7 @@
 #include "sysinfo.hpp"
 #include "lock.hpp"
 #include "apic.hpp"
+#include "atomic.hpp"
 
 using namespace UOS;
 
@@ -9,9 +10,11 @@ using namespace UOS;
 MP::MP(void) : guard(0),owner(0xFFFF),command(0),count(0){}
 
 
-void MP::lock(void){
+void MP::lock(void)volatile{
+	if (!this)
+		return;
 	word id=apic->id();
-	word res=_InterlockedCompareExchange16(&owner,id,0xFFFF);
+	word res=cmpxchg<word>(&owner,id,0xFFFF);
 	if (res==id){
 		assertinv(0,guard);
 		++guard;
@@ -20,49 +23,54 @@ void MP::lock(void){
 	if (res!=0xFFFF){
 		do{
 			_mm_pause();
-		}while(_InterlockedCompareExchange16(&owner,id,0xFFFF) != 0xFFFF);
+		}while(cmpxchg<word>(&owner,id,0xFFFF) != 0xFFFF);
 	}
-	res=_InterlockedIncrement16(&guard);
+	res=lockinc<word>(&guard);
 	assert(1,res);
 }		
 
-void MP::unlock(void){
+void MP::unlock(void)volatile{
+	if (!this)
+		return;
 	assert(apic->id(),owner);
 	assertinv(0,guard);
-	if (0==_InterlockedDecrement16(&guard)){
-		_InterlockedExchange16(&owner,0xFFFF);
+	if (0==lockdec<word>(&guard)){
+		xchg<word>(&owner,0xFFFF);
 	}
 		
 }
 
-bool MP::lock_state(void) const{
-	return guard?true:false;
+bool MP::lock_state(void) const volatile{
+	return (this && guard)?true:false;
 
 }
 
-void MP::sync(MP::CMD cmd,void* argu,size_t len){
-	lock_guard<MP> lck(*this);
+void MP::sync(MP::CMD cmd,void* argu,size_t len)volatile{
+	if (!this)
+		return;
+	lock_guard<volatile MP> lck(*this);
 	assertless(len,0x0C00);
-	word tmp=_InterlockedCompareExchange16(&count,1,0);
+	word tmp=cmpxchg<word>(&count,1,0);
 	assert(0,tmp);
 	if (argu && len)
 		memcpy(this+1,argu,len);
-	tmp = _InterlockedExchange16(&command,cmd);
+	tmp = xchg<word>(&command,cmd);
 	
 	apic->mp_break();
 	
 	while(count != sysinfo->MP_cnt)
 		_mm_pause();
 	
-	tmp=_InterlockedCompareExchange16(&count,0,sysinfo->MP_cnt);
+	tmp=cmpxchg<word>(&count,0,sysinfo->MP_cnt);
 	assert(sysinfo->MP_cnt,tmp);
 	
 }
 
 
-void MP::reply(MP::CMD cmd){
+void MP::reply(MP::CMD cmd)volatile{
+	assertinv(0,this);
 	assertinv(0,count);
 	assert(command,cmd);
 	assertless(count,sysinfo->MP_cnt);
-	_InterlockedIncrement16(&count);
+	lockinc<word>(&count);
 }

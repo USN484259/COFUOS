@@ -1,5 +1,9 @@
 #include "lock.hpp"
 #include "assert.hpp"
+#include "atomic.hpp"
+
+
+
 using namespace UOS;
 
 
@@ -19,7 +23,7 @@ interrupt_guard::~interrupt_guard(void){
 mutex::mutex(void) : m(0){}
 
 void mutex::lock(void){
-	while(_InterlockedCompareExchange(&m,1,0))
+	while(cmpxchg<dword>(&m,1,0))
 		_mm_pause();
 	
 	assert(1,m);
@@ -30,7 +34,7 @@ void mutex::lock(void){
 void mutex::unlock(void){
 	assert(1,m);
 	
-	dword tmp=_InterlockedExchange(&m,0);
+	dword tmp=xchg<dword>(&m,0);
 	assert(1,tmp);
 	
 }

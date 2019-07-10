@@ -2,6 +2,7 @@
 
 HIGHADDR equ 0xFFFF8000_00000000
 
+
 extern dispatch_exception
 
 
@@ -19,7 +20,10 @@ global serial_get
 global serial_put
 
 global BugCheck
+global __C_specific_handler
 
+;global handler_push
+;global handler_pop
 
 section .text
 
@@ -150,11 +154,12 @@ push r15
 mov rbp,rsp
 mov rcx,[rbp+8*15]	;exp#
 mov rax,ISR_exception
-mov rdx,[rbp+8*16]	;errcode
+;mov rdx,[rbp+8*16]	;errcode
+mov rdx,rbp	;context
 sub rcx,rax
-and sp,0xF800	;lower 2K
+;and sp,0xF800	;lower 2K
 shr rcx,3	;8 byte alignment
-mov r8,rbp	;context
+;mov r8,rbp	;context
 call dispatch_exception
 
 
@@ -185,17 +190,19 @@ IDT_LIM equ 0x400	;64 entries
 
 ;TODO	rcx as MP id
 buildIDT:
+movzx r8w,cl	;MP id
 push rsi
 push rdi
 mov rcx,20
 mov rdi,HIGHADDR+IDT_BASE
 mov rsi,ISR_exception
+or r8w,1000_1110_0000_0000_b
 push rdi
 mov rdx,HIGHADDR>>32
 .exception:
 
 mov eax,esi
-mov ax,1000_1110_0000_0000_b
+mov ax,r8w	;1000_1110_0000_0000_b
 shl rax,32
 mov ax,si
 bts rax,19	;8<<16
@@ -278,17 +285,13 @@ ret
 ;void* memset(void*,int,size_t)
 memset:
 
-mov r9,rcx
-push rdi
 test rdx,rdx
-mov rdi,rcx
-jnz _memset
-
+jnz memset_nonzero
 mov rdx,r8
 
-;zeromemory dst,size
 zeromemory:
-
+push rdi
+mov rdi,rcx
 mov rcx,rdx
 xor rax,rax
 shr rcx,3
@@ -298,27 +301,29 @@ rep stosq
 and dl,7
 movzx rcx,dl
 
-jnz _badalign
+jnz .badalign
 
-.ret:
 pop rdi
-mov rax,r9
 ret
 
+.badalign:
 
+rep stosb
+pop rdi
+ret
 
-_memset:
-
+memset_nonzero:
+push rcx
+push rdi
+mov rdi,rcx
 mov rax,rdx
 mov rcx,r8
-_badalign:
-
-
 rep stosb
 
 pop rdi
-mov rax,r9
+pop rax
 ret
+
 
 ;void* memcpy(void*,const void*,size_t);
 memcpy:
@@ -387,6 +392,9 @@ out dx,al
 ret
 
 
+
+
+
 ;BugCheck status,arg1,arg2
 BugCheck:
 
@@ -407,11 +415,10 @@ push r13
 push r14
 push r15
 
-mov rdx,rcx
+;mov rdx,rcx
 mov ecx,0xFFFFFFFF
-mov r8,rsp
+mov rdx,rsp
 call dispatch_exception
-
 
 .reboot:
 
@@ -421,3 +428,10 @@ or al,1
 out dx,al
 hlt
 jmp .reboot
+
+
+__C_specific_handler:
+
+
+xor rax,rax
+ret

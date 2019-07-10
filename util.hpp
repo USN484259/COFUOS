@@ -1,7 +1,6 @@
 #pragma once
 #include "types.hpp"
 
-#define HIGHADDR(x) ( 0xFFFF800000000000 | (qword)(x) )
 #define BITMASK(i) ( (1<<(qword)(i))-1 )
 
 namespace UOS{
@@ -56,5 +55,6 @@ namespace UOS{
 		}
 		return i;
 	}
-
+	
+	
 };

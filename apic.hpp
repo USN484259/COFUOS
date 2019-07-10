@@ -8,20 +8,20 @@ namespace UOS{
 		//byte const* base;	//virtual base
 
 		
-		dword read(size_t);
+		dword read(size_t)volatile;
 		
-		void write(size_t,dword);
+		void write(size_t,dword)volatile;
 		
 		public:
 		APIC(void);
 		//~APIC(void);
-		byte id(void);
-		void mp_break(void);
+		byte id(void)volatile;
+		void mp_break(void)volatile;
 		
 		
 	};
 
-	extern APIC* apic;
+	extern volatile APIC* apic;
 
 
 }

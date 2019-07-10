@@ -1,23 +1,27 @@
 IA32_EFER equ 0xC0000080
 IA32_APIC_BASE equ 0x1B
 
-TSS_BASE equ 0x0000
-TSS_LIM equ 0x200
-GDT_BASE equ 0x0200
-GDT_LIM equ 0x200	;64 entries
+HIGHADDR equ 0xFFFF_8000_0000_0000
+
 IDT_BASE equ 0x0400
 IDT_LIM equ 0x400	;64 entries
 
-SYSINFO_BASE equ 0x0800
+GDT_BASE equ 0x0800
+GDT_LIM equ 0x100	;16 entries
+TSS_BASE equ 0x0900
+TSS_LIM equ 0x80
+
+SYSINFO_BASE equ 0x0A00
 MPCTRL_BASE equ 0x1000
 
 PMMSCAN_BASE equ 0x1000
 
+PAGE_SIZE equ 0x1000
+SECTOR_SIZE equ 0x200
 
 ISR_STK equ 0x03000
 
-PAGE_SIZE equ 0x1000
-SECTOR_SIZE equ 0x200
+ISR_MP equ 0x9000
 
 PL4T equ 0x03000
 
@@ -50,8 +54,9 @@ PMMWMP_PBASE equ 0x100000
 ;	006000		007000		RW	PDT
 ;	007000		008000		RW	PT
 ;	008000		009000		RW	PT for PMM
+;	009000		010000		RW	MP ISR
 ;-------------direct map---------------------
-;	009000		0A0000		?	avl
+;	010000		0A0000		?	avl
 
 ;	100000		?			RW	PMMWMP
 
@@ -232,6 +237,25 @@ GDT_SYS_DS equ 2*8
 
 align 16
 
+
+tss64_base:
+
+dd 0
+dq HIGHADDR+ISR_STK
+dq 0
+dq 0
+dq 0
+dq HIGHADDR+ISR_MP+PAGE_SIZE*1
+dq HIGHADDR+ISR_MP+PAGE_SIZE*2
+dq HIGHADDR+ISR_MP+PAGE_SIZE*3
+dq HIGHADDR+ISR_MP+PAGE_SIZE*4
+dq HIGHADDR+ISR_MP+PAGE_SIZE*5
+dq HIGHADDR+ISR_MP+PAGE_SIZE*6
+dq HIGHADDR+ISR_MP+PAGE_SIZE*7
+dq 0
+dd 0
+
+tss64_len equ ($-tss64_base)
 
 print16:
 
@@ -718,11 +742,11 @@ rep movsd
 
 ;init TSS
 mov edi,TSS_BASE
-mov ecx,TSS_LIM
-call zeromemory
-mov eax,ISR_STK
-add edi,4
-stosd
+
+mov esi,tss64_base
+mov ecx,tss64_len/4
+rep movsd
+
 
 ;zeroing IDT
 mov edi,IDT_BASE
@@ -939,7 +963,7 @@ jmp .scan
 ;set current state of PMM
 xor ax,ax
 mov edi,PMMWMP_PBASE
-mov ecx,9
+mov ecx,0x10
 rep stosw
 
 mov edi,PMMWMP_PBASE+2*0x100
@@ -948,9 +972,10 @@ rep stosw
 
 AP_LM:
 
-;enable PAE
 mov eax,cr4
-bts eax,5
+bts eax,5	;PAE
+bts eax,9	;OSFXSR
+bts eax,10	;OSXMMEXCPT
 mov cr4,eax
 
 mov ecx,IA32_EFER
@@ -1015,7 +1040,6 @@ ret
 
 [bits 64]
 
-HIGHADDR equ 0xFFFF_8000_0000_0000
 PMMWMP_VBASE equ HIGHADDR+0x00200000
 KRNL_VBASE equ HIGHADDR+0x02000000
 
@@ -1035,8 +1059,8 @@ KRNL_STK_TOP equ KRNL_STK_GUARD
 
 
 ;	virtual address of HIGHADDR
-;	00000000	00009000	lowPMM
-;	00009000	00010000	MP_ISR
+;	00000000	00010000	lowPMM
+;	00010000	0001A000	VMG descriptor
 ;	00010000	00011000	TMP_PT
 ;	00011000	?			CMN_BUF
 ;	?			00200000	krnlstk for all MPs

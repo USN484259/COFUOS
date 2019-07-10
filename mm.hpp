@@ -2,6 +2,20 @@
 #include "types.hpp"
 #include "lock.hpp"
 
+#define PAGE_PRESENT 0x01
+#define PAGE_WRITE 0x02
+#define PAGE_USER 0x04
+#define PAGE_WT 0x08
+#define PAGE_CD 0x10
+
+
+#define PAGE_LARGE 0x80
+#define PAGE_GLOBAL 0x100
+#define PAGE_COMMIT 0x4000000000000000
+#define PAGE_NX 0x8000000000000000
+
+
+
 namespace UOS{
 	
 	namespace PM{
@@ -22,7 +36,15 @@ namespace UOS{
 		//enum attribute : qword {page_write=0x02,page_user=0x04,page_writethrough=0x08,page_cachedisable=0x10,page_global=0x100,page_noexecute=0x8000000000000000};
 		bool spy(void* dst,qword base,size_t len);
 		
-		volatile class VMG{
+		
+		/*
+		+ 16*offset:
+		gap
+		PDT page
+		bitmap[8]
+		//avl
+		*/
+		class VMG{
 			qword present:1;
 			qword writable:1;
 			qword user:1;
@@ -39,32 +61,33 @@ namespace UOS{
 			qword xcutedisable:1;
 			
 			
-			friend class lock_guard<VMG>;
-			void lock(void);
-			void unlock(void);
+			friend class lock_guard<volatile VMG>;
+			void lock(void)volatile;
+			void unlock(void)volatile;
 
-			byte* base(void);
-			qword* table(void);
-			byte* bitmap(void);
+			byte* base(void)const volatile;
+			qword* table(void)const volatile;
+			byte* bitmap(void)const volatile;
 			
-			bool bitscan(size_t&,size_t);
-			void bitclear(size_t,size_t);
+			bool bitscan(size_t&,size_t)volatile;
+			void bitclear(size_t,size_t)volatile;
 			
-			qword PTE_set(volatile qword* dst,void* pm,qword attrib);
+			qword PTE_set(volatile qword* dst,void* pm,qword attrib)volatile;
 			
 			
 		public:
+			static void construct(void);
 			VMG(bool,word);
 			~VMG(void);
-			void* reserve(void* fixbase,size_t pagecount);
-			void commit(void* base,size_t pagecount,qword attrib);
-			void map(void* vbase,void* pm,qword attrib);
-			void release(void* base,size_t pagecount);
-			qword protect(void* base,size_t pagecount,qword attrib);	//attrib==0 means query
+			void* reserve(void* fixbase,size_t pagecount)volatile;
+			void commit(void* base,size_t pagecount,qword attrib)volatile;
+			void map(void* vbase,void* pm,qword attrib)volatile;
+			void release(void* base,size_t pagecount)volatile;
+			qword protect(void* base,size_t pagecount,qword attrib)volatile;	//attrib==0 means query
 		};
 
 		
-		extern VMG* sys;
+		extern volatile VMG* const sys;
 		
 		
 		

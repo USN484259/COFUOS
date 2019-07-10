@@ -29,6 +29,7 @@ void kdb_init(word port) {
 	__outbyte(port + 2, 0xC7);
 	__outbyte(port + 4, 0x0B);	//?????
 
+	//__writedr(7,0x700);
 	kdb_enable = true;
 	__debugbreak();
 }
@@ -82,7 +83,7 @@ void kdb_send(word port, const byte* sor, size_t len) {
 
 
 
-void kdb_break(byte id,qword errcode,CONTEXT* context){
+void kdb_break(byte id,CONTEXT* context){
 
 	DR_match();
 
@@ -91,7 +92,10 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 	
 	buf[len++]='B';
 	buf[len++] = id;
-	
+	*(qword*)(buf+len)=context->rip;
+	len+=8;
+	*(qword*)(buf+len)=context->errcode;
+	len+=8;
 	kdb_send(sysinfo->ports[0],buf,len);
 
 	bool quit = false;
@@ -125,20 +129,21 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 			len = 1;
 			break;
 		case 'B':	//breakpoint
+		{
+			interrupt_guard ig;
+			DR_STATE dr;
+			qword mask;
+			DR_get(&dr);
 			switch (buf[1]) {
 			case '+':
-			{
 				if (len < 10) {
 					dbgprint("bad packet");
 					continue;
 				}
-				interrupt_guard ig;
-				DR_STATE dr;
-				DR_get(&dr);
 
-				qword mask = 0x0C;
-				unsigned i;
-				for (i = 1; i <= 3; i++, mask <<= 2) {
+				mask = 0x0C;
+				//unsigned i;
+				for (unsigned i = 1; i <= 3; i++, mask <<= 2) {
 					if (dr.dr7 & mask)
 						continue;
 					dr.dr[i] = *(qword*)(buf + 2);
@@ -146,22 +151,17 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 					DR_set(&dr);
 					break;
 				}
-				if (i > 3) {
+				if (mask > 0xFF) {
 					dbgprint("breakpoint slot full");
 				}
 
 				break;
-			}
 			case '-':
-			{
 				if (len < 3) {
 					dbgprint("bad packet");
 					break;
 				}
-				interrupt_guard ig;
-				DR_STATE dr;
-				qword mask = 0x03 << (2*buf[2]);
-				DR_get(&dr);
+				mask = 0x03 << (2 * buf[2]);
 
 				if (dr.dr7 & mask) {
 					dr.dr7 &= ~mask;
@@ -169,15 +169,22 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 				}
 				else
 					dbgprint("no matching breakpoint");
+				break;
+			case '=':
+				dr.dr0 = *(qword*)(buf + 2);
+				dr.dr7 |= 0x03;
+				DR_set(&dr);
+				quit=true;
 
 				break;
-			}
 			default:
 				dbgprint("bad packet");
 				continue;
 			}
-			buf[0] = 'I';
-			buf[1] = 'D';
+			buf[0] = 'C';
+			len = 1;
+			break;
+		}
 		case 'I':	//info
 			switch (buf[1]) {
 			case 'R':
@@ -195,7 +202,7 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 			break;
 
 		case 'T':	//stack
-			if (len < 10) {
+			if (len < 2) {
 				dbgprint("bad packet");
 				continue;
 			}
@@ -256,19 +263,27 @@ void kdb_break(byte id,qword errcode,CONTEXT* context){
 }
 
 
-
-
 extern "C"
-void dispatch_exception(byte id,qword errcode,CONTEXT* context){
+void dispatch_exception(byte id,CONTEXT* context){
 
 //special errcode indicates BugCheck call
-	lock_guard<MP> lck(*mp);
+	lock_guard<volatile MP> lck(*mp);
 	mp->sync(MP::CMD::pause);
 
 	//clear TF
 	context->rflags &= ~0x100;
-	if (kdb_enable)
-		kdb_break(id,errcode,context);
+		
+	if (kdb_enable){
+		kdb_break(id,context);
+		if (!kdb_enable){
+			__outword(0xB004, 0x2000);
+			__halt();
+		}
+	}
+	else{
+		if (id!=1 && id!=3 && id!=0xFF)
+			BugCheck(unhandled_exception,id,(qword)context);
+	}
 
 	mp->sync(MP::CMD::resume);
 	//TODO handle exceptions here
@@ -277,10 +292,12 @@ void dispatch_exception(byte id,qword errcode,CONTEXT* context){
 
 
 void dbgprint(const char* str){
+	if (!kdb_enable)
+		return;
 	byte buf[0x200] = { 'P' };
 	size_t len = 1;
 	
-	lock_guard<MP> lck(*mp);
+	lock_guard<volatile MP> lck(*mp);
 	interrupt_guard ig;
 
 	while (len < 0x200) {

@@ -1,10 +1,12 @@
 #include "mm.hpp"
 #include "ps.hpp"
 #include "sysinfo.hpp"
+#include "constant.hpp"
 #include "util.hpp"
 #include "assert.hpp"
 #include "mp.hpp"
 #include "lock.hpp"
+#include "atomic.hpp"
 
 using namespace UOS;
 
@@ -22,7 +24,7 @@ bool PM::spy(void* dst,qword base,size_t len){
 
 void* PM::allocate(type t){
 	volatile word* base=(word*)sysinfo->PMM_wmp_vbase;
-	size_t cnt=sysinfo->PMM_wmp_page*2048;
+	size_t cnt=sysinfo->PMM_wmp_page*PAGE_SIZE/2;
 	
 	word id=PS::id();
 	//TODO currently zero page not supported
@@ -30,8 +32,8 @@ void* PM::allocate(type t){
 		word cur=*base;
 		if (cur & 0x8000){
 			//if (cur==_cmpxchgw(base,cur,PS::id())){
-			if (cur == _InterlockedCompareExchange16(base,id,cur)){
-				void* ret=(void*)((qword)(base-(word*)sysinfo->PMM_wmp_vbase)*0x1000);
+			if (cur == cmpxchg<word>(base,id,cur)){
+				void* ret=(void*)((qword)(base-(word*)sysinfo->PMM_wmp_vbase)*PAGE_SIZE);
 				if (t & zero_page)
 					VM::window(ret).zero();
 				return ret;
@@ -58,11 +60,10 @@ void PM::release(void* p){
 	word id=PS::id();
 	
 	//self=_cmpxchgw((word*)sysinfo->PMM_wmp_vbase+off,self,(word)0x8000);
-	word tmp = _InterlockedCompareExchange16((word*)sysinfo->PMM_wmp_vbase+off,0x8000,id);
+	word tmp = cmpxchg<word>((word*)sysinfo->PMM_wmp_vbase+off,0x8000,id);
 	assert(id,tmp);
 }
 
-VM::VMG* VM::sys = (VM::VMG*)HIGHADDR(0x5000);
 
 
 bool VM::spy(void* dst,qword base,size_t len){
@@ -87,28 +88,28 @@ void VM::window::zero(void){
 }
 
 
-byte* VM::VMG::base(void){
+byte* VM::VMG::base(void)const volatile{
 	return (byte*)(highaddr*HIGHADDR(0)+index*0x40000000);
 
 }
 
-qword* VM::VMG::table(void){
+qword* VM::VMG::table(void)const volatile{
 	return (qword*)(base()+0x1000*(offset*0x10+1));
 	
 }
 
-byte* VM::VMG::bitmap(void){
+byte* VM::VMG::bitmap(void)const volatile{
 	return base()+0x1000*(offset*0x10+2);
 }
 
-void VM::VMG::lock(void){
+void VM::VMG::lock(void)volatile{
 	volatile byte* lck=(volatile byte*)this + 7;
 	
 	while(true){
 		volatile byte expected=*lck & ~0x20;
 		
 		//if (expected == _cmpxchgb(lck,expected,expected | 0x20) )
-		if (expected == _InterlockedCompareExchange8(lck,expected | 0x20,expected))
+		if (expected == cmpxchg<byte>(lck,expected | 0x20,expected))
 			break;
 	
 	}
@@ -116,17 +117,57 @@ void VM::VMG::lock(void){
 	
 }
 
-void VM::VMG::unlock(void){
+void VM::VMG::unlock(void)volatile{
 	assert(1,sync);
 	
 	volatile byte* lck=(volatile byte*)this + 7;
 	
 	byte expected= *lck | 0x20;
 	//expected=_cmpxchgb(lck,expected,expected & ~0x20);
-	expected = _InterlockedCompareExchange8(lck,expected & ~0x20,expected);
+	expected = cmpxchg<byte>(lck,expected & ~0x20,expected);
 	
 	assertinv(0,expected & 0x20);
 
+}
+
+void VM::VMG::construct(void){
+#ifdef _DEBUG
+	static bool init=false;
+	assert(false,init);
+#endif
+	sys->index=0;
+	sys->highaddr=1;
+	sys->offset=1;
+	qword* pdt=(qword*)HIGHADDR(PDT0_PBASE);
+	assert(HIGHADDR(sys->pmpdt<<12),(qword)pdt);
+	
+	qword* pt=(qword*)HIGHADDR(PT0_PBASE);
+	
+	pt[0x11]=(qword)pdt | 3;
+
+	byte* base=sys->base();
+	
+	byte* mapped_addr=base+0x10000;
+
+	for (size_t i=0;i<8;i++){
+	
+		using namespace PM;
+		void* p=allocate(must_succeed);
+		pt[0x10]=(qword)p | 3;
+		__invlpg(mapped_addr);
+		zeromemory(mapped_addr,PAGE_SIZE);
+		
+		if (0==i)
+			*(dword*)mapped_addr = 0x03FFFFFF;
+		
+		pt[0x12+i]=(qword)p | 3;
+	}
+	
+	pt[0x10]=0;
+	__invlpg(mapped_addr);
+#ifdef _DEBUG
+	init=true;
+#endif
 }
 
 
@@ -166,7 +207,7 @@ VM::VMG::VMG(bool k,word id) : present((MP_assert(true),0)),writable(1),user(1),
 
 
 
-bool VM::VMG::bitscan(size_t& req,size_t bitcount){
+bool VM::VMG::bitscan(size_t& req,size_t bitcount)volatile{
 	assert(1,sync);
 	byte* bmp=bitmap();
 	size_t res = req ? req : 0;
@@ -229,7 +270,7 @@ bool VM::VMG::bitscan(size_t& req,size_t bitcount){
 	
 }
 
-void VM::VMG::bitclear(size_t off,size_t bitcount){
+void VM::VMG::bitclear(size_t off,size_t bitcount)volatile{
 	assert(1,sync);
 	assertless(off+bitcount , 0x8000*8);
 	
@@ -267,7 +308,7 @@ void VM::VMG::bitclear(size_t off,size_t bitcount){
 }
 
 
-qword VM::VMG::PTE_set(volatile qword* dst,void* pm,qword attrib){
+qword VM::VMG::PTE_set(volatile qword* dst,void* pm,qword attrib)volatile{
 	assert(1,sync);
 	MP_assert(true);
 	
@@ -275,19 +316,19 @@ qword VM::VMG::PTE_set(volatile qword* dst,void* pm,qword attrib){
 	assert(0,(qword)pm & 0xFFF0000000000FFF);
 	
 	//return _xchgq(dst,(qword)pm | attrib);
-	return _InterlockedExchange64(dst,(qword)pm | attrib);
+	return xchg<qword>(dst,(qword)pm | attrib);
 }
 
 
 
-void* VM::VMG::reserve(void* fixbase,size_t pagecount){
+void* VM::VMG::reserve(void* fixbase,size_t pagecount)volatile{
 	assertinv(0,pagecount);
 	//assert(0,attrib & ~0x80000000000011E);
 	page_assert(fixbase);
 	
 	size_t off=fixbase ? ((qword)fixbase >> 12) & BITMASK(18) : 0;
 	
-	lock_guard<VMG> lck(*this);
+	lock_guard<volatile VMG> lck(*this);
 	
 	if (!bitscan(off,pagecount))
 		return nullptr;
@@ -326,12 +367,12 @@ void* VM::VMG::reserve(void* fixbase,size_t pagecount){
 	return (void*)(base()+0x1000*off);
 }
 
-void VM::VMG::release(void* base,size_t pagecount){
+void VM::VMG::release(void* base,size_t pagecount)volatile{
 	assertinv(0,pagecount);
 	page_assert(base);
 	assertinv(nullptr,base);
 	
-	lock_guard<VMG> lck(*this);
+	lock_guard<volatile VMG> lck(*this);
 	
 	size_t off=((qword)base >> 12) & BITMASK(18);
 
@@ -347,7 +388,7 @@ void VM::VMG::release(void* base,size_t pagecount){
 		size_t border = (off+0x200) & ~0x1FF;
 		
 		while(pagecount && off < border){
-			qword cur=_InterlockedExchange64(&w.at<qword>(off % 0x200),0);
+			qword cur=xchg<qword>(&w.at<qword>(off % 0x200),0);
 			assertinv(0,cur & 1);
 			
 			if (cur & 0x4000000000000000){	//shall release PM
@@ -362,7 +403,7 @@ void VM::VMG::release(void* base,size_t pagecount){
 	
 }
 
-void VM::VMG::commit(void* base,size_t pagecount,qword attrib){
+void VM::VMG::commit(void* base,size_t pagecount,qword attrib)volatile{
 	assertinv(0,pagecount);
 	page_assert(base);
 	assertinv(nullptr,base);
@@ -372,7 +413,7 @@ void VM::VMG::commit(void* base,size_t pagecount,qword attrib){
 	if (highaddr)
 		attrib &= ~PAGE_USER;
 	
-	lock_guard<VMG> lck(*this);
+	lock_guard<volatile VMG> lck(*this);
 	
 	size_t off=((qword)base >> 12) & BITMASK(18);
 
@@ -400,7 +441,7 @@ void VM::VMG::commit(void* base,size_t pagecount,qword attrib){
 	}
 }
 
-void VM::VMG::map(void* vbase,void* pm,qword attrib){
+void VM::VMG::map(void* vbase,void* pm,qword attrib)volatile{
 	page_assert(vbase);
 	page_assert(pm);
 	assertinv(nullptr,vbase);
@@ -410,7 +451,7 @@ void VM::VMG::map(void* vbase,void* pm,qword attrib){
 	if (highaddr)
 		attrib &= ~PAGE_USER;
 
-	lock_guard<VMG> lck(*this);
+	lock_guard<volatile VMG> lck(*this);
 	size_t off=((qword)vbase >> 12) & BITMASK(18);
 	volatile qword* pdt=table();
 	
