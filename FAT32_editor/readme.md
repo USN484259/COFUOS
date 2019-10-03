@@ -1,0 +1,1 @@
+In order to make COFUOS build process in a single BAT file and git rid of "run disk management,type Admin password,mound VHD,drag COFUOS.sys in,unmount VHD,close disk management",I need a tool to handle FAT32 operations,and that's it.
