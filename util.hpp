@@ -1,8 +1,8 @@
 #pragma once
 #include "types.hpp"
 
-#define BITMASK(i) ( (1<<(qword)(i))-1 )
-
+#define BITMASK(i) ( ( (qword)1<<(qword)(i) ) - 1 )
+//#define BIT(i) ( (qword)1<<( (qword)(i) - 1 ) )
 namespace UOS{
 	
 	template<typename T>

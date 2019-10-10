@@ -19,6 +19,18 @@ void operator delete(void* p,size_t len){
 	syspool.release(p,len);
 }
 
+void* operator new[](size_t len){
+	dword* p=(dword*)operator new(len+sizeof(dword));
+	*p=(dword)len;	//place size in the first dword of block
+	return p+1;	//return the rest of block
+}
+
+void operator delete[](void* p){
+	dword* b=(dword*)p;
+	--b;	//point back to the block head
+	operator delete(b,*b);	//block size at head
+}
+
 const heap::BLOCK heap::bitoff=5;
 const heap::BLOCK heap::nomem=16;
 
@@ -30,7 +42,7 @@ heap::heap(void* base,size_t len) : pool{nullptr} {
 
 
 inline size_t heap::align_mask(BLOCK index){
-	return (1<<(index+bitoff))-1;
+	return ((size_t)1<<(index+bitoff))-1;
 }
 
 inline size_t heap::align_size(BLOCK index){

@@ -20,7 +20,8 @@ global serial_get
 global serial_put
 
 global BugCheck
-global __C_specific_handler
+;global __C_specific_handler
+global __chkstk
 
 ;global handler_push
 ;global handler_pop
@@ -299,15 +300,13 @@ shr rcx,3
 rep stosq
 
 and dl,7
-movzx rcx,dl
-
 jnz .badalign
 
 pop rdi
 ret
 
 .badalign:
-
+movzx rcx,dl
 rep stosb
 pop rdi
 ret
@@ -339,7 +338,6 @@ shr rcx,3
 rep movsq
 
 and r8b,7
-movzx rcx,r8b
 jnz .misaligned
 
 pop rsi
@@ -347,7 +345,7 @@ pop rdi
 ret
 
 .misaligned:
-
+movzx rcx,r8b
 rep movsb
 pop rsi
 pop rdi
@@ -430,8 +428,13 @@ hlt
 jmp .reboot
 
 
-__C_specific_handler:
-
-
-xor rax,rax
+__chkstk:
+;TODO: probe every page
 ret
+
+
+;__C_specific_handler:
+
+
+;xor rax,rax
+;ret

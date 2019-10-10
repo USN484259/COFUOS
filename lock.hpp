@@ -9,7 +9,6 @@ namespace UOS{
 		interrupt_guard(void);
 		~interrupt_guard(void);
 		
-		
 	};
 	
 	
@@ -18,6 +17,7 @@ namespace UOS{
 		
 	public:
 		mutex(void);
+		
 		void lock(void);
 		void unlock(void);
 		
@@ -34,6 +34,7 @@ namespace UOS{
 		lock_guard(L& l) : lck(l){
 			l.lock();
 		}
+				
 		~lock_guard(void){
 			lck.unlock();
 		}

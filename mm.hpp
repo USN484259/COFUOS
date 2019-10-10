@@ -38,12 +38,20 @@ namespace UOS{
 		
 		
 		/*
-		+ 16*offset:
+		
+		1G page pointed by PDPT
+		self-contained VMG info(PDT and bitmap)
+		
+		Page_head + 16*offset (pages):
 		gap
 		PDT page
 		bitmap[8]
 		//avl
+		
+		10 pages in total
 		*/
+		
+		
 		class VMG{
 			qword present:1;
 			qword writable:1;
@@ -51,12 +59,12 @@ namespace UOS{
 			qword writethrough:1;
 			qword cachedisable:1;
 			qword accessed:1;
-			qword highaddr:1;
+			qword highaddr:1;	//UOS defined indicates system area
 			qword largepage:1;
-			qword offset:4;
+			qword offset:4;		//UOS defined indicates VMG info position
 			qword pmpdt:40;
-			qword index:9;
-			qword sync:1;
+			qword index:9;		//UOS defined index of self in PDPT (#-th GB in the area)
+			qword sync:1;		//UOS defined sync lock for page table operation
 			qword :1;
 			qword xcutedisable:1;
 			
@@ -65,14 +73,15 @@ namespace UOS{
 			void lock(void)volatile;
 			void unlock(void)volatile;
 
-			byte* base(void)const volatile;
-			qword* table(void)const volatile;
-			byte* bitmap(void)const volatile;
+			byte* base(void)const volatile;		//LA of this GB
+			qword* table(void)const volatile;	//LA of PDT
+			byte* bitmap(void)const volatile;	//LA of bitmap
 			
+			bool bitset(size_t,size_t)volatile;
 			bool bitscan(size_t&,size_t)volatile;
 			void bitclear(size_t,size_t)volatile;
 			
-			qword PTE_set(volatile qword* dst,void* pm,qword attrib)volatile;
+			qword PTE_set(volatile qword& dst,void* pm,qword attrib)volatile;
 			
 			
 		public:
@@ -104,8 +113,12 @@ namespace UOS{
 			T& at(size_t off){
 				return *(T*)(vbase+sizeof(T)*off);
 			}
+			template<typename T>
+			const T& at(size_t off) const{
+				return *(const T*)(vbase+sizeof(T)*off);
+			}
 			
-			
+			size_t read(void* dst,size_t off,size_t len) const;
 			
 		};
 		

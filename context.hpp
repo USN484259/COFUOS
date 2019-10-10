@@ -30,7 +30,8 @@ namespace UOS {
 
 	};
 
-
+#pragma warning(push)
+#pragma warning(disable: 4201)
 	struct DR_STATE{
 		union {
 			struct {
@@ -44,5 +45,6 @@ namespace UOS {
 		qword dr6;
 		qword dr7;
 	};
+#pragma warning(pop)
 
 }

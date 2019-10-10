@@ -5,7 +5,8 @@
 #include "lock.hpp"
 #include "mm.hpp"
 #include "mp.hpp"
-
+#include "io.hpp"
+#include "util.hpp"
 
 #undef assert
 #undef assertinv
@@ -19,21 +20,22 @@ static const char* hexchar = "0123456789ABCDEF";
 
 bool kdb_enable = false;
 
-
+#pragma warning(push)
+#pragma warning(disable: 4365)
 void kdb_init(word port) {
-	__outbyte(port + 1, 0);
-	__outbyte(port + 3, 0x80);
-	__outbyte(port + 0, 2);
-	__outbyte(port + 1, 0);
-	__outbyte(port + 3, 0x03);
-	__outbyte(port + 2, 0xC7);
-	__outbyte(port + 4, 0x0B);	//?????
+	io_write<byte>(port + 1, 0);
+	io_write<byte>(port + 3, 0x80);
+	io_write<byte>(port + 0, 2);
+	io_write<byte>(port + 1, 0);
+	io_write<byte>(port + 3, 0x03);
+	io_write<byte>(port + 2, 0xC7);
+	io_write<byte>(port + 4, 0x0B);	//?????
 
 	//__writedr(7,0x700);
 	kdb_enable = true;
 	__debugbreak();
 }
-
+#pragma warning(pop)
 
 size_t kdb_recv(word port, byte* dst, size_t lim) {
 
@@ -52,11 +54,12 @@ size_t kdb_recv(word port, byte* dst, size_t lim) {
 
 		for (word off = 0; off < len; off++) {
 			cur = serial_get(port);
-			dst[off] = cur;
+			if (off<lim)
+				dst[off] = cur;
 			chk_rel += cur;
 		}
 		if (chk_rel == chk_req)
-			return len;
+			return min((size_t)len,lim);
 
 	}
 }
@@ -161,7 +164,7 @@ void kdb_break(byte id,CONTEXT* context){
 					dbgprint("bad packet");
 					break;
 				}
-				mask = 0x03 << (2 * buf[2]);
+				mask = (qword)0x03 << (2 * buf[2]);
 
 				if (dr.dr7 & mask) {
 					dr.dr7 &= ~mask;
@@ -206,12 +209,12 @@ void kdb_break(byte id,CONTEXT* context){
 				dbgprint("bad packet");
 				continue;
 			}
-			if (!VM::spy(buf + 2, context->rsp, buf[1] * 8)) {
+			if (!VM::spy(buf + 2, context->rsp, buf[1] * (size_t)8)) {
 				dbgprint("memory gap");
 				continue;
 			}
 			else {
-				len = 2 + 8 * buf[1];
+				len = (size_t)2 + 8 * buf[1];
 			}
 
 			break;
@@ -276,7 +279,7 @@ void dispatch_exception(byte id,CONTEXT* context){
 	if (kdb_enable){
 		kdb_break(id,context);
 		if (!kdb_enable){
-			__outword(0xB004, 0x2000);
+			io_write<word>(0xB004, 0x2000);
 			__halt();
 		}
 	}
@@ -290,7 +293,8 @@ void dispatch_exception(byte id,CONTEXT* context){
 
 }
 
-
+#pragma warning(push)
+#pragma warning(disable: 4706)
 void dbgprint(const char* str){
 	if (!kdb_enable)
 		return;
@@ -301,7 +305,7 @@ void dbgprint(const char* str){
 	interrupt_guard ig;
 
 	while (len < 0x200) {
-		if (buf[len++] = *str++)
+		if (buf[len++] = (byte)*str++)
 			;
 		else
 			break;
@@ -310,3 +314,4 @@ void dbgprint(const char* str){
 	kdb_send(sysinfo->ports[0], buf, len);
 
 }
+#pragma warning(pop)

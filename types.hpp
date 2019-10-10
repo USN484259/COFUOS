@@ -4,6 +4,7 @@ typedef unsigned short word;
 typedef unsigned long dword;
 typedef unsigned long long qword;
 
+#pragma warning(disable: 4626 4514 4711)
 
 namespace UOS{
 	

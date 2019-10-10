@@ -41,20 +41,29 @@ void krnlentry(void* module_base){
 	while(*globalConstructor)
 		(*globalConstructor++)();
 
-	sysinfo->krnlbase=(qword)module_base;
-	sysinfo->AP_entry=(qword)AP_entry-(qword)module_base;
-	sysinfo->MP_cnt=1;
+	//give sysheap a block
+	{
+		void* p = VM::sys->reserve(nullptr,0x200);	//get 2M VM area
+		assertinv(nullptr,p);
+		VM::sys->commit(p,0x200,PAGE_WRITE | PAGE_NX);	//have somewhere mapped
+		bool res=syspool.expand(p,0x200*PAGE_SIZE);		//give it to sys heap
+		assert(true,res);
+	}
 	
-	mp=new((byte*)MPAREA_BASE) MP();
-	
+	//TODO: place test code for heap here
 
 
-	//MP setup
 	apic = new((byte*)APIC_PBASE) APIC;
 	*(byte*)(sysinfo+1)=apic->id();
 	
+	//MP setup
+	/*
+	sysinfo->krnlbase=(qword)module_base;
+	sysinfo->AP_entry=(dword)( (qword)AP_entry-(qword)module_base );
+	sysinfo->MP_cnt=1;
 	
-
+	mp=new((byte*)MPAREA_BASE) MP();
+	*/
 
 }
 
