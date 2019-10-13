@@ -76,7 +76,7 @@ public:
 		std::string name(void) const;
 		std::string extension(void) const;
 		std::string fullname(void) const;
-		size_t size(void) const;
+		dword size(void) const;
 		bool is_folder(void) const;
 
 

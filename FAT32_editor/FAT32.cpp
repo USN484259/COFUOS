@@ -316,7 +316,7 @@ string FAT32::file_list::fullname(void) const {
 	return res;
 }
 
-size_t FAT32::file_list::size(void) const {
+dword FAT32::file_list::size(void) const {
 	if (!valid)
 		throw out_of_range("file_list iterator out of range");
 	return it->size;

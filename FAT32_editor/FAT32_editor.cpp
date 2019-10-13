@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include "MBR.hpp"
 #include "FAT32.hpp"
@@ -61,10 +62,40 @@ int main(int argc,char** argv) {
 					auto it = fs->list();
 
 					while (it.step()) {
-						string name = it.fullname();
-						if (it.is_folder())
-							name += '\\';
-						cout << name << '\t' << it.size() << endl;
+
+						if (it.is_folder()) {
+							cout << it.fullname() << '\\' << endl;
+							continue;
+						}
+						cout << it.fullname() << '\t';
+
+						dword size = it.size();
+						if (size < 1024)	//bytes
+							cout << size << " bytes" << endl;
+						else {
+							static const char postfix[] = "KMG";
+							unsigned level = 0;		//KB
+							double adjusted_size = (double)size / 0x400;
+
+							while (!(adjusted_size < 1024)) {
+								adjusted_size /= 0x400;
+								++level;
+								//shouldn't bigger than 4G
+								//assertless(level, 3);
+							}
+							cout << fixed;
+							if (adjusted_size < 10)
+								cout << setprecision(2);
+							else if (adjusted_size < 100)
+								cout << setprecision(1);
+							else
+								cout << setprecision(0);
+
+							cout << adjusted_size << ' ' << postfix[level] << 'B' << endl;
+
+
+						}
+
 					}
 
 
