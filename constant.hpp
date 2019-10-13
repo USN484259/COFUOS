@@ -1,5 +1,9 @@
 #pragma once
 
+#define ENABLE_DEBUGGER
+
+
+
 #define IA32_APIC_BASE 0x1B
 
 

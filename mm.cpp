@@ -241,6 +241,7 @@ const void* VM::VMG::construct(const PE64& pe){
 	pt[0x10]=0;	//krnldr store PT0 here,unmap it
 	invlpg(base+0x10000);
 	pt[0x11]=PDT0_PBASE | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_GLOBAL | PAGE_NX ;	//PDT area
+	invlpg(base+0x11000);	//krnldr store common_buffer here,unmap it
 	pt[0x1A]=PT0_PBASE | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_GLOBAL | PAGE_NX ;	//PT0 area
 	
 	volatile byte* mapped_addr=base+0x1000 * (0x1B);		// addr of PTn page
@@ -588,6 +589,8 @@ void* VM::VMG::reserve(void* fixbase,size_t pagecount)volatile{
 	size_t cur=off;		//#-th page in this GB
 	volatile qword* pdt=table();
 	while(pagecount){
+		
+		
 		if (pdt[cur/0x200] & 1)	//PT available
 			;
 		else{	//new PT

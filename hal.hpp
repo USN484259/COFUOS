@@ -57,8 +57,8 @@ extern "C"{
 	void __movsd(dword*, const dword*, size_t);
 	void __movsq(qword*, const qword*, size_t);
 
-	qword _readcr3(void);
-	void _writecr3(qword);
+	qword __readcr3(void);
+	void __writecr3(qword);
 	//void __writedr(unsigned, qword);
 	
 	qword __readmsr(dword);
@@ -73,6 +73,7 @@ extern "C"{
 	void __nop(void);
 	void __halt(void);
 	void __invlpg(void*);
+	void __debugbreak(void);
 	
 	char _InterlockedCompareExchange8(volatile char*,char,char);
 	short _InterlockedCompareExchange16(volatile short*,short,short);

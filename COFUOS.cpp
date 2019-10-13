@@ -12,7 +12,6 @@
 using namespace UOS;
 
 
-
 __declspec(noreturn)
 void AP_entry(word);
 
@@ -24,10 +23,13 @@ void AP_entry(word);
 
 __declspec(noreturn)
 void krnlentry(void* module_base){
-
+	
+	//__writecr3(__readcr3());
+	
+	
 	buildIDT(0);
 	
-#ifdef _DEBUG
+#ifdef ENABLE_DEBUGGER
 	void kdb_init(word);
 	kdb_init(sysinfo->ports[0]);
 #endif
