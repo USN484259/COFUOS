@@ -231,7 +231,7 @@ void Debugger::show_source(qword addr, int count) {
 				return;
 
 		bool color_reset = false;
-		if (disasm.address == base) {
+		if (disasm.address == cur_addr) {
 			color_reset = true;
 			color(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | BACKGROUND_GREEN);
 		}
@@ -338,7 +338,15 @@ void Debugger::stub(void) {
 				if (type != 1 || step_check()) {
 					cout << endl;
 					color(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | BACKGROUND_RED);
-					cout << "Break\t" << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type;
+					if (type == 0xFF) {
+						cout << "BugCheck : ";
+						qword errcode;
+						ss.read((char*)&errcode, sizeof(qword));
+						cout << dec << errcode;
+					}
+					else {
+						cout << "Break\t" << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type;
+					}
 					switch (type) {
 					case 10:
 					case 11:
@@ -513,7 +521,7 @@ bool Debugger::ui(void) {
 			//cout << "E\tprocessor environment" << endl;
 			cout << "V base len\tvirtual memory" << endl;
 			cout << "M base len\tphysical memory" << endl;
-			//cout << "O [symbol]\topen source file" << endl;
+			cout << "O [symbol]\topen source file" << endl;
 			//cout << "O(+/-/?)\toggle/query source file auto open" << endl;
 			continue;
 		case 'G':	//go
@@ -764,35 +772,32 @@ bool Debugger::ui(void) {
 			}
 			clear(true);
 			continue;
-		/*
 		case 'O':	//open source file
 		{
-		switch (ss.peek()) {
-		case '+':
-		auto_open = true;
-		continue;
-		case '-':
-		auto_open = false;
-		continue;
-		case '?':
-		cout << "source file auto open : " << (auto_open ? "on" : "off") << endl;
-		continue;
+			ss >> str;
+			qword addr = cur_addr;
+			if (!expression(addr, str)) {
+				cout << "unresolved symbol:\t" << str << endl;
+				continue;
+			}
+			Disasm disasm;
+			if (get_disasm(addr, disasm) && disasm.fileid && disasm.line) {
+				sql.command("select name from File where id=?1");
+				sql << disasm.fileid;
+				if (sql.step()) {
+					sql >> str;
+					ss.str(string());
+					ss.clear();
+					ss << '\"' << str << "\" -n" << dec << disasm.line;
+					str = ss.str();
+					ShellExecute(NULL, "open", editor.c_str(), str.c_str(), NULL, SW_SHOWNA);
+				}
+			}
+			else {
+				cout << "no source at " << hex << cur_addr << endl;
+			}
+			continue;
 		}
-		ss >> str;
-		qword addr = cur_addr;
-		if (!expression(addr, str)) {
-		cout << "unresolved symbol:\t" << str << endl;
-		continue;
-		}
-		Symbol symbol;
-		if (!addr2symbol(cur_addr, symbol) || symbol.file.empty() || !symbol.line)
-		cout << "no source at " << hex << cur_addr << endl;
-		else {
-		open_source(symbol.file, symbol.line, true);
-		}
-		continue;
-		}
-		*/
 
 		default:
 			cout << "unknown command" << endl;
