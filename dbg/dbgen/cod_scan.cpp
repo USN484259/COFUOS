@@ -272,9 +272,23 @@ void cod_scanner::scan_cod(const string& filename) {
 				ss >> ws;
 				if (!ss.good())
 					str = prev;
-				else
-					getline(ss, str, ',');
+				else {
+					//getline(ss, str, ',');
+					char c;
+					str.clear();
+					unsigned masked = 0;
+					while (true) {
+						c = ss.get();
+						if (!ss.good() || (!masked && c==','))
+							break;
+						if (c == '<')
+							++masked;
+						if (c == '>')
+							--masked;
+						str += c;
+					}
 
+				}
 				sql.command("select address,length from Symbol where symbol=?1");
 				sql << str;
 
