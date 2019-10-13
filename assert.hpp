@@ -22,5 +22,5 @@
 
 
 #define IF_assert(c) assert(c,IF_get())
-#define page_assert(p) assert(0,(qword)p & 0xFFF)
-#define MP_assert(s) assert(s,mp?mp->lock_state():s)
+#define page_assert(p) assert(0,(qword)p & 0x0FFF)
+#define MP_assert(s) assert((s)?1:0,mp?(mp->lock_state()?1:0):((s)?1:0))

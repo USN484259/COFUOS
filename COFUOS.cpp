@@ -32,15 +32,17 @@ void krnlentry(void* module_base){
 	kdb_init(sysinfo->ports[0]);
 #endif
 	
-	VM::VMG::construct();
+	PE64 pe(module_base);
+	
 	
 	//globals construct
-	const char strCRT[8]={'.','C','R','T',0};
-	fun* globalConstructor = (fun*)peGetSection(module_base,strCRT);
+	fun* globalConstructor = (fun*)
+		VM::VMG::construct(pe);	//returns CRT base			//pe.section(strCRT);//(fun*)peGetSection(module_base,strCRT);
+
 	assertinv(nullptr,globalConstructor);
 	while(*globalConstructor)
 		(*globalConstructor++)();
-
+	
 	//give sysheap a block
 	{
 		void* p = VM::sys->reserve(nullptr,0x200);	//get 2M VM area

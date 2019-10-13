@@ -56,5 +56,14 @@ namespace UOS{
 		return i;
 	}
 	
+	template<typename T>
+	T align_down(T value,size_t align){
+		return value & (T)~(align-1);
+	}
+	
+	template<typename T>
+	T align_up(T value,size_t align){
+		return align_down((T)(value + align - 1),align);
+	}
 	
 };

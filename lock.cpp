@@ -22,7 +22,7 @@ interrupt_guard::~interrupt_guard(void){
 
 mutex::mutex(void) : m(0){}
 
-void mutex::lock(void){
+void mutex::lock(void)volatile{
 	while(cmpxchg<dword>(&m,1,0))
 		_mm_pause();
 	
@@ -31,7 +31,7 @@ void mutex::lock(void){
 	
 }
 
-void mutex::unlock(void){
+void mutex::unlock(void)volatile{
 	assert(1,m);
 	
 	dword tmp=xchg<dword>(&m,0);
@@ -39,7 +39,7 @@ void mutex::unlock(void){
 	
 }
 
-bool mutex::lock_state(void) const{
+bool mutex::lock_state(void) const volatile{
 	return m ? true : false;
 	
 }

@@ -2,6 +2,7 @@
 
 HIGHADDR equ 0xFFFF8000_00000000
 
+;WARNING: according to x64 calling convention 0x20 space on stack needed before calling C functions
 
 extern dispatch_exception
 
@@ -161,6 +162,9 @@ sub rcx,rax
 ;and sp,0xF800	;lower 2K
 shr rcx,3	;8 byte alignment
 ;mov r8,rbp	;context
+
+sub rsp,0x20
+
 call dispatch_exception
 
 
@@ -396,7 +400,9 @@ ret
 ;BugCheck status,arg1,arg2
 BugCheck:
 
+
 push rbp
+mov rbp,rsp
 push rax
 push rcx
 push rdx
@@ -413,9 +419,16 @@ push r13
 push r14
 push r15
 
+mov rax,[rbp+8]	;ret addr
+mov [rbp+0x10],rcx	;errcode
+mov [rbp+0x18],rax	;rip
+
 ;mov rdx,rcx
 mov ecx,0xFFFFFFFF
 mov rdx,rsp
+
+sub rsp,0x20
+
 call dispatch_exception
 
 .reboot:
@@ -429,8 +442,34 @@ jmp .reboot
 
 
 __chkstk:
-;TODO: probe every page
+;probe every page
+
+;r10 request stack top
+;r11 current page
+
+sub rsp,0x10
+mov [rsp+8],r11
+mov [rsp],r10
+lea r10,[rsp+0x18]
+mov r11,r10
+sub r10,rax
+
+and r11w,0xF000
+
+.step:
+
+mov byte [r11],0
+sub r11,0x1000
+
+cmp r11,r10
+jae .step
+
+
+mov r11,[rsp+8]
+mov r10,[rsp]
+add rsp,0x10
 ret
+
 
 
 ;__C_specific_handler:

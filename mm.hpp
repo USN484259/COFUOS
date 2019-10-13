@@ -1,6 +1,7 @@
 #pragma once
 #include "types.hpp"
 #include "lock.hpp"
+#include "pe.hpp"
 
 #define PAGE_PRESENT 0x01
 #define PAGE_WRITE 0x02
@@ -11,12 +12,16 @@
 
 #define PAGE_LARGE 0x80
 #define PAGE_GLOBAL 0x100
-#define PAGE_COMMIT 0x4000000000000000
-#define PAGE_NX 0x8000000000000000
 
+//UOS defined indicates need PM::release
+#define PAGE_COMMIT	0x4000000000000000
+
+#define PAGE_NX 	0x8000000000000000
 
 
 namespace UOS{
+	
+	void invlpg(volatile void*);
 	
 	namespace PM{
 		enum type{zero_page=0x01,must_succeed=0x80};
@@ -43,62 +48,84 @@ namespace UOS{
 		self-contained VMG info(PDT and bitmap)
 		
 		Page_head + 16*offset (pages):
-		gap
+		GAP
 		PDT page
 		bitmap[8]
+		PT0 page
+		GAP / PTn
 		//avl
 		
-		10 pages in total
+		12 pages in total
 		*/
 		
 		
 		class VMG{
-			qword present:1;
-			qword writable:1;
-			qword user:1;
-			qword writethrough:1;
-			qword cachedisable:1;
-			qword accessed:1;
-			qword highaddr:1;	//UOS defined indicates system area
-			qword largepage:1;
-			qword offset:4;		//UOS defined indicates VMG info position
-			qword pmpdt:40;
-			qword index:9;		//UOS defined index of self in PDPT (#-th GB in the area)
-			qword sync:1;		//UOS defined sync lock for page table operation
-			qword :1;
-			qword xcutedisable:1;
+			volatile qword present:1;
+			volatile qword writable:1;
+			volatile qword user:1;
+			volatile qword writethrough:1;
+			volatile qword cachedisable:1;
+			volatile qword accessed:1;
+			volatile qword highaddr:1;		//UOS defined indicates system area
+			volatile qword largepage:1;
+			volatile qword offset:4;		//UOS defined indicates VMG info position
+			volatile qword pmpdt:40;
+			volatile qword index:9;			//UOS defined index of self in PDPT (#-th GB in the area)
+			volatile qword sync:1;			//UOS defined sync lock for page table operation
+			volatile qword :1;
+			volatile qword xcutedisable:1;
 			
+			class PT_mapper{
+				volatile VMG& vmg;
+				volatile qword* base;
 			
-			friend class lock_guard<volatile VMG>;
+			public:
+				PT_mapper(volatile VMG&,size_t);
+				PT_mapper(volatile VMG&,void*);
+				~PT_mapper(void);
+			
+				volatile qword& operator[](size_t)volatile;
+			
+			};
+		
+
+			friend class lock_guard<VMG>;
+			friend class PT_mapper;
+			
 			void lock(void)volatile;
 			void unlock(void)volatile;
 
-			byte* base(void)const volatile;		//LA of this GB
-			qword* table(void)const volatile;	//LA of PDT
-			byte* bitmap(void)const volatile;	//LA of bitmap
+			volatile byte* base(void)const volatile;		//LA of this GB
+			volatile qword* table(void)const volatile;	//LA of PDT
+			volatile byte* bitmap(void)const volatile;	//LA of bitmap
+			
+			void check_range(volatile void*,size_t) const volatile;	//check if within this VMG
 			
 			bool bitset(size_t,size_t)volatile;
 			bool bitscan(size_t&,size_t)volatile;
 			void bitclear(size_t,size_t)volatile;
+			bool bitcheck(size_t,size_t) const volatile;
 			
 			qword PTE_set(volatile qword& dst,void* pm,qword attrib)volatile;
 			
 			
 		public:
-			static void construct(void);
+			static const void* construct(const PE64&);
 			VMG(bool,word);
 			~VMG(void);
 			void* reserve(void* fixbase,size_t pagecount)volatile;
-			void commit(void* base,size_t pagecount,qword attrib)volatile;
-			void map(void* vbase,void* pm,qword attrib)volatile;
+			bool commit(void* base,size_t pagecount,qword attrib)volatile;
+			bool map(void* vbase,void* pm,qword attrib)volatile;
 			void release(void* base,size_t pagecount)volatile;
 			qword protect(void* base,size_t pagecount,qword attrib)volatile;	//attrib==0 means query
+			
+			
+			// get_PM ?
+			
 		};
 
 		
 		extern volatile VMG* const sys;
-		
-		
 		
 		
 		class window{

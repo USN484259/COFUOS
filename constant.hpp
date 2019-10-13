@@ -4,6 +4,7 @@
 
 
 #define HIGHADDR(x) ( 0xFFFF800000000000 | (qword)(x) )
+#define LOWADDR(x) ( 0x00007FFFFFFFFFFF & (qword)(x) )
 #define PAGE_SIZE ((qword)0x1000)
 #define PAGE_MASK ((qword)0x0FFF)
 

@@ -18,10 +18,10 @@ namespace UOS{
 	public:
 		mutex(void);
 		
-		void lock(void);
-		void unlock(void);
+		void lock(void)volatile;
+		void unlock(void)volatile;
 		
-		bool lock_state(void) const;
+		bool lock_state(void) const volatile;
 		
 		
 	};
@@ -29,9 +29,9 @@ namespace UOS{
 	
 	template<typename L>
 	class lock_guard{
-		L& lck;
+		volatile L& lck;
 	public:
-		lock_guard(L& l) : lck(l){
+		lock_guard(volatile L& l) : lck(l){
 			l.lock();
 		}
 				

@@ -1060,15 +1060,16 @@ KRNL_STK_TOP equ KRNL_STK_GUARD
 
 ;	virtual address of HIGHADDR
 ;	00000000	00010000	lowPMM
-;	00010000	0001A000	VMG descriptor
+;	00010000	0001C000	VMG info
 ;	00010000	00011000	TMP_PT
 ;	00011000	?			CMN_BUF
 ;	?			00200000	krnlstk for all MPs
 ;	00200000	?			PMMWMP
-;	?			01000000	krnlheap ?
-;	01000000	02000000	PDPTmap
+;-------------------------------	?			01000000	krnlheap ?
+;-------------------------------	01000000	02000000	PDPTmap
+;	?			01FFF000	stack
 ;	02000000	?			KERNEL
-;	20000000	40000000	PDTmap
+;-------------------------------	20000000	40000000	PDTmap
 
 
 
@@ -1409,7 +1410,7 @@ shr ebx,12	;rbx commit page count
 test eax,eax
 jnz .fail
 
-cmp ebx,0x100	;1M=256 pages
+cmp ebx,0x10	;16 pages
 ja .fail
 
 
