@@ -2,6 +2,9 @@
 #include "types.hpp"
 //#include "hal.hpp"
 
+#ifndef _TEST
+
+
 #ifdef _DEBUG
 #include "hal.hpp"
 
@@ -12,13 +15,22 @@
 #else
 	
 
-#define assert(a,b) __assume(a==b)
-#define assertinv(a,b) __assume(a!=b)
-#define assertless(a,b) __assume (a<b)
+#define assert(a,b) __assume((a)==(b))
+#define assertinv(a,b) __assume((a)!=(b))
+#define assertless(a,b) __assume ((a)<(b))
 
 #endif
 
+#else
 
+extern void _check(bool);
+
+#define assert(a,b) _check((a)==(b))
+#define assertinv(a,b) _check((a)!=(b))
+#define assertless(a,b) _check ((a)<(b))
+
+
+#endif
 
 
 #define IF_assert(c) assert(c,IF_get())
