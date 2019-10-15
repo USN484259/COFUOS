@@ -8,9 +8,9 @@
 #ifdef _DEBUG
 #include "hal.hpp"
 
-#define assert(a,b) ( ((a)==(b))?0:BugCheck(bad_assert,(qword)a,(qword)b) )
-#define assertinv(a,b) ( ((a)!=(b))?0:BugCheck(bad_assert,(qword)a,(qword)b) )
-#define assertless(a,b) ( ((a)<(b))?0:BugCheck(bad_assert,(qword)a,(qword)b) )
+#define assert(a,b) ( ((a)==(b))?0:BugCheck(bad_assert,(qword)(a),(qword)(b) ) )
+#define assertinv(a,b) ( ((a)!=(b))?0:BugCheck(bad_assert,(qword)(a),(qword)(b) ) )
+#define assertless(a,b) ( ((a)<(b))?0:BugCheck(bad_assert,(qword)(a),(qword)(b) ) )
 
 #else
 	

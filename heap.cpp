@@ -157,8 +157,8 @@ void heap::put(void* base,BLOCK index){
 
 		//}
 	}
-	assert((qword)(prev ? prev->next : cur), (qword)cur);
-	assert((qword)(cur ? cur->prev : prev), (qword)prev);
+	assert(prev ? prev->next : cur, cur);
+	assert(cur ? cur->prev : prev, prev);
 
 	if (index + 1 < nomem) {
 		node* friend_block = nullptr;
