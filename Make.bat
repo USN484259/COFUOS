@@ -2,7 +2,7 @@
 nasm -f bin boot.asm -o bin\boot.bin
 @echo --------------------------------------------
 @pause > nul
-nasm -f bin krnldr.asm -o bin\krnldr.bin -l krnldr.lst
+nasm -f bin krnldr.asm -o bin\krnldr.bin -l symbol\krnldr.lst.asm
 @echo --------------------------------------------
 @pause > nul
 nasm -f win64 hal.asm -o bin\hal.obj -l symbol\hal.lst

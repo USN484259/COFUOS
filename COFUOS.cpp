@@ -9,10 +9,11 @@
 #include "apic.hpp"
 #include "mp.hpp"
 
+
 using namespace UOS;
 
 
-__declspec(noreturn)
+[[ noreturn ]]
 void AP_entry(word);
 
 
@@ -20,8 +21,25 @@ void AP_entry(word);
 
 //VMG* vmg=(VMG*)HIGHADDR(0x5000);
 
+namespace UOS{
+	extern void* exit_callback[];
+}
 
-__declspec(noreturn)
+extern "C"
+int atexit(void (*func )(void)){
+	
+	for (unsigned i=0;i<0x20;i++){
+		if (nullptr == exit_callback[i]){
+			exit_callback[i]=(void*)func;
+			return 0;
+		}
+	}
+	return -1;
+}
+
+
+
+[[ noreturn ]]
 void krnlentry(void* module_base){
 	
 	//__writecr3(__readcr3());
@@ -44,6 +62,9 @@ void krnlentry(void* module_base){
 	assertinv(nullptr,globalConstructor);
 	while(*globalConstructor)
 		(*globalConstructor++)();
+	
+	PM::construct((const PM::PMMSCAN*)PMMSCAN_BASE);
+	
 	
 	//give sysheap a block
 	{
@@ -69,6 +90,7 @@ void krnlentry(void* module_base){
 	mp=new((byte*)MPAREA_BASE) MP();
 	*/
 
+	BugCheck(failed,0,0);
 }
 
 __declspec(noreturn)
@@ -82,5 +104,5 @@ void AP_entry(word pid){
 	assert(pid,sysinfo->MP_cnt);
 	sysinfo->MP_cnt++;
 	
-	
+	BugCheck(failed,0,0);
 }

@@ -1,7 +1,7 @@
 #pragma once
 #include "types.hpp"
 #include "assert.hpp"
-#include "heap.hpp"
+//#include "heap.hpp"
 #include "util.hpp"
 //#include "iterator.hpp"
 
@@ -127,7 +127,7 @@ namespace UOS{
 			count=0;
 		}
 		
-		void push_front(const T& val){
+		void push_front(T&& val){
 			head=new node{nullptr,head,val};
 			if (!tail){
 				assertinv(0,count);
@@ -136,7 +136,7 @@ namespace UOS{
 			count++;
 		}
 		
-		void push_back(const T& val){
+		void push_back(T&& val){
 			tail=new node{tail,nullptr,val};
 			if (!head){
 				assertinv(0,count);
@@ -183,7 +183,7 @@ namespace UOS{
 			return iterator();
 		}
 		
-		iterator insert(const iterator it,const T& val){
+		iterator insert(const iterator it,T&& val){
 			if (!it.pos){
 				push_back(val);
 				return iterator(tail);

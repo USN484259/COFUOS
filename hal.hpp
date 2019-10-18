@@ -18,7 +18,7 @@ extern "C"{
 
 	void dbgprint(const char*);	
 	
-	__declspec(noreturn)
+	[[ noreturn ]]
 	int BugCheck(UOS::status,qword,qword);
 
 	//void handler_push(exception_handler,void*);

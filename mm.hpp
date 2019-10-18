@@ -2,6 +2,8 @@
 #include "types.hpp"
 #include "lock.hpp"
 #include "pe.hpp"
+#include "queue.hpp"
+#include "constant.hpp"
 
 #define PAGE_PRESENT 0x01
 #define PAGE_WRITE 0x02
@@ -24,16 +26,33 @@ namespace UOS{
 	void invlpg(volatile void*);
 	
 	namespace PM{
-		enum type{zero_page=0x01,must_succeed=0x80};
+		struct chunk_info{
+			word avl_count;
+			word avl_head;
+		};
 		
-		type operator| (const type&,const type&);
+		extern queue<chunk_info> layout;
+		
+		struct PMMSCAN{
+			qword base;
+			qword length;
+			qword type;
+		};
+		
+		
+		enum : dword{zero_page=0x01,must_succeed=0x80};
+		enum : qword{nowhere = HIGHADDR(0)};
+		//static type operator| (const type&,const type&);
 		
 		
 		bool spy(void* dst,qword base,size_t len);
 		
-		void* allocate(type = (type)0);
-		void release(void*);
-	}
+		void construct(const PMMSCAN*);
+		
+		
+		void* allocate(volatile void* va,dword = 0);
+		void release(volatile void*);
+	};
 	
 	
 	namespace VM{

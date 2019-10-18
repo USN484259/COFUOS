@@ -4,7 +4,12 @@ typedef unsigned short word;
 typedef unsigned long dword;
 typedef unsigned long long qword;
 
-#pragma warning(disable: 4626 4514 4711 5027)
+typedef struct{
+	qword low;
+	qword high;
+}oword;
+
+#pragma warning(disable: 4626 4514 4710 4711 5027)
 
 namespace UOS{
 	
@@ -18,10 +23,11 @@ namespace UOS{
 		inline pair(const A& a,const B& b) : first(a),second(b){}
 	};
 	
-	enum status{
+	enum status : qword{
 		success,
+		failed,
 		bad_assert,
-		null_ptr,
+		not_implemented,
 		bad_alloc,
 		out_of_range,
 		invalid_argument,

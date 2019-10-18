@@ -86,7 +86,7 @@ void kdb_send(word port, const byte* sor, size_t len) {
 
 
 
-void kdb_break(byte id,CONTEXT* context){
+void kdb_break(byte id,exception_context* context){
 
 	DR_match();
 
@@ -191,8 +191,8 @@ void kdb_break(byte id,CONTEXT* context){
 		case 'I':	//info
 			switch (buf[1]) {
 			case 'R':
-				memcpy(buf + 2, context, sizeof(CONTEXT));
-				len = 2 + sizeof(CONTEXT);
+				memcpy(buf + 2, context, sizeof(exception_context));
+				len = 2 + sizeof(exception_context);
 				break;
 			case 'D':	//dr
 				DR_get(buf+2);
@@ -267,7 +267,7 @@ void kdb_break(byte id,CONTEXT* context){
 
 
 extern "C"
-void dispatch_exception(byte id,CONTEXT* context){
+void dispatch_exception(byte id,exception_context* context){
 
 //special errcode indicates BugCheck call
 	lock_guard<volatile MP> lck(*mp);

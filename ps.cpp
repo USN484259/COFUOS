@@ -2,7 +2,7 @@
 
 using namespace UOS;
 
-
+/*
 word PS::id(void){
 	//TODO
 	return 0;
@@ -15,3 +15,5 @@ dword TH::id(void){
 	return 0;
 
 }
+
+*/

@@ -2,14 +2,24 @@
 #include "types.hpp"
 
 #define BITMASK(i) ( ( (qword)1<<(qword)(i) ) - 1 )
-//#define BIT(i) ( (qword)1<<( (qword)(i) - 1 ) )
+#define BIT(i) ( (qword)1 << ( (qword)(i)  ) )
+
+
 namespace UOS{
+	template< typename T > struct remove_reference      {typedef T type;};
+	template< typename T > struct remove_reference<T&>  {typedef T type;};
+	template< typename T > struct remove_reference<T&&> {typedef T type;};
+	
+	template< typename T >
+	typename remove_reference<T>::type&& move( T&& t ){
+		return static_cast<typename remove_reference<T>::type&&>(t);
+	}
 	
 	template<typename T>
 	void swap(T& a,T& b){
-		T t=a;
-		b=a;
-		a=t;
+		T t(move(a));
+		a=move(b);
+		b=move(t);
 	}
 	
 	template<typename T>
@@ -41,6 +51,10 @@ namespace UOS{
 		return a!=b;
 	}
 	
+	template<typename T>
+	bool less(const T& a,const T& b){
+		return a<b;
+	}
 	
 	template<typename T>
 	size_t match(T a,T b,size_t cnt){

@@ -3,7 +3,7 @@
 
 namespace UOS {
 
-	struct CONTEXT {
+	struct exception_context {
 		qword r15;
 		qword r14;
 		qword r13;
@@ -29,7 +29,8 @@ namespace UOS {
 
 
 	};
-
+	
+	
 #pragma warning(push)
 #pragma warning(disable: 4201)
 	struct DR_STATE{

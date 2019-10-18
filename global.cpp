@@ -16,10 +16,14 @@ namespace UOS{
 	volatile MP* mp=nullptr;
 
 	volatile APIC* apic=nullptr;
-
-	heap syspool;
-
+	
 	volatile VM::VMG* const VM::sys = (VM::VMG*)HIGHADDR(PDPT_HIGH_PBASE);
+	
+	heap syspool;
+	
+	queue<PM::chunk_info> PM::layout;
 
+
+	alignas(0x100) void* exit_callback[0x20] = {nullptr};
 	
 }

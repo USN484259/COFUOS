@@ -11,15 +11,17 @@
 
 using namespace UOS;
 
+
+
 inline void UOS::invlpg(volatile void* p){
 	__invlpg((void*)p);
 }
 
-
+/*
 PM::type PM::operator| (const PM::type& a,const PM::type& b){
 	return (PM::type)((qword)a | b);
 }
-
+*/
 bool PM::spy(void* d,qword base,size_t len){
 	byte* dst=(byte*)d;
 	
@@ -58,9 +60,57 @@ bool PM::spy(void* d,qword base,size_t len){
 	
 }
 
-void* PM::allocate(type t){
-	volatile word* base=(word*)sysinfo->PMM_wmp_vbase;
-	size_t cnt=sysinfo->PMM_wmp_page*PAGE_SIZE/sizeof(word);
+
+
+void* legacy_allocate(volatile void* va){
+	using namespace PM;
+	assert(0,layout.size());
+	assertinv(nullptr,va);
+	volatile qword* qmp=(qword*)sysinfo->PMM_qmp_vbase;
+	for (unsigned i=0;i<PAGE_SIZE/sizeof(qword);i++){
+		qword cur=*(qmp+i);
+		if (cur & BIT(63)){
+			qword marked = BITMASK(36) & ( (qword)va >> 12 );
+			if (cur == cmpxchg<qword>(qmp+i,marked,cur)){
+				return (void*)((qword)i*PAGE_SIZE);
+				
+			}
+			
+		}
+	}
+	BugCheck(bad_alloc,(qword)qmp,0);
+	
+}
+
+void legacy_release(volatile void* ptr){
+	using namespace PM;
+	assert(0,layout.size());
+	assert(0,(qword)ptr & 0x0FFF);
+	size_t off=(qword)ptr >> 12;
+	assertless(off,PAGE_SIZE / sizeof(qword));
+	
+	qword marked = xchg<qword>((qword*)sysinfo->PMM_qmp_vbase + off,BIT(63));
+	assertinv(0,marked & BITMASK(36));
+	assert(0,marked & ~BITMASK(36));
+	
+}
+
+
+
+
+void* PM::allocate(volatile void* va,dword t){
+	assertinv(nullptr,va);
+	if (0==layout.size()){
+		assertinv(0,t & must_succeed);
+		assert(0,t & zero_page);
+		return legacy_allocate(va);
+	}
+	
+	BugCheck(not_implemented,(qword)va,t);
+	
+	/*
+	volatile word* base=(word*)sysinfo->PMM_qmp_vbase;
+	size_t cnt=sysinfo->PMM_qmp_page*PAGE_SIZE/sizeof(word);
 	
 	word id=PS::id();
 	while(cnt--){
@@ -84,11 +134,21 @@ void* PM::allocate(type t){
 	
 	//TODO swap pages if possible
 	BugCheck(bad_alloc,0,(qword)t);
-
+	*/
 }
 
-void PM::release(void* p){
-	assert(0,(qword)p & 0xFFF);
+
+
+void PM::release(volatile void* ptr){
+	assert(0,(qword)ptr & 0x0FFF);
+	if (0==layout.size()){
+		return legacy_release(ptr);
+	}
+	
+	BugCheck(not_implemented,(qword)ptr,0);
+	
+	/*
+	
 	size_t off=(qword)p >> 12;
 	assertless (off,sysinfo->PMM_wmp_page*PAGE_SIZE/sizeof(word));
 	
@@ -97,6 +157,7 @@ void PM::release(void* p){
 	//self=_cmpxchgw((word*)sysinfo->PMM_wmp_vbase+off,self,(word)0x8000);
 	word tmp = cmpxchg<word>((word*)sysinfo->PMM_wmp_vbase+off,0x8000,id);
 	assert(id,tmp);
+	*/
 }
 
 
@@ -253,7 +314,7 @@ const void* VM::VMG::construct(const PE64& pe){
 		using namespace PM;
 		//WARNING: window not available cannot zero_page !
 		
-		void* p=allocate(must_succeed);
+		void* p=allocate( sys->bitmap()+i*PAGE_SIZE, must_succeed);
 		pt[0x1B]=(qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_NX ;	//map physical page to PTn page
 		invlpg(mapped_addr);
 		zeromemory(mapped_addr,PAGE_SIZE);
@@ -271,10 +332,12 @@ const void* VM::VMG::construct(const PE64& pe){
 	
 	//mark already used pages
 	
+	BugCheck(not_implemented,0,0);
+	
 	bits bmp((void*)sys->bitmap(),0x8000);
-	size_t off = LOWADDR(sysinfo->PMM_wmp_vbase) >> 12;
+	size_t off = LOWADDR(sysinfo->PMM_qmp_vbase) >> 12;
 	assertless(off,8*0x8000);
-	bmp.set(off,sysinfo->PMM_wmp_page,1);	//PMMWMP
+	bmp.set(off,sysinfo->PMM_qmp_page,1);	//PMMWMP
 	
 	//TRICK: off also krnl stk top(with guard page)
 	
@@ -311,8 +374,8 @@ const void* VM::VMG::construct(const PE64& pe){
 //general constructor for 1G user or sys area
 VM::VMG::VMG(bool k,word id) : present((MP_assert(true),0)),writable(1),user(1),writethrough(0),cachedisable(0),accessed(0),highaddr(k?1:0),largepage(0),offset(0),pmpdt(0),index((assertless(id,(word)512),id)),sync(0),xcutedisable(0) {
 	using namespace PM;
-	void* d=allocate(must_succeed);		//PDT page
-	void* t=allocate(must_succeed);		//PT page
+	void* d=allocate(table(),must_succeed);		//PDT page
+	void* t=allocate((void*)nowhere,must_succeed);		//PT page
 	
 	//NOTE: VM::window works on sys,thus available
 	
@@ -331,7 +394,7 @@ VM::VMG::VMG(bool k,word id) : present((MP_assert(true),0)),writable(1),user(1),
 		w.at<qword>(1) = (qword)d | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);	//PDT
 		w.at<qword>(11)=(qword)t | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);	//PT0
 		//first page of bitmap,mask out used area
-		void* p=allocate(must_succeed);
+		void* p=allocate(bitmap(),must_succeed);
 		w.at<qword>(2) = (qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);	//bitmap[0]
 		{
 			VM::window wp(p);
@@ -340,9 +403,9 @@ VM::VMG::VMG(bool k,word id) : present((MP_assert(true),0)),writable(1),user(1),
 		}
 		
 		//fill the rest of bitmap
-		for (size_t i=3;i<10;i++){
-			p = allocate(zero_page | must_succeed);
-			w.at<qword>(i) = (qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);
+		for (size_t i=1;i<8;i++){
+			p = allocate(bitmap() + i*PAGE_SIZE , zero_page | must_succeed);
+			w.at<qword>(i+2) = (qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_CD | PAGE_WT | PAGE_NX | (highaddr?PAGE_GLOBAL:0);
 		}
 		
 	}
@@ -598,7 +661,7 @@ void* VM::VMG::reserve(void* fixbase,size_t pagecount)volatile{
 			using namespace PM;
 			
 			//WARNING: zero_page cause window construction !
-			void* pm=allocate(must_succeed);
+			void* pm=allocate((void*)nowhere,must_succeed);
 			
 			PT_mapper w(*this,pm);
 			zeromemory(&w[0],PAGE_SIZE);
@@ -626,7 +689,7 @@ void* VM::VMG::reserve(void* fixbase,size_t pagecount)volatile{
 	}
 	
 	
-	return (void*)(base()+0x1000*off);
+	return (void*)(base()+PAGE_SIZE*off);
 }
 
 void VM::VMG::release(void* base,size_t pagecount)volatile{
@@ -711,7 +774,9 @@ bool VM::VMG::commit(void* base,size_t pagecount,qword attrib)volatile{
 			
 			using namespace PM;
 			
-			PTE_set(w[off % 0x200],allocate(must_succeed),attrib);
+			PTE_set(w[off % 0x200],
+				allocate(this->base() + PAGE_SIZE*off , must_succeed),
+				attrib);
 			
 			pagecount--,off++;
 		}

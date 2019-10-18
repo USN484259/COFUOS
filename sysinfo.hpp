@@ -6,8 +6,8 @@ namespace UOS{
 		qword sig;
 		qword PMM_avl_top;
 		
-		qword PMM_wmp_vbase;
-		dword PMM_wmp_page;
+		qword PMM_qmp_vbase;
+		dword PMM_qmp_page;
 		dword cpuinfo;
 		
 		word addrwidth;

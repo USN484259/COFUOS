@@ -34,31 +34,29 @@ PT0	equ 0x07000
 
 PT_BASE equ 0x3000
 
-PT_PMM equ 0x8000
+;PT_PMM equ 0x8000
 
-PT_LEN equ (0x9000-PT_BASE)
+PT_LEN equ (0x8000-PT_BASE)
 
-
-PMMWMP_PBASE equ 0x100000
+PMMQMP_PBASE equ 0x8000
+;PMMQMP_PBASE equ 0x100000
 
 ;	physical Memory layout
 
 
 
 ;	000000		001000		R	TSS & GDT & IDT & sysinfo
-;	001000		002000		RW CD WT	MP sync area
+;	001000		002000		RW	PMMSCAN & MP sync area
 ;	002000		003000		RWX	loader & ISR stack
 ;	003000		004000		RW	PL4T
-;	004000		005000		RW	PDPT low
+;	004000		005000		RW	PDPT low	
 ;	005000		006000		RW	PDPT high
 ;	006000		007000		RW	PDT
 ;	007000		008000		RW	PT
-;	008000		009000		RW	PT for PMM
+;	008000		009000		RW	PMMQMP within 2M
+;------------------------	008000		009000		RW	PT for PMM
 ;	009000		010000		RW	MP ISR
 ;-------------direct map---------------------
-;	010000		0A0000		?	avl
-
-;	100000		?			RW	PMMWMP
 
 
 
@@ -68,8 +66,8 @@ struc sysinfo
 .sig			resq 1
 .PMM_avl_top	resq 1
 
-.PMM_wmp_vbase	resq 1
-.PMM_wmp_page	resd 1
+.PMM_qmp_vbase	resq 1
+.PMM_qmp_page	resd 1
 .cpu			resd 1
 
 .bus			resw 1
@@ -798,7 +796,8 @@ call map_page
 
 mov edi,PT0
 xor ebx,ebx
-mov edx,0x80000103
+mov edx,0x80000101	;Read only
+;mov edx,0x80000103
 inc ecx
 call map_page
 
@@ -809,166 +808,156 @@ call map_page
 
 
 mov ebx,0x2000
-mov edx,0x103
+mov edx,0x103		;RWX
 inc ecx
 call map_page
 
 mov ebx,PT_BASE
-mov edx,0x80000103
+mov edx,0x8000011B	;CD WT
+;mov edx,0x80000103
 mov cl,PT_LEN>>12
 call map_page
 
 
-
-
-PMMWMP_init:
+PMMQMP_init:
 
 ;init PDT here
-;map PMMWMP to 0xFFFF8000_00200000
+;map PMMQMP to 0xFFFF8000_00200000
 
-mov edi,PDT0+8
-mov ebx,PT_PMM
-mov edx,0x80000003
-inc ecx
-call map_page
+;mov edi,PDT0+8
+;mov ebx,PT_PMM
+;mov edx,0x80000003
+;inc ecx
+;call map_page
 
-mov ecx,[SYSINFO_BASE+sysinfo.PMM_avl_top]
-mov eax,[SYSINFO_BASE+sysinfo.PMM_avl_top+4]
-test ecx,0x007FFFFF
+mov eax,[SYSINFO_BASE+sysinfo.PMM_avl_top]
+mov ecx,[SYSINFO_BASE+sysinfo.PMM_avl_top+4]
+test eax,0x001FFFFF
+;test ecx,0x007FFFFF
 
 jz .nalign
 
-add ecx,0x00800000
-adc eax,0
+add eax,0x00200000
+;add eax,0x00800000
+adc ecx,0
 .nalign:
 
-shrd ecx,eax,23		;/0x800*0x1000
+shrd eax,ecx,21		; / 0x200 * 0x1000
+;shrd ecx,eax,23		;/0x800*0x1000
 
 ;ecx PMM page
-mov [SYSINFO_BASE+sysinfo.PMM_wmp_page],ecx
+mov [SYSINFO_BASE+sysinfo.PMM_qmp_page],eax
 
 
-;NOTE assume PMM less than 4G
-mov edi,PT_PMM
-cmp ecx,0x200
-mov ebx,PMMWMP_PBASE
-mov edx,0x80000103
-jbe .within4G
+mov edi,PT0+0x800
+test ecx,ecx
+mov ebx,PMMQMP_PBASE
+mov edx,0x8000011B
+jz .page_set
 
 call BugCheck
 int3
-.within4G:
+
+.page_set:
+inc ecx
 call map_page
 
-mov ebx,[SYSINFO_BASE+sysinfo.PMM_wmp_page]
-shl ebx,12
-mov edi,PMMWMP_PBASE
-mov ecx,ebx
+
+mov edi,PMMQMP_PBASE
+mov ecx,PAGE_SIZE
 call zeromemory
 
-mov esi,PMMSCAN_BASE-24
-add ebx,edi
+mov esi,PMMSCAN_BASE
+xor ebx,ebx		;addr
 
-;ebx PMM limit
+
+; PMMSCAN* block;
+; qword* cur;
+; qword* limit;
+
+; for(;block && cur<limit;++cur){
+	; qword addr=get_addr(cur)
+	; if (addr < block->base)
+		; continue
+	
+	; if (addr+PAGE_SIZE-1 > block->base + block->len){
+		; ++block;
+		; continue
+	; }
+	; if (!block->avl)
+		; continue
+
+	; *cur = avl
+
+; }
+
 
 .scan:
-add esi,24
-mov edi,PMMWMP_PBASE
+cmp edi,PMMQMP_PBASE+PAGE_SIZE
+jae .end
 
+xor edx,edx
+mov eax,[esi]	;base
+cmp edx,[esi+4]
+
+jnz .big
+
+cmp ebx,eax
+jb .next
+
+cmp edx,[esi+0x0C]
+mov edx,ebx
+jnz .big
+add eax,[esi+8]	;len
+jc .big
+add edx,PAGE_SIZE-1
+cmp edx,eax
+jbe .range
+
+.big:
+add esi,24
+
+.next:
+add edi,8
+add ebx,PAGE_SIZE
+jmp .scan
+
+.range:
 
 mov edx,[esi+0x10]	;status
-dec edx
-
-mov eax,[esi]
-mov edx,[esi+4]
-mov ecx,eax
+dec edx		;status
 jz .avl
-jns .rev
+jns .next	;.rev
 jmp .end
 
-.rev:
-;reserved memory
-
-shrd eax,edx,12-1
-
-add edi,eax
-cmp edi,ebx
-jae .scan
-
-;ecx=eax	edx not changed
-add ecx,[esi+8]
-adc edx,[esi+0x0C]
-
-test cx,0x0FFF
-jz .rev_noalign
-add ecx,0x1000
-adc edx,0
-.rev_noalign:
-shrd ecx,edx,12-1
-
-add ecx,PMMWMP_PBASE
-
-cmp ecx,ebx
-cmovae ecx,ebx
-
-sub ecx,edi
-mov ax,0x7FFF
-shr ecx,1
-rep stosw
-
-jmp .scan
-
 .avl:
-;available memory
-test ax,0x0FFF
-jz .avl_noalign
-add eax,0x1000
-adc edx,0
-.avl_noalign:
-shrd eax,edx,12-1
-add edi,eax
-cmp edi,ebx
-jae .scan
-
-;ecx=eax	edx not changed
-add ecx,[esi+8]
-adc edx,[esi+0x0C]
-
-shrd ecx,edx,12-1
-
-add ecx,PMMWMP_PBASE
-
-cmp ecx,ebx
-cmovae ecx,ebx
-
-sub ecx,edi
-mov ax,0x8000
-shr ecx,1
-
-.avl_set:
-cmp WORD [edi],0
-jnz .avl_nop
-
-mov [edi],ax
-
-.avl_nop:
-add edi,2
-loop .avl_set
-
-
+add edi,4
+mov eax,0x80000000
+add ebx,PAGE_SIZE
+stosd
 jmp .scan
+
 
 .end:
 
-;set current state of PMM
-xor ax,ax
-mov edi,PMMWMP_PBASE
-mov ecx,0x10
-rep stosw
 
-mov edi,PMMWMP_PBASE+2*0x100
-mov ecx,[SYSINFO_BASE+sysinfo.PMM_wmp_page]
-rep stosw
+;set current state of PMM
+
+xor edx,edx
+mov ecx,0x10
+
+.cur_state:
+
+mov eax,edx
+stosd
+mov eax,8
+inc edx
+stosd
+
+loop .cur_state
+
+
+
 
 AP_LM:
 
@@ -1040,7 +1029,7 @@ ret
 
 [bits 64]
 
-PMMWMP_VBASE equ HIGHADDR+0x00200000
+PMMQMP_VBASE equ HIGHADDR+0x00100000
 KRNL_VBASE equ HIGHADDR+0x02000000
 
 TMP_PT_VBASE equ HIGHADDR+0x10000
@@ -1048,14 +1037,10 @@ CMN_BUF_VBASE equ HIGHADDR+0x11000
 PT_MAP_PT equ PT0+8*0x10
 BUF_MAP_PT equ PT0+8*0x11
 
-KRNL_STK_GUARD equ HIGHADDR+0x1FF000
+KRNL_STK_GUARD equ KRNL_VBASE-0x1000
 KRNL_STK_TOP equ KRNL_STK_GUARD
 
 
-
-;PDPT	0x100 pages
-;PDT	0x20000 pages
-;2M alignment 
 
 
 ;	virtual address of HIGHADDR
@@ -1063,11 +1048,8 @@ KRNL_STK_TOP equ KRNL_STK_GUARD
 ;	00010000	0001C000	VMG info
 ;	00010000	00011000	TMP_PT
 ;	00011000	?			CMN_BUF
-;	?			00200000	krnlstk for all MPs
-;	00200000	?			PMMWMP
-;-------------------------------	?			01000000	krnlheap ?
-;-------------------------------	01000000	02000000	PDPTmap
-;	?			01FFF000	stack
+;	00100000	?			PMMQMP
+;	?			02000000	krnlstk for all MPs
 ;	02000000	?			KERNEL
 ;-------------------------------	20000000	40000000	PDTmap
 
@@ -1177,9 +1159,9 @@ jmp BugCheck
 
 
 
-;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
-mov rax,PMMWMP_VBASE
-mov [r12+sysinfo.PMM_wmp_vbase],rax
+;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_qmp_vbase
+mov rax,PMMQMP_VBASE
+mov [r12+sysinfo.PMM_qmp_vbase],rax
 
 ;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov ax,[r12+sysinfo.FAT_cluster]
@@ -1197,9 +1179,9 @@ int3
 mov rbp,rsp
 sub rsp,0x20
 
-
-call PmmAlloc
 mov rsi,CMN_BUF_VBASE
+mov rcx,rsi		;VA
+call PmmAlloc
 mov rdx,rax
 mov rcx,rsi
 mov r8,0x80000000_00000003
@@ -1434,6 +1416,7 @@ mov rbp,rdi
 
 
 sub rdi,PAGE_SIZE
+mov rcx,rdi
 call PmmAlloc
 mov r8,0x80000000_00000003
 mov rdx,rax
@@ -1713,45 +1696,57 @@ call BugCheck
 int3
 
 
-PmmAlloc:
+; ==	0		->		reserved
+; >	0		->		used
+; ==	8-00000000		->		maps to nowhere
+; >=	80000000-00000000		->		avl(linked)
+; >	80000000-00000000		->		used,multiple-mapping
+
+
+PmmAlloc:	;rcx VA
 
 push rsi
+push rdi
 push rbx
 
-;xor rcx,rcx
-mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_wmp_vbase
+mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_qmp_vbase
+mov rdi,PAGE_SIZE
 lodsq
 mov rbx,rax
-lodsd
-mov ecx,eax
-mov rsi,rbx
-shl rcx,12-1
+mov rsi,rax
+add rdi,rax
 
 .find:
-lodsw
-bt ax,15
+
+lodsq
+bt rax,63
 jc .found
 
-loop .find
+cmp rsi,rdi
+
+jb .find
 
 call BugCheck
 int3
 
 .found:
-
-sub rsi,2
-xor edx,edx
+mov rax,0xF_FFFFFFFF
+shr rcx,12
+sub rsi,8
+and rcx,rax
 mov rax,rsi
-mov [rsi],dx
-
+mov [rsi],rcx
 sub rax,rbx
 
-shl rax,12-1
 
 pop rbx
+pop rdi
 pop rsi
 
+shl rax,12-3
+
 ret
+
 
 
 ;MapAddress VirtualAddr,PhysicalAddr,attrib
@@ -1816,6 +1811,7 @@ jz .end
 push r8
 
 ;alloc new PT
+mov rcx,0x8_00000000	;map to nowhere
 call PmmAlloc
 mov al,3
 stosq
@@ -1889,6 +1885,7 @@ mov rdi,rcx		;vbase
 mov rbx,rdx		;pagecount
 
 .map:
+mov rcx,rdi		;vaddr
 call PmmAlloc
 mov r8,rsi		;attrib
 mov rcx,rdi		;vaddr
