@@ -2,13 +2,15 @@
 
 using namespace std;
 
-Sqlite::SQL_exception::SQL_exception(sqlite3* sql) : runtime_error(sqlite3_errmsg(sql)) {}
-Sqlite::SQL_exception::SQL_exception(int code) : runtime_error(sqlite3_errstr(code)) {}
+Sqlite::SQL_exception::SQL_exception(sqlite3* sql,int code) : runtime_error(string(sqlite3_errmsg(sql)) +'\t'+( code ? sqlite3_errstr(code) :"")) {}
+//Sqlite::SQL_exception::SQL_exception(int code) : runtime_error(sqlite3_errstr(code)) {}
 Sqlite::SQL_exception::SQL_exception(const char* msg) : runtime_error(msg) {}
 
-Sqlite::Sqlite(const char* filename, bool read_only) : con(nullptr), cmd(nullptr), in_transcation(false) {
+Sqlite::Sqlite(const char* filename, bool read_only) : con(nullptr), cmd(nullptr), in_transaction(false) {
 	if (SQLITE_OK != sqlite3_open_v2(filename, &con, read_only ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE, nullptr))
 		throw SQL_exception(con);
+	command("pragma foreign_keys=true");
+	step();
 }
 
 Sqlite::~Sqlite(void) {
@@ -17,7 +19,7 @@ Sqlite::~Sqlite(void) {
 		//if (SQLITE_OK != sqlite3_close(con))
 		//	throw SQL_exception(con);
 	try {
-		if (in_transcation)
+		if (in_transaction)
 			rollback();
 	}
 	catch (SQL_exception&) {}
@@ -40,7 +42,7 @@ Sqlite& Sqlite::operator<<(int val) {
 		throw SQL_exception("<< not in SET mode");
 	int res = sqlite3_bind_int(cmd, index++, val);
 	if (res!=SQLITE_OK)
-		throw SQL_exception(res);
+		throw SQL_exception(con,res);
 	return *this;
 }
 
@@ -49,7 +51,7 @@ Sqlite& Sqlite::operator<<(unsigned __int64 val) {
 		throw SQL_exception("<< not in SET mode");
 	int res = sqlite3_bind_int64(cmd, index++, val);
 	if (res!=SQLITE_OK)
-		throw SQL_exception(res);
+		throw SQL_exception(con,res);
 	return *this;
 }
 
@@ -59,7 +61,7 @@ Sqlite& Sqlite::operator<<(const char* str) {
 	
 	int res = sqlite3_bind_text(cmd, index++, (*buffer.insert(string(str)).first).c_str(), -1, nullptr);
 	if (res!=SQLITE_OK)
-		throw SQL_exception(res);
+		throw SQL_exception(con,res);
 	return *this;
 }
 
@@ -80,7 +82,7 @@ bool Sqlite::step(void) {
 		index = 0;
 		return true;
 	}
-	throw SQL_exception(res);
+	throw SQL_exception(con,res);
 }
 
 //Sqlite::type Sqlite::peek_type(void) {
@@ -123,31 +125,31 @@ Sqlite& Sqlite::operator >> (string& str) {
 	return *this;
 }
 
-void Sqlite::transcation(void) {
-	if (in_transcation)
+void Sqlite::transaction(void) {
+	if (in_transaction)
 		throw SQL_exception("nested transcation");
 	char* msg = nullptr;
 	sqlite3_exec(con, "begin", nullptr, nullptr, &msg);
 	if (msg)
 		throw SQL_exception(msg);
-	in_transcation = true;
+	in_transaction = true;
 }
 
 void Sqlite::commit(void) {
-	if (!in_transcation)
+	if (!in_transaction)
 		throw SQL_exception("no transcation");
 	char* msg = nullptr;
 	sqlite3_exec(con, "commit", nullptr, nullptr, &msg);
 	if (msg)
 		throw SQL_exception(msg);
-	in_transcation = false;
+	in_transaction = false;
 }
 void Sqlite::rollback(void) {
-	if (!in_transcation)
+	if (!in_transaction)
 		throw SQL_exception("no transcation");
 	char* msg = nullptr;
 	sqlite3_exec(con, "rollback", nullptr, nullptr, &msg);
 	if (msg)
 		throw SQL_exception(msg);
-	in_transcation = false;
+	in_transaction = false;
 }

@@ -7,15 +7,14 @@
 class Sqlite {
 	sqlite3* con;
 	sqlite3_stmt* cmd;
-	bool in_transcation;
-	enum { SET, GET,FIN }status;
+	bool in_transaction;
+	enum { SET, GET, FIN }status;
 	int index;
 	std::unordered_set<std::string> buffer;
 public:
 	class SQL_exception : public std::runtime_error {
 	public:
-		SQL_exception(sqlite3*);
-		SQL_exception(int);
+		SQL_exception(sqlite3*,int = SQLITE_OK);
 		SQL_exception(const char*);
 	};
 
@@ -38,7 +37,7 @@ public:
 	Sqlite& operator>>(unsigned __int64&);
 	Sqlite& operator>>(std::string&);
 
-	void transcation(void);
+	void transaction(void);
 	void commit(void);
 	void rollback(void);
 };
