@@ -45,7 +45,7 @@ PMMQMP_PBASE equ 0x8000
 
 
 
-;	000000		001000		R	TSS & GDT & IDT & sysinfo
+;	000000		001000		RW	TSS & GDT & IDT & sysinfo
 ;	001000		002000		RW	PMMSCAN & MP sync area
 ;	002000		003000		RWX	loader & ISR stack
 ;	003000		004000		RW	PL4T
@@ -560,17 +560,14 @@ mov ax,0xEC00
 mov bx,2
 int 0x15
 
-
-
-
-AP_PE:
-
-
 ;A20 gate
 mov dx,0x92
 in al,dx
 or al,2
 out dx,al
+
+
+AP_PE:
 
 
 xor cx,cx
@@ -796,8 +793,7 @@ call map_page
 
 mov edi,PT0
 xor ebx,ebx
-mov edx,0x80000101	;Read only
-;mov edx,0x80000103
+mov edx,0x80000103
 inc ecx
 call map_page
 
@@ -817,6 +813,14 @@ mov edx,0x8000011B	;CD WT
 ;mov edx,0x80000103
 mov cl,PT_LEN>>12
 call map_page
+
+
+; up to 0x10000
+mov ebx,PT_BASE+PT_LEN
+mov edx,0x80000103
+mov cl,0x10-((PT_BASE+PT_LEN)>>12)
+call map_page
+
 
 
 PMMQMP_init:
@@ -943,18 +947,18 @@ jmp .scan
 
 ;set current state of PMM
 
-xor edx,edx
 mov ecx,0x10
+xor edx,edx
+mov edi,PMMQMP_PBASE
 
 .cur_state:
-
 mov eax,edx
-stosd
-mov eax,8
 inc edx
 stosd
-
+mov eax,8
+stosd
 loop .cur_state
+
 
 
 
@@ -993,10 +997,11 @@ jnc abort
 
 ;load GDTR and jmp to 64-bit mode
 ;xor eax,eax
-mov eax,0xFFFF8000
+
+;mov eax,0xFFFF8000
 mov edx,GDT_BASE
 mov ecx,(GDT_LIM-1)<<16
-push eax
+;push eax
 push edx
 push ecx
 lgdt [esp+2]
@@ -1071,6 +1076,16 @@ align 16
 
 LM_entry:
 
+;reload GDT to HIGHADDR
+mov rdx,HIGHADDR+GDT_BASE
+mov rcx,(GDT_LIM-1)<<(16+32)
+
+push rdx
+push rcx
+
+lgdt [rsp+6]
+
+
 
 mov ax,GDT_SYS_DS
 mov ds,ax
@@ -1081,8 +1096,24 @@ mov ss,ax
 mov rsp,HIGHADDR+ISR_STK
 ;mov rbp,rsp
 
-mov rdx,LM_high
+mov ecx,8
+mov eax,.cs_reload
+push rcx
+push rax
 
+call qword [rsp]
+
+
+; mov rax,.cs_reload
+; push rcx
+; push rax
+; db 0x48
+; retf
+
+.cs_reload:
+
+mov rdx,LM_high
+mov rsp,HIGHADDR+ISR_STK
 jmp rdx
 
 align 4
@@ -1180,7 +1211,7 @@ mov rbp,rsp
 sub rsp,0x20
 
 mov rsi,CMN_BUF_VBASE
-mov rcx,rsi		;VA
+mov rcx,rsi		;VA		;re-mapped to module_base
 call PmmAlloc
 mov rdx,rax
 mov rcx,rsi
@@ -1249,7 +1280,8 @@ jz .fail
 cmp eax,0x0FFFFFF8
 jae .fail
 
-mov rdi,HIGHADDR+SYSINFO_BASE+sysinfo.PE_filekrnl
+lea rdi,[r12+sysinfo.PE_filekrnl]
+;mov rdi,HIGHADDR+SYSINFO_BASE+sysinfo.PE_filekrnl
 mov rsi,CMN_BUF_VBASE
 
 .load_cluster:
@@ -1429,12 +1461,26 @@ jnz .makestk
 ;change rsp just before jmp to krnl
 
 
-;map header to vbase
+;map header to vbase and refresh QMP's record
 
 mov rcx,[rsp+peinfo.vbase]
 mov rdx,[rsp+peinfo.headerpmm]
+
+mov rax,0x000F_FFFF_FFFF
+mov r9,rcx
+mov r10,rdx
+shr r9,12	;VA index
+mov r8,[r12+sysinfo.PMM_qmp_vbase]
+and rax,r9
+shr r10,12	;PMM index
+xchg [r8+8*r10],rax
+bt rax,35
+jnc .fail
+
 mov r8,0x80000000_00000001
 call MapPage
+
+
 
 
 ;process sections
@@ -1544,7 +1590,6 @@ mov rsp,rbp
 add rdx,rcx
 sub rsp,0x20
 
-;	at 0x2a6f
 
 call rdx	;rcx module base
 
@@ -1709,12 +1754,10 @@ push rsi
 push rdi
 push rbx
 
-mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_qmp_vbase
+mov rsi,[r12+sysinfo.PMM_qmp_vbase]
 mov rdi,PAGE_SIZE
-lodsq
-mov rbx,rax
-mov rsi,rax
-add rdi,rax
+mov rbx,rsi
+add rdi,rsi
 
 .find:
 
