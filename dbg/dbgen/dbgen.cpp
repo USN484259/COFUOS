@@ -41,6 +41,9 @@ BOOL __stdcall dbgen::OnEnumSymbol(PSYMBOL_INFO info, ULONG size, PVOID p) {
 }
 
 void dbgen::process_symbol(const PSYMBOL_INFO info) {
+#ifdef _DEBUG
+	cout << hex << info->Address << '\t' << dec << info->Size << '\t' << info->Name << endl;
+#endif
 
 	sql.command("insert into Symbol values (?1,?2,?3)");
 	sql << info->Address << (int)info->Size << info->Name;
@@ -58,7 +61,7 @@ void dbgen::process_symbol(const PSYMBOL_INFO info) {
 		string str = filepath(line.FileName).name_ext();
 		if (filelist.find(str) == filelist.end()) {
 			size_t i = filelist.size() + 1;
-			filelist[str] = i+1;
+			filelist[str] = i;
 			//pair<deque<string>::iterator,bool> res=filelist.insert(str.substr(off));
 			sql.command("insert into File values(?1,?2)");
 			sql << (int)filelist.size() << str;
@@ -74,7 +77,7 @@ dbgen::dbgen(const char* database, const char* module) : id((HANDLE)(rand() & 0x
 	base = SymLoadModuleEx(id, NULL, module, NULL, 0, 0, NULL, 0);
 	if (!base)
 		throw runtime_error(module);
-	sql.transcation();
+	sql.transaction();
 }
 
 dbgen::~dbgen(void) {
@@ -84,13 +87,13 @@ dbgen::~dbgen(void) {
 void dbgen::run(void) {
 	try {
 
-		sql.command("delete from Symbol");
-		sql.step();
-		sql.command("delete from File");
-		sql.step();
 		sql.command("delete from Source");
 		sql.step();
 		sql.command("delete from Asm");
+		sql.step();
+		sql.command("delete from File");
+		sql.step();
+		sql.command("delete from Symbol");
 		sql.step();
 
 		if (!SymEnumSymbols(id, base, "*!*", OnEnumSymbol, this))
@@ -108,13 +111,14 @@ void dbgen::run(void) {
 
 		finder.find("*.lst");
 		for (auto it = finder.begin(); it != finder.end(); ++it) {
-			string name = filepath(*it).name_ext();
+			filepath path(*it);
+			string name = path.name_ext();
 			if (filelist.find(name) != filelist.end())
 				throw runtime_error(*it);
 			size_t i = filelist.size() + 1;
 			filelist[name] = i;
 			sql.command("insert into File values(?1,?2)");
-			sql << (int)filelist.size() << name;
+			sql << (int)filelist.size() << path.name() + ".asm";
 			sql.step();
 
 			cod.scan_lst(*it, filelist.size());

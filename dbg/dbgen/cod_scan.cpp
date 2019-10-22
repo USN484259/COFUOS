@@ -12,9 +12,9 @@
 
 using namespace std;
 
-cod_scanner::cod_scanner(Sqlite& q,const map<string,int>& lst) : sql(q),filelist(lst) {}
+cod_scanner::cod_scanner(Sqlite& q, const map<string, int>& lst) : sql(q), filelist(lst) {}
 
-void cod_scanner::scan_lst(const string& filename,int fileid) {
+void cod_scanner::scan_lst(const string& filename, int fileid) {
 	ifstream sor(filename);
 	if (!sor.is_open())
 		throw runtime_error(filename);
@@ -107,7 +107,7 @@ void cod_scanner::scan_lst(const string& filename,int fileid) {
 			tmpss >> str;
 		} while (true);
 
-		if (len%2)
+		if (len % 2)
 			throw runtime_error("bad lst formst");
 		len /= 2;
 
@@ -156,8 +156,9 @@ void cod_scanner::scan_cod(const string& filename) {
 			continue;
 
 		//disasm
-		if ('0'==str.at(0)) {
-			if (!line || off == -1)
+		if ('0' == str.at(0)) {
+			//if (!line || off == -1)
+			if (off == -1)
 				throw runtime_error("bad cod format");
 
 			string disasm;
@@ -170,7 +171,7 @@ void cod_scanner::scan_cod(const string& filename) {
 						disasm += str;
 						continue;
 					}
-					if (str.size() > 2 || str.at(0)=='D' || !isxdigit(str.at(0)) || !isxdigit(str.at(1))) {
+					if (str.size() > 2 || str.at(0) == 'D' || !isxdigit(str.at(0)) || !isxdigit(str.at(1))) {
 						disasm = str;
 						continue;
 					}
@@ -238,6 +239,7 @@ void cod_scanner::scan_cod(const string& filename) {
 				str += tmp;
 				throw runtime_error(str.c_str());
 			}
+
 			sql.command("insert into Source values(?1,?2,?3)");
 			sql << fileid << line << str;
 			sql.step();
@@ -246,7 +248,7 @@ void cod_scanner::scan_cod(const string& filename) {
 
 		}
 		if (*str.crbegin() == ':') {	//label
-			labels[str.substr(0,str.size()-1)] = off;
+			labels[str.substr(0, str.size() - 1)] = off;
 			continue;
 		}
 
@@ -266,7 +268,6 @@ void cod_scanner::scan_cod(const string& filename) {
 			}
 
 			if (str == "ENDP") {
-				line = fileid = 0;
 
 				while (ss.good() && ss.get() != ';');
 				ss >> ws;
@@ -279,7 +280,7 @@ void cod_scanner::scan_cod(const string& filename) {
 					unsigned masked = 0;
 					while (true) {
 						c = ss.get();
-						if (!ss.good() || (!masked && c==','))
+						if (!ss.good() || (!masked && c == ','))
 							break;
 						if (c == '<')
 							++masked;
@@ -302,7 +303,7 @@ void cod_scanner::scan_cod(const string& filename) {
 						for (auto it = asm_line.begin(); it != asm_line.end(); ++it) {
 
 							sql.command("select disasm,fileid,line from Asm where address=?1");
-							sql << addr+it->first;
+							sql << addr + it->first;
 							if (sql.step()) {
 								string tmpstr;
 								int tmpid, tmpline;
@@ -333,9 +334,15 @@ void cod_scanner::scan_cod(const string& filename) {
 									it->second.disasm += ss.str();
 								}
 							}
+							if (fileid && line) {
 
-							sql.command("insert into Asm values(?1,?2,?3,?4,?5)");
-							sql << addr+it->first << it->second.len << it->second.disasm << it->second.fileid << it->second.line;
+								sql.command("insert into Asm values(?1,?2,?3,?4,?5)");
+								sql << addr + it->first << it->second.len << it->second.disasm << it->second.fileid << it->second.line;
+							}
+							else {
+								sql.command("insert into Asm (address,length,disasm) values(?1,?2,?3)");
+								sql << addr + it->first << it->second.len << it->second.disasm;
+							}
 							sql.step();
 
 						}
@@ -348,7 +355,7 @@ void cod_scanner::scan_cod(const string& filename) {
 				if (off != -1)
 					throw runtime_error(str.c_str());
 
-
+				line = fileid = 0;
 				break;
 			}
 		}
