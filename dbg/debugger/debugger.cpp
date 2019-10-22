@@ -29,7 +29,7 @@ dword Debugger::getnumber(istream& ss) {
 }
 
 
-void Debugger::show_reg(const UOS::CONTEXT& p) {
+void Debugger::show_reg(const UOS::exception_context& p) {
 	//cout << hex << "registers" << endl;
 	fill_guard fill(cout, '0');
 	cout << hex;
@@ -337,7 +337,7 @@ void Debugger::stub(void) {
 				ss.read((char*)&cur_addr, sizeof(qword));
 				if (type != 1 || step_check()) {
 					cout << endl;
-					color(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | BACKGROUND_RED);
+					color(FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | BACKGROUND_RED | (type==0xFF ? BACKGROUND_BLUE : 0));
 					if (type == 0xFF) {
 						cout << "BugCheck : ";
 						qword errcode;
@@ -433,8 +433,8 @@ void Debugger::stub(void) {
 				switch (ss.get()) {
 				case 'R':	//reg
 				{
-					UOS::CONTEXT reg;
-					ss.read((char*)&reg, sizeof(UOS::CONTEXT));
+					UOS::exception_context reg;
+					ss.read((char*)&reg, sizeof(UOS::exception_context));
 					show_reg(reg);
 					break;
 				}

@@ -86,7 +86,7 @@ class Debugger {
 
 	static dword getnumber(std::istream&);
 
-	void show_reg(const UOS::CONTEXT& p);
+	void show_reg(const UOS::exception_context& p);
 	void show_packet(const std::string& str);
 
 	//void show_source(qword addr);
