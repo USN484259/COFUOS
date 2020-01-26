@@ -16,7 +16,7 @@ void MP::lock(void)volatile{
 	word id=apic->id();
 	word res=cmpxchg<word>(&owner,id,0xFFFF);
 	if (res==id){
-		assertinv(0,guard);
+		assert(0 != guard);
 		++guard;
 		return;
 	}
@@ -26,14 +26,14 @@ void MP::lock(void)volatile{
 		}while(cmpxchg<word>(&owner,id,0xFFFF) != 0xFFFF);
 	}
 	res=lockinc<word>(&guard);
-	assert(1,res);
+	assert(1 == res);
 }		
 
 void MP::unlock(void)volatile{
 	if (!this)
 		return;
-	assert(apic->id(),owner);
-	assertinv(0,guard);
+	assert(apic->id() == owner);
+	assert(0 != guard);
 	if (0==lockdec<word>(&guard)){
 		xchg<word>(&owner,0xFFFF);
 	}
@@ -49,9 +49,9 @@ void MP::sync(MP::CMD cmd,void* argu,size_t len)volatile{
 	if (!this)
 		return;
 	lock_guard<volatile MP> lck(*this);
-	assertless(len,0x0C00);
+	assert(len < 0x0C00);
 	word tmp=cmpxchg<word>(&count,1,0);
-	assert(0,tmp);
+	assert(0 == tmp);
 	if (argu && len)
 		memcpy(this+1,argu,len);
 	tmp = xchg<word>(&command,cmd);
@@ -62,15 +62,15 @@ void MP::sync(MP::CMD cmd,void* argu,size_t len)volatile{
 		_mm_pause();
 	
 	tmp=cmpxchg<word>(&count,0,sysinfo->MP_cnt);
-	assert(sysinfo->MP_cnt,tmp);
+	assert(sysinfo->MP_cnt == tmp);
 	
 }
 
 
 void MP::reply(MP::CMD cmd)volatile{
-	assertinv(0,this);
-	assertinv(0,count);
-	assert(command,cmd);
-	assertless(count,sysinfo->MP_cnt);
+	assert(0 != this);
+	assert(0 != count);
+	assert(command == cmd);
+	assert(count < sysinfo->MP_cnt);
 	lockinc<word>(&count);
 }

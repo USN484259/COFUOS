@@ -2,7 +2,7 @@
 #include "types.hpp"
 
 extern "C"{
-	
+#ifndef _TEST
 	void* memset(volatile void*,int,size_t);
 	void* zeromemory(volatile void*,size_t);
 	void* memcpy(volatile void*,const void*,size_t);
@@ -17,9 +17,9 @@ extern "C"{
 	byte serial_peek(word);
 
 	void dbgprint(const char*);	
-	
-	__declspec(noreturn)
-	int BugCheck(UOS::status,qword,qword);
+#endif
+	[[ noreturn ]]
+	void BugCheck(UOS::stopcode,...);
 
 	//void handler_push(exception_handler,void*);
 	//void handler_pop(void);
@@ -95,6 +95,9 @@ extern "C"{
 	
 	void _mm_pause(void);
 	void __debugbreak(void);
+	
+	 int _rdseed64_step(unsigned __int64 *);
+	 int _rdrand64_step(unsigned __int64 *);
 //#pragma warning(default:4391)
 	
 }

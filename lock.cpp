@@ -9,12 +9,12 @@ using namespace UOS;
 
 
 interrupt_guard::interrupt_guard(void) : state(__readeflags() & 0x0200){
-	__assume(0==(state & ~0x0200));
+	assert(0==(state & ~0x0200));
 	_disable();
 }
 
 interrupt_guard::~interrupt_guard(void){
-	__assume(0==(state & ~0x0200));
+	assert(0==(state & ~0x0200));
 	if (state)
 		_enable();
 }
@@ -32,10 +32,10 @@ void mutex::lock(void)volatile{
 }
 
 void mutex::unlock(void)volatile{
-	assert(1,m);
+	assert(1 == m);
 	
 	dword tmp=xchg<dword>(&m,0);
-	assert(1,tmp);
+	assert(1 == tmp);
 	
 }
 

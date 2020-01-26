@@ -7,14 +7,14 @@ using namespace UOS;
 bits::bits(void* b,size_t l) : base((byte*)b),length(l){}
 
 int bits::at(size_t off) const{
-	assertless(off,length*8);
+	assert(off < length*8);
 	
 	return base[off / 8] & ( 1 << (off % 8) );
 	
 }
 
 void bits::at(size_t off,int state){
-	assertless(off,length*8);
+	assert(off < length*8);
 	
 	if (state){	//set
 		base[off/8] |= ( 1 << (off % 8) );
@@ -28,7 +28,7 @@ void bits::at(size_t off,int state){
 }
 
 void bits::set(size_t off,size_t len,int state){
-	assertless(off+len,length*8);
+	assert(off+len < length*8);
 	while(len && off % 8){
 		at(off,state);
 		++off,--len;

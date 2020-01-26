@@ -29,7 +29,7 @@ PE64::PE64(const void* base) : pe_info( (const _info*) ((const byte*)base + *(dw
 		return;
 	}while(false);
 	
-	BugCheck(invalid_argument,(qword)this,(qword)base);
+	BugCheck(invalid_argument,base);
 	
 }
 
@@ -56,7 +56,7 @@ bool PE64::section_iterator::next(void){
 }
 
 const PE64::_section* PE64::section_iterator::entrance(void) const{
-	assertless(it,pe.pe_info->section_count);
+	assert(it < pe.pe_info->section_count);
 	return pe.pe_section+it;
 }
 
