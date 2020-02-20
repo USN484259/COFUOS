@@ -112,18 +112,24 @@ namespace UOS{
 	}
 	
 	template<typename T>
-	bool equal(const T& a,const T& b){
-		return a==b;
-	}
+	struct equal_to {
+		bool operator()(const T& a, const T& b) const{
+			return a == b;
+		}
+	};
+
 	template<typename T>
-	bool not_equal(const T& a,const T& b){
-		return a!=b;
-	}
-	
+	struct not_equal_to {
+		bool operator()(const T& a, const T& b) const{
+			return a != b;
+		}
+	};
 	template<typename T>
-	bool less(const T& a,const T& b){
-		return a<b;
-	}
+	struct less {
+		bool operator()(const T& a, const T& b) const{
+			return a < b;
+		}
+	};
 	
 	template<typename T>
 	size_t match(T a,T b,size_t cnt){
