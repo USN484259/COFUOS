@@ -7,12 +7,23 @@
 namespace UOS{
 
 	qword fasthash(const void*, size_t);
+	template<typename T>
+	struct hash {
+		qword operator()(const T& obj) const{
+			return fasthash(addressof(obj), sizeof(T));
+		}
 
+
+	};
+
+
+/*
 
 	template<typename T>
 	qword hash(const T& obj) {
 		return fasthash(addressof(obj), sizeof(const T));
 	}
+*/
 }
 
 

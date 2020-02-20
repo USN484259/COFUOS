@@ -8,10 +8,10 @@
 
 
 namespace UOS{
-	template<typename T, qword (*H)(const T&) = UOS::hash<T>, bool (*E)(const T&, const T&) = UOS::equal<T> >
+	template<typename T, typename H = UOS::hash<T>,typename E = UOS::equal_to<T> >
 	class hash_set{
 		
-		typedef hash_bucket<T, H, E> container_type;
+		typedef hash_bucket<const T, H, E> container_type;
 		enum : size_t { initial_count = 64 };
 
 		container_type container;
@@ -48,8 +48,7 @@ namespace UOS{
 	public:
 	
 	
-	
-		hash_set(size_t bucket_count = initial_count) : container(bucket_count), factor(8.0) {}
+		hash_set(size_t bucket_count = initial_count,H h = H(),E e = E()) : container(bucket_count,h,e), factor(8.0) {}
 		
 		hash_set(const hash_set& obj) : container(obj.container.bucket_count()), factor(obj.factor) {
 			container.clone(obj.container);
@@ -122,43 +121,44 @@ namespace UOS{
 			return const_iterator(container.cend());
 		}
 
-		
-		iterator find(const T& key){
+		template<typename C>
+		iterator find(const C& key){
 			return iterator(container.find(key));
 			
 		}
-		const_iterator find(const T& key) const{
+		template<typename C>
+		const_iterator find(const C& key) const{
 			return const_iterator(container.find(key));
 		}
 		
 		
 		pair<iterator,bool> insert(const T& val){
-
-			while (load_factor() * container.max_load() >= factor) {
-				container.rehash(4 * container.bucket_count());
-			}
-
 			auto pos = container.find(val);
 
 			if (pos != container.end())
 				return make_pair(iterator(pos), false);
 
-			return make_pair(iterator(container.insert(pos, val)), true);
+			while (load_factor() * container.max_load() >= factor) {
+				container.rehash(4 * container.bucket_count());
+			}
+
+			return make_pair(iterator(container.insert(container.cend(), val)), true);
 
 		}
 		
 		pair<iterator,bool> insert(T&& val){
 
-			while (load_factor() * container.max_load() >= factor) {
-				container.rehash(4 * container.bucket_count());
-			}
 
 			auto pos = container.find(val);
 
 			if (pos != container.end())
 				return make_pair(iterator(pos), false);
 
-			return make_pair(iterator(container.insert(pos, move(val))), true);
+			while (load_factor() * container.max_load() >= factor) {
+				container.rehash(4 * container.bucket_count());
+			}
+
+			return make_pair(iterator(container.insert(container.cend(), move(val))), true);
 
 		}
 		iterator erase(const_iterator pos) {

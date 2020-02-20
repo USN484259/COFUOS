@@ -5,7 +5,7 @@
 #include "hash.hpp"
 
 namespace UOS{
-	template<typename T, qword(*H)(const T&) = UOS::hash<T>, bool(*E)(const T&, const T&) = UOS::equal<T> >
+	template<typename T, typename H = UOS::hash<T>,typename E = UOS::equal_to<T> >//qword(*H)(const T&) = UOS::hash<T>, bool(*E)(const T&, const T&) = UOS::equal<T> >
 	class hash_bucket {
 	public:
 		typedef pair<qword, T> value_type;
@@ -20,8 +20,11 @@ namespace UOS{
 
 		host_iterator max_load_pos;
 		size_t count;
+		H obj_hash;
+		E obj_equal;
 
 		host_iterator find_bucket(qword hash_val) const{
+			assert(0 != bucket_count());
 			return buckets.begin() + (hash_val % bucket_count());
 		}
 
@@ -172,9 +175,9 @@ namespace UOS{
 
 
 	private:
-		hash_bucket(size_t fac, hash_bucket&& old) : buckets(fac,bucket_type()),max_load_pos(buckets.begin()),count(0) {
+		hash_bucket(size_t fac, hash_bucket&& old) : buckets(fac,bucket_type()),max_load_pos(buckets.begin()),count(0),obj_hash(move(old.obj_hash)),obj_equal(move(old.obj_equal)) {
 			if (0 == fac)
-				error(invalid_argument, 0);
+				error(invalid_argument, fac);
 			assert(bucket_count() == fac);
 
 			for (auto it = old.begin(); it != old.end();) {
@@ -189,13 +192,14 @@ namespace UOS{
 			}
 			assert(count == old.count);
 			old.count = 0;
+			old.buckets.clear();
 		}
 
 
 
 	public:
-
-		hash_bucket(size_t fac) : buckets(fac,bucket_type()),max_load_pos(buckets.begin()),count(0) {
+		hash_bucket(size_t fac) : buckets(fac, bucket_type()), max_load_pos(buckets.begin()), count(0) {}
+		hash_bucket(size_t fac,H& h,E& e) : buckets(fac,bucket_type()),max_load_pos(buckets.begin()),count(0),obj_hash(move(h)),obj_equal(move(e)) {
 			if (0 == fac)
 				error(invalid_argument, 0);
 			//while (factor--)
@@ -214,6 +218,8 @@ namespace UOS{
 			buckets.swap(other.buckets);
 			swap(max_load_pos, other.max_load_pos);
 			swap(count, other.count);
+			swap(obj_hash, other.obj_hash);
+			swap(obj_equal, other.obj_equal);
 		}
 
 		void clone(const hash_bucket& from) {
@@ -221,6 +227,9 @@ namespace UOS{
 				error(invalid_argument, *this);
 			if (bucket_count() != from.bucket_count())
 				error(invalid_argument, from);
+
+			obj_hash = from.obj_hash;
+			obj_equal = from.obj_equal;
 
 			auto it_dst = buckets.begin();
 			auto it_sor = from.buckets.cbegin();
@@ -256,7 +265,13 @@ namespace UOS{
 		size_t size(void) const {
 			return count;
 		}
-		
+		/*
+		size_t bucket_size(const T& key) const {
+			qword key_hash = obj_hash(key);
+			auto bkt = find_bucket(key_hash);
+			return bkt->size();
+		}
+		*/
 		size_t max_load(void) const {
 			return max_load_pos->size();
 		}
@@ -282,22 +297,22 @@ namespace UOS{
 		const_iterator cend(void) const{
 			return const_iterator(buckets, buckets.end(), bucket_iterator());
 		}
-
-		iterator find(const T& key) {
-			qword key_hash = H(key);
+		template<typename C>
+		iterator find(const C& key) {
+			qword key_hash = obj_hash(key);
 			host_iterator bkt = find_bucket(key_hash);
 			for (bucket_iterator it = bkt->begin(); it != bkt->end(); ++it) {
-				if (it->first == key_hash && it->second == key)
+				if (it->first == key_hash && obj_equal(it->second,key))
 					return iterator(buckets, bkt, it);
 			}
 			return end();
 		}
-
-		const_iterator find(const T& key) const{
-			qword key_hash = H(key);
+		template<typename C>
+		const_iterator find(const C& key) const{
+			qword key_hash = obj_hash(key);
 			host_iterator bkt = find_bucket(key_hash);
 			for (bucket_iterator it = bkt->begin(); it != bkt->end(); ++it) {
-				if (it->first == key_hash && it->second == key)
+				if (it->first == key_hash && obj_equal(it->second,key))
 					return const_iterator(buckets, bkt, it);
 			}
 			return cend();
@@ -327,12 +342,12 @@ namespace UOS{
 		}
 
 		iterator insert(const_iterator hint, const T& val) {
-			qword hash_value = H(val);
+			qword hash_value = obj_hash(val);
 			host_iterator bkt = find_bucket(hash_value);
 			bucket_iterator it = bkt->begin();
 			if (hint != end()) {
 				assert(hint.host == &buckets);
-				if (hint.bkt != bkt || false == E(*hint, val))
+				if (hint.bkt != bkt || false == obj_equal(*hint, val))
 					error(invalid_argument, hint);
 				it = hint.it;
 			}
@@ -348,12 +363,12 @@ namespace UOS{
 		}
 
 		iterator insert(const_iterator hint, T&& val) {
-			qword hash_value = H(val);
+			qword hash_value = obj_hash(val);
 			host_iterator bkt = find_bucket(hash_value);
 			bucket_iterator it = bkt->begin();
 			if (hint != end()) {
 				assert(hint.host == &buckets);
-				if (hint.bkt != bkt || false == E(hint->second, val))
+				if (hint.bkt != bkt || false == obj_equal(hint->second, val))
 					error(invalid_argument, hint);
 				it = hint.it;
 			}
