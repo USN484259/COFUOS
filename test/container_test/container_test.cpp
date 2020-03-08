@@ -5,6 +5,12 @@
 #include "..\..\STL\list.hpp"
 #include "..\..\STL\hash_bucket.hpp"
 #include "..\..\STL\hash_set.hpp"
+#include "..\..\STL\hash_map.hpp"
+#include "..\..\STL\avl_tree.hpp"
+
+#include <set>
+#include <random>
+
 using namespace std;
 
 
@@ -20,7 +26,7 @@ class object {
 public:
 	static bool log;
 public:
-	object(unsigned v) : val(v) {
+	object(unsigned v = 0) : val(v) {
 		if (log)
 			cout << v << endl;
 	}
@@ -59,10 +65,12 @@ public:
 	bool operator!=(const object& cmp) const {
 		return val != cmp.val;
 	}
+	struct hash : public UOS::hash<unsigned>{
+		qword operator()(const object& obj) const {
+			return UOS::hash<unsigned>::operator()(obj.val);
+		}
 
-	static qword hash(const object& obj) {
-		return UOS::hash(obj.val);
-	}
+	};
 
 };
 
@@ -76,6 +84,7 @@ void print(const C& container) {
 	}
 	cout << endl;
 }
+
 
 
 void test_vector(void) {
@@ -195,7 +204,9 @@ void test_list(void) {
 void test_hash_bucket(void){
 
 	//object::log = true;
-	UOS::hash_bucket<object, object::hash> container(64);
+	object::hash h;
+	UOS::equal_to<object> e;
+	UOS::hash_bucket<object, object::hash> container(64,UOS::move(h),UOS::move(e));
 	unsigned counter = 0;
 
 	while (counter != 128) {
@@ -222,7 +233,7 @@ void test_hash_bucket(void){
 
 void test_hash_set(void) {
 
-	object::log = true;
+	//object::log = true;
 	UOS::hash_set<object, object::hash> container;
 
 	unsigned counter = 0;
@@ -257,15 +268,91 @@ void test_hash_set(void) {
 
 }
 
+template<typename C>
+void print_map(const C& container) {
+	cout << "size " << container.size() << endl;
+	cout << container.bucket_count() << '\t' << container.load_factor() << endl;
+	for (auto it = container.cbegin(); it != container.cend(); ++it) {
+		cout << it->first << '\t' << it->second << endl;
+	}
+}
+
+void test_hash_map(void) {
+	//object::log = true;
+	UOS::hash_map<object, object> container;
+	unsigned counter = 0;
+
+	while (counter < 1024) {
+		container[counter] = counter + 1;
+		++counter;
+	}
+	print_map(container);
+
+	cout << container.at(68) << endl;
+	container[3] = 20;
+	auto it = container.find(3);
+	cout << it->first << '\t' << it->second << endl;
+	++it;
+	it = container.erase(it);
+
+	{
+		auto copy(UOS::move(container));
+		container.insert(decltype(container)::value_type(24, 32));
+		copy.rehash(256);
+		print_map(container);
+		print_map(copy);
+
+		container = copy;
+	}
+	print_map(container);
+}
+
+void test_avl_tree(void) {
+	using namespace UOS;
+	UOS::avl_tree<object> container;
+
+	std::multiset<object> std_container;
+
+	std::random_device rng;
+
+	//static const unsigned data[] = { 34,30,119,247,199,36 };
+
+
+	for (auto i = 0; i < 0x1000; ++i) {
+		object val(rng());
+		//object val(data[i]);
+
+		//cout << val << endl;
+
+		container.insert(val);
+
+		container.check([](const object&) {});
+
+		std_container.insert(val);
+	}
+	auto it = std_container.cbegin();
+
+	container.check([&](const object& val) {
+		assert(val == *it);
+		++it;
+		//cout << val << endl;
+	});
+
+}
+
 
 int main(void) {
-	test_vector();
+	//test_vector();
 
-	test_list();
+	//test_list();
 
-	test_hash_bucket();
+	//test_hash_bucket();
 
-	test_hash_set();
+	//test_hash_set();
+
+	//test_hash_map();
+
+	test_avl_tree();
 
 	return 0;
 }
