@@ -31,7 +31,8 @@ namespace UOS{
 		bad_alloc,
 		out_of_range,
 		invalid_argument,
-		null_deref
-
+		null_deref,
+		corrupted
+		//inconsistent,
 	};
 }

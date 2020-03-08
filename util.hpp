@@ -75,10 +75,10 @@ namespace UOS{
 	};
 
 	
-	template<typename A,typename B>
-	inline pair<A, B> make_pair(const A& a, const B& b) {
-		return pair<A, B>(a, b);
-	}
+	//template<typename A,typename B>
+	//inline pair<A, B> make_pair(const A& a, const B& b) {
+	//	return pair<A, B>(a, b);
+	//}
 	template<typename A, typename B>
 	inline pair<A, B> make_pair(A&& a, B&& b) {
 		return pair<A, B>(move(a), move(b));
