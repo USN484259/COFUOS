@@ -22,21 +22,30 @@ namespace UOS{
 			node(const T& t) : l(nullptr), r(nullptr), lean(LEAN_BALANCE), side(NONE), type_l(0), type_r(0), payload(t) {}
 			node(T&& t) : l(nullptr), r(nullptr), lean(LEAN_BALANCE), side(NONE), type_l(0), type_r(0), payload(move(t)) {}
 			
-			node* left(void) const{
+			void set(const node* other) {
+				l = other->l;
+				r = other->r;
+				lean = other->lean;
+				//side = other->side;
+				type_l = other->type_l;
+				type_r = other->type_r;
+			}
+			
+			inline node* left(void) const{
 				return type_l ? l : nullptr;
 			}
-			node* right(void) const{
+			inline node* right(void) const{
 				return type_r ? r : nullptr;
 			}
 			
-			void left(node* p){
+			inline void left(node* p){
 				l = p;
 				type_l = p ? 1 : 0;
 				if (p)
 					p->side = LEFT;
 			}
 			
-			void right(node* p){
+			inline void right(node* p){
 				r = p;
 				type_r = p ? 1 : 0;
 				if (p)
@@ -65,36 +74,199 @@ namespace UOS{
 				return res;
 			}
 			
-			node* ref_l(void) const {
+			inline node* ref_l(void) const {
 				assert(!type_l);
 				return l;
 			}
-			node* ref_r(void) const {
+			inline node* ref_r(void) const {
 				assert(!type_r);
 				return r;
 			}
 
-			void ref_l(node* p){
+			inline void ref_l(node* p){
 				assert(!type_l);
 				l = p;
 			}
 			
-			void ref_r(node* p){
+			inline void ref_r(node* p){
 				assert(!type_r);
 				r = p;
 			}
 			
-			
+			node* parent(void) const{
+				node* res = (node*)this;
+				switch (side) {
+				case NONE:
+					return nullptr;
+				case LEFT:
+					while (res->right())
+						res = res->right();
+					res = res->ref_r();
+					assert(res->left() == this);
+					break;
+				case RIGHT:
+					while (res->left())
+						res = res->left();
+					res = res->ref_l();
+					assert(res->right() == this);
+					break;
+				default:
+					assert(false);
+				}
+				return res;
+			}
+
+			//void raw_set(const node* other, SIDE mode) {
+			//	if (mode != RIGHT) {
+			//		l = other->l;
+			//		type_l = other->type_l;
+			//	}
+			//	if (mode != LEFT) {
+			//		r = other->r;
+			//		type_r = other->type_r;
+			//	}
+			//	if (mode == NONE) {
+			//		lean = other->lean;
+			//		side = other->side;
+			//	}
+			//}
 		};
+
+		class iterator_base {
+		protected:
+			const avl_tree* container;
+			node* pos;
+			iterator_base(const avl_tree* c, node* p) : container(c), pos(p) {}
+
+		public:
+
+			iterator_base& operator++(void) {
+				assert(container);
+				if (pos)
+					pos = pos->next();
+				else {
+					pos = container->root;
+					if (!pos)
+						error(null_deref,container);
+					while (pos->left())
+						pos = pos->left();
+				}
+				return *this;
+			}
+			iterator_base& operator--(void) {
+				assert(container);
+				if (pos)
+					pos = pos->prev();
+				else {
+					pos = container->root;
+					if (!pos)
+						error(null_deref,container);
+					while (pos->right())
+						pos = pos->right();
+				}
+				return *this;
+			}
+
+			bool operator==(const iterator_base& cmp) const {
+				if (container != cmp.container)
+					error(invalid_argument,cmp);
+				return pos == cmp.pos;
+			}
+			bool operator!=(const iterator_base& cmp) const {
+				if (container != cmp.container)
+					error(invalid_argument, cmp);
+				return pos != cmp.pos;
+			}
+
+			const T& operator*(void) const {
+				assert(container && pos);
+				return pos->payload;
+			}
+			const T* operator->(void) const {
+				assert(container && pos);
+				return &pos->payload;
+			}
+
+		};
+	public:
+		class iterator : public iterator_base {
+			friend class avl_tree;
+			typedef iterator_base super;
+
+			iterator(const avl_tree* c, node* p) : super(c, p) {}
+
+		public:
+			iterator(const iterator& obj) : super(obj.container, obj.pos) {}
+
+			iterator& operator=(const iterator& obj) {
+				container = obj.container;
+				pos = obj.pos;
+				return *this;
+			}
+
+			using super::operator*;
+			using super::operator->;
+
+			T& operator*(void) {
+				assert(container && pos);
+				return pos->payload;
+			}
+			T* operator->(void) {
+				assert(container && pos);
+				return &pos->payload;
+			}
+
+		};
+
+
+		class const_iterator : public iterator_base {
+			friend class avl_tree;
+
+			typedef iterator_base super;
+
+			const_iterator(const avl_tree* c, node* p) : super(c, p) {}
+
+		public:
+			const_iterator(const const_iterator& obj) : super(obj.container, obj.pos) {}
+			const_iterator(const iterator& obj) : super(obj.container, obj.pos) {}
+
+			const_iterator& operator=(const const_iterator& obj) {
+				container = obj.container;
+				pos = obj.pos;
+				return *this;
+			}
+
+			const_iterator& operator=(const iterator& obj) {
+				container = obj.container;
+				pos = obj.pos;
+				return *this;
+			}
+
+		};
+
+	private:
+		/*
 		struct CMP : public C{
+			CMP(void) = default;
+			CMP(const C& c) : C(c) {}
+
 			bool operator()(const node* a,const node* b) const{
 				return C::operator()(a->payload,b->payload);
 			}
+			
+			template<typename T>
+			bool operator()(const node* a, const T& b) const {
+				return operator()(a->payload, b);
+			}
+			template<typename T>
+			bool operator()(const T& a, const node* b) const {
+				return operator()(a, b->payload);
+			}
 		};
-
+		*/
 		node* root;
 		size_t count;
-		CMP cmp;
+		C cmp;
 		
 		size_t depth(const node* pos) const {
 			if (!pos)
@@ -113,6 +285,16 @@ namespace UOS{
 				return LEAN_LEFT;
 			error(corrupted,pos);
 		}
+
+		bool is_parent(node* parent, node* cur) const {
+			while (cur) {
+				cur = cur->parent();
+				if (cur == parent)
+					return true;
+			}
+			return false;
+		}
+
 		/*
 		LEAN update_lean(node* pos) {
 			if (!pos)
@@ -140,7 +322,7 @@ namespace UOS{
 		
 		typedef pair<node*, DEPTH_CHANGE> result_type;
 
-		 result_type insert(node* pos,node* item){
+		result_type insert(node* pos,node* item){
 			assert(item);
 			assert(!item->left() && !item->right());
 			assert(item->lean == LEAN_BALANCE);
@@ -150,9 +332,9 @@ namespace UOS{
 
 			SIDE side;
 			
-			if (cmp(item,pos))
+			if (cmp(item->payload,pos->payload))
 				side = LEFT;
-			else if (cmp(pos,item))
+			else if (cmp(pos->payload,item->payload))
 				side = RIGHT;
 			else
 				side = pos->lean == LEAN_LEFT ? RIGHT : LEFT;
@@ -223,7 +405,194 @@ namespace UOS{
 		
 			assert(false);
 		}
-		
+
+		void erase(node* target) {
+			assert(target);
+
+			node* target_parent = target->parent();
+			SIDE target_side = target->side;
+
+
+			node* replace = nullptr;
+			SIDE replace_side = NONE;
+
+
+			node* deleted_parent = nullptr;
+			SIDE deleted_side = NONE;
+
+			if (target->left() || target->right()) {
+				switch (target->lean) {
+				case LEAN_BALANCE:
+					assert(target->left() && target->right());
+					//TRICK select left aka prev()
+				case LEAN_LEFT:
+					replace = target->prev();
+					replace_side = LEFT;
+					break;
+				case LEAN_RIGHT:
+					replace = target->next();
+					replace_side = RIGHT;
+					break;
+				default:
+					assert(false);
+				}
+			}
+			assert(!replace || replace_side != NONE);
+
+			if (replace) {	//target is not leaf
+				node* replace_parent = replace->parent();
+
+				{	//remove replace from ref chain
+					node* prev = replace->prev();
+					node* next = replace->next();
+					if (prev && !prev->right()) {	//right is ref
+						assert(prev->ref_r() == replace);
+						prev->ref_r(next);
+					}
+					if (next && !next->left()) {	//left is ref
+						assert(next->ref_l() == replace);
+						next->ref_l(prev);
+					}
+				}
+
+				//delete replace from replace_parent's link
+				switch (replace_side) {
+				case LEFT:
+					assert(replace->ref_r() == target);
+					if (replace->left()) {
+						assert(replace->prev()->ref_r() == replace);
+						replace->prev()->ref_r(target);
+
+						if (replace_parent == target) {
+							assert(replace_parent->left() == replace);
+							replace_parent->left(replace->left());
+						}
+						else {
+							assert(replace_parent->right() == replace);
+							replace_parent->right(replace->left());
+						}
+					}
+					else {
+
+						if (replace_parent == target) {
+							assert(replace_parent->left() == replace);
+							replace_parent->left(nullptr);
+							replace_parent->ref_l(replace->ref_l());	//???
+						}
+						else {
+							assert(replace_parent->right() == replace);
+							replace_parent->right(nullptr);
+							replace_parent->ref_r(target);
+						}
+					}
+					break;
+				case RIGHT:
+					assert(replace->ref_l() == target);
+					if (replace->right()) {
+						assert(replace->next()->ref_l() == replace);
+						replace->next()->ref_l(target);
+
+						if (replace_parent == target) {
+							assert(replace_parent->right() == replace);
+							replace_parent->right(replace->right());
+						}
+						else {
+							assert(replace_parent->left() == replace);
+							replace_parent->left(replace->right());
+						}
+					}
+					else {
+						if (replace_parent == target) {
+							assert(replace_parent->right() == replace);
+							replace_parent->right(nullptr);
+							replace_parent->ref_r(replace->ref_r());	//???
+						}
+						else {
+							assert(replace_parent->left() == replace);
+							replace_parent->left(nullptr);
+							replace_parent->ref_l(target);
+						}
+					}
+					break;
+				}
+
+				//at this point only replace is removed from the container and the chain is valid except that lean may be outdated
+
+				
+				{	//redirect ref pointing to target
+					node* prev = target->prev();
+					node* next = target->next();
+					if (prev && !prev->right()) {	//right is ref
+						assert(prev->ref_r() == target);
+						prev->ref_r(next);
+					}
+					if (next && !next->left()) {	//left is ref
+						assert(next->ref_l() == target);
+						next->ref_l(prev);
+					}
+				}
+
+				//replace target
+				replace->set(target);
+
+
+				//point target_parent's link to replace
+				switch (target_side) {
+				case NONE:
+					assert(nullptr == target_parent);
+					assert(root == target);
+					root = replace;
+					replace->side = NONE;
+					break;
+				case LEFT:
+					target_parent->left(replace);
+					break;
+				case RIGHT:
+					target_parent->right(replace);
+					break;
+				}
+
+				deleted_parent = replace_parent == target ? replace : replace_parent;	//????
+				deleted_side = replace_side;
+
+			}
+			else {	//target is leaf
+				switch (target_side) {
+				case NONE:
+					assert(nullptr == target_parent);
+					assert(root == target);
+					root = nullptr;
+					break;
+				case LEFT:
+					assert(target->ref_r() == target_parent);
+					target_parent->left(nullptr);
+					target_parent->ref_l(target->ref_l());
+					break;
+				case RIGHT:
+					assert(target->ref_l() == target_parent);
+					target_parent->right(nullptr);
+					target_parent->ref_r(target->ref_r());
+					break;
+
+				}
+
+				deleted_parent = target_parent;
+				deleted_side = target_side;
+			}
+
+
+			delete target;
+
+
+
+#error "TODO rebalance"
+			//lean not updated yet
+
+
+
+
+		}
+
 		node* rotate_left(node* pos) {
 			assert(pos->lean == LEAN_RIGHT);
 			assert(pos->right());
@@ -412,7 +781,47 @@ namespace UOS{
 			assert(get_lean(pos->right()) == pos->right()->lean);
 			return pos;
 		}
-		
+
+		/*
+		node* weird_transform(node* pos) {
+			switch (pos->lean) {
+			case LEAN_BALANCE:
+				assert(false);
+				break;
+			case LEAN_LEFT:
+			{
+				assert(!pos->right());
+				node* new_root = pos->left();
+				assert(new_root->left() && new_root->right());
+
+				break;
+			}
+			case LEAN_RIGHT:
+			{
+				assert(!pos->left());
+				node* new_root = pos->right();
+				assert(new_root->left() && new_root->right());
+				assert(new_root->lean == LEAN_BALANCE);
+				assert(new_root->left()->ref_l() == pos);
+				assert(new_root->left()->ref_r() == new_root);
+				assert(new_root->right()->ref_l() == new_root);
+				assert(new_root->right()->ref_r(), true);
+				pos->right(nullptr);
+				new_root->left()->left(pos);
+				pos->ref_r(new_root->left());
+
+				pos->lean = LEAN_BALANCE;
+				new_root->left()->lean = LEAN_LEFT;
+				new_root->lean = LEAN_LEFT;
+
+				pos = new_root;
+				break;
+			}
+			}
+
+			return pos;
+		}
+		*/
 		template<typename F>
 		void check(F& fun,const node* pos) const {
 			assert(get_lean(pos) == pos->lean);
@@ -420,6 +829,20 @@ namespace UOS{
 				assert(pos->left()->side == LEFT);
 				check(fun, pos->left());
 			}
+			switch (pos->side) {
+			case NONE:
+				assert(!pos->parent());
+				break;
+			case LEFT:
+				assert(pos->parent()->left() == pos);
+				break;
+			case RIGHT:
+				assert(pos->parent()->right() == pos);
+				break;
+			default:
+				assert(false);
+			}
+
 			fun(pos->payload);
 			if (pos->right()) {
 				assert(pos->right()->side == RIGHT);
@@ -430,7 +853,7 @@ namespace UOS{
 	public:
 		
 		avl_tree(void) : root(nullptr),count(0) {}
-		avl_tree(C& c) : root(nullptr), count(0), cmp(move(c)) {}
+		avl_tree(const C& c) : root(nullptr), count(0), cmp(c) {}
 		avl_tree(const avl_tree&) = delete;
 		avl_tree& operator=(const avl_tree&) = delete;
 
@@ -453,10 +876,41 @@ namespace UOS{
 			return count;
 		}
 
-		void insert(const T& val) {
+		iterator begin(void) {
+			if (!root)
+				return end();
+			iterator it(this, nullptr);
+			++it;
+			return it;
+		}
+		const_iterator cbegin(void) const {
+			if (!root)
+				return cend();
+			const_iterator it(this, nullptr);
+			++it;
+			return it;
+		}
+
+		iterator end(void) {
+			return iterator(this, nullptr);
+		}
+		const_iterator cend(void) const {
+			return const_iterator(this, nullptr);
+		}
+
+		iterator insert(const T& val) {
 			node* new_node = new node(val);
 			root = insert(root, new_node).first;
+			root->side = NONE;
 			++count;
+			return iterator(this, new_node);
+		}
+		iterator insert(T&& val) {
+			node* new_node = new node(move(val));
+			root = insert(root, new_node).first;
+			root->side = NONE;
+			++count;
+			return iterator(this, new_node);
 		}
 
 		template<typename F>
@@ -480,10 +934,6 @@ namespace UOS{
 
 		}
 		
-		//iterator insert(const_iterator hint, const T& val) {
-
-		//}
-
 
 	};
 
