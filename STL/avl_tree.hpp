@@ -1,12 +1,12 @@
 #pragma once
 #include "common.hpp"
 
-namespace UOS{
+namespace UOS {
 
-	template<typename T,typename C = UOS::less<T> >
-	class avl_tree{
-		
-		enum LEAN : byte {LEAN_BALANCE = 0,LEAN_LEFT = 1,LEAN_RIGHT = 2};
+	template<typename T, typename C = UOS::less<T> >
+	class avl_tree {
+
+		enum LEAN : byte { LEAN_BALANCE = 0, LEAN_LEFT = 1, LEAN_RIGHT = 2 };
 		enum SIDE : byte { NONE, LEFT, RIGHT };
 		struct node {
 			node* l;
@@ -14,125 +14,141 @@ namespace UOS{
 			LEAN  lean : 2;
 			SIDE side : 2;
 			byte : 2;
-			//0:ref		1:link
-			byte type_l : 1;
-			byte type_r : 1;
-			T payload;
-			
-			node(const T& t) : l(nullptr), r(nullptr), lean(LEAN_BALANCE), side(NONE), type_l(0), type_r(0), payload(t) {}
-			node(T&& t) : l(nullptr), r(nullptr), lean(LEAN_BALANCE), side(NONE), type_l(0), type_r(0), payload(move(t)) {}
-			
-			void set(const node* other) {
-				l = other->l;
-				r = other->r;
-				lean = other->lean;
-				//side = other->side;
-				type_l = other->type_l;
-				type_r = other->type_r;
-			}
-			
-			inline node* left(void) const{
-				return type_l ? l : nullptr;
-			}
-			inline node* right(void) const{
-				return type_r ? r : nullptr;
-			}
-			
-			inline void left(node* p){
-				l = p;
-				type_l = p ? 1 : 0;
-				if (p)
-					p->side = LEFT;
-			}
-			
-			inline void right(node* p){
-				r = p;
-				type_r = p ? 1 : 0;
-				if (p)
-					p->side = RIGHT;
-			}
-			
-			node* prev(void) const{
-				if (!type_l)
-					return l;
-				node* res = l;
-				assert(res);
-				while (res->right())
-					res = res->right();
-				assert(res->ref_r() == this);
-				return res;
+				   //0:ref		1:link
+				   byte type_l : 1;
+				   byte type_r : 1;
+				   T payload;
 
-			}
-			node* next(void) const{
-				if (!type_r)
-					return r;
-				node* res = r;
-				assert(res);
-				while (res->left())
-					res = res->left();
-				assert(res->ref_l() == this);
-				return res;
-			}
-			
-			inline node* ref_l(void) const {
-				assert(!type_l);
-				return l;
-			}
-			inline node* ref_r(void) const {
-				assert(!type_r);
-				return r;
-			}
+				   node(const T& t) : l(nullptr), r(nullptr), lean(LEAN_BALANCE), side(NONE), type_l(0), type_r(0), payload(t) {}
+				   node(T&& t) : l(nullptr), r(nullptr), lean(LEAN_BALANCE), side(NONE), type_l(0), type_r(0), payload(move(t)) {}
 
-			inline void ref_l(node* p){
-				assert(!type_l);
-				l = p;
-			}
-			
-			inline void ref_r(node* p){
-				assert(!type_r);
-				r = p;
-			}
-			
-			node* parent(void) const{
-				node* res = (node*)this;
-				switch (side) {
-				case NONE:
-					return nullptr;
-				case LEFT:
-					while (res->right())
-						res = res->right();
-					res = res->ref_r();
-					assert(res->left() == this);
-					break;
-				case RIGHT:
-					while (res->left())
-						res = res->left();
-					res = res->ref_l();
-					assert(res->right() == this);
-					break;
-				default:
-					assert(false);
-				}
-				return res;
-			}
+				   void set(const node* other) {
+					   l = other->l;
+					   r = other->r;
+					   lean = other->lean;
+					   //side = other->side;
+					   type_l = other->type_l;
+					   type_r = other->type_r;
+				   }
 
-			//void raw_set(const node* other, SIDE mode) {
-			//	if (mode != RIGHT) {
-			//		l = other->l;
-			//		type_l = other->type_l;
-			//	}
-			//	if (mode != LEFT) {
-			//		r = other->r;
-			//		type_r = other->type_r;
-			//	}
-			//	if (mode == NONE) {
-			//		lean = other->lean;
-			//		side = other->side;
-			//	}
-			//}
+				   inline node* left(void) const {
+					   return type_l ? l : nullptr;
+				   }
+				   inline node* right(void) const {
+					   return type_r ? r : nullptr;
+				   }
+
+				   inline void left(node* p) {
+					   l = p;
+					   type_l = p ? 1 : 0;
+					   if (p)
+						   p->side = LEFT;
+				   }
+
+				   inline void right(node* p) {
+					   r = p;
+					   type_r = p ? 1 : 0;
+					   if (p)
+						   p->side = RIGHT;
+				   }
+
+				   node* prev(void) const {
+					   if (!type_l)
+						   return l;
+					   node* res = l;
+					   assert(res);
+					   while (res->right())
+						   res = res->right();
+					   assert(res->ref_r() == this);
+					   return res;
+
+				   }
+				   node* next(void) const {
+					   if (!type_r)
+						   return r;
+					   node* res = r;
+					   assert(res);
+					   while (res->left())
+						   res = res->left();
+					   assert(res->ref_l() == this);
+					   return res;
+				   }
+
+				   inline node* ref_l(void) const {
+					   assert(!type_l);
+					   return l;
+				   }
+				   inline node* ref_r(void) const {
+					   assert(!type_r);
+					   return r;
+				   }
+
+				   inline void ref_l(node* p) {
+					   assert(!type_l);
+					   l = p;
+				   }
+
+				   inline void ref_r(node* p) {
+					   assert(!type_r);
+					   r = p;
+				   }
+
+				   node* parent(void) const {
+					   node* res = (node*)this;
+					   switch (side) {
+					   case NONE:
+						   return nullptr;
+					   case LEFT:
+						   while (res->right())
+							   res = res->right();
+						   res = res->ref_r();
+						   assert(res->left() == this);
+						   break;
+					   case RIGHT:
+						   while (res->left())
+							   res = res->left();
+						   res = res->ref_l();
+						   assert(res->right() == this);
+						   break;
+					   default:
+						   assert(false);
+					   }
+					   return res;
+				   }
+
+				   inline bool is_leaf(void) const {
+					   if (left() || right())
+						   ;
+					   else {
+						   assert(lean == LEAN_BALANCE);
+						   return true;
+					   }
+					   if (!left())
+						   assert(lean == LEAN_RIGHT);
+					   if (!right())
+						   assert(lean == LEAN_LEFT);
+
+					   return false;
+				   }
+
+				   //void raw_set(const node* other, SIDE mode) {
+				   //	if (mode != RIGHT) {
+				   //		l = other->l;
+				   //		type_l = other->type_l;
+				   //	}
+				   //	if (mode != LEFT) {
+				   //		r = other->r;
+				   //		type_r = other->type_r;
+				   //	}
+				   //	if (mode == NONE) {
+				   //		lean = other->lean;
+				   //		side = other->side;
+				   //	}
+				   //}
 		};
 
 		class iterator_base {
+			friend class avl_tree;
 		protected:
 			const avl_tree* container;
 			node* pos;
@@ -147,7 +163,7 @@ namespace UOS{
 				else {
 					pos = container->root;
 					if (!pos)
-						error(null_deref,container);
+						error(null_deref, container);
 					while (pos->left())
 						pos = pos->left();
 				}
@@ -160,7 +176,7 @@ namespace UOS{
 				else {
 					pos = container->root;
 					if (!pos)
-						error(null_deref,container);
+						error(null_deref, container);
 					while (pos->right())
 						pos = pos->right();
 				}
@@ -169,7 +185,7 @@ namespace UOS{
 
 			bool operator==(const iterator_base& cmp) const {
 				if (container != cmp.container)
-					error(invalid_argument,cmp);
+					error(invalid_argument, cmp);
 				return pos == cmp.pos;
 			}
 			bool operator!=(const iterator_base& cmp) const {
@@ -196,6 +212,7 @@ namespace UOS{
 			iterator(const avl_tree* c, node* p) : super(c, p) {}
 
 		public:
+			iterator(void) : super(nullptr, nullptr) {}
 			iterator(const iterator& obj) : super(obj.container, obj.pos) {}
 
 			iterator& operator=(const iterator& obj) {
@@ -227,6 +244,7 @@ namespace UOS{
 			const_iterator(const avl_tree* c, node* p) : super(c, p) {}
 
 		public:
+			const_iterator(void) : super(nullptr, nullptr) {}
 			const_iterator(const const_iterator& obj) : super(obj.container, obj.pos) {}
 			const_iterator(const iterator& obj) : super(obj.container, obj.pos) {}
 
@@ -253,7 +271,7 @@ namespace UOS{
 			bool operator()(const node* a,const node* b) const{
 				return C::operator()(a->payload,b->payload);
 			}
-			
+
 			template<typename T>
 			bool operator()(const node* a, const T& b) const {
 				return operator()(a->payload, b);
@@ -267,7 +285,7 @@ namespace UOS{
 		node* root;
 		size_t count;
 		C cmp;
-		
+
 		size_t depth(const node* pos) const {
 			if (!pos)
 				return 0;
@@ -283,31 +301,8 @@ namespace UOS{
 				return LEAN_RIGHT;
 			if (right + 1 == left)
 				return LEAN_LEFT;
-			error(corrupted,pos);
+			error(corrupted, pos);
 		}
-
-		bool is_parent(node* parent, node* cur) const {
-			while (cur) {
-				cur = cur->parent();
-				if (cur == parent)
-					return true;
-			}
-			return false;
-		}
-
-		/*
-		LEAN update_lean(node* pos) {
-			if (!pos)
-				return LEAN_BALANCE;
-			if (pos->lean != LEAN_UNKNOWN)
-				return pos->lean;
-
-			LEAN left = update_lean(pos->left);
-			LEAN right = update_lean(pos->right);
-
-
-		}
-		*/
 
 		void clear(node* pos) {
 			if (!pos)
@@ -318,11 +313,11 @@ namespace UOS{
 		}
 
 
-		enum DEPTH_CHANGE {HOLD,INC,DEC};
-		
+		enum DEPTH_CHANGE { HOLD, INC, DEC };
+
 		typedef pair<node*, DEPTH_CHANGE> result_type;
 
-		result_type insert(node* pos,node* item){
+		result_type insert(node* pos, node* item) {
 			assert(item);
 			assert(!item->left() && !item->right());
 			assert(item->lean == LEAN_BALANCE);
@@ -331,10 +326,10 @@ namespace UOS{
 				return result_type(item, INC);
 
 			SIDE side;
-			
-			if (cmp(item->payload,pos->payload))
+
+			if (cmp(item->payload, pos->payload))
 				side = LEFT;
-			else if (cmp(pos->payload,item->payload))
+			else if (cmp(pos->payload, item->payload))
 				side = RIGHT;
 			else
 				side = pos->lean == LEAN_LEFT ? RIGHT : LEFT;
@@ -353,7 +348,7 @@ namespace UOS{
 				}
 			}
 			auto res = insert(ptr, item);
-			
+
 
 			switch (side) {
 			case LEFT:
@@ -365,7 +360,7 @@ namespace UOS{
 			}
 
 			LEAN new_lean;
-			switch(res.second){
+			switch (res.second) {
 			case HOLD:
 				new_lean = LEAN_BALANCE;
 				break;
@@ -379,30 +374,30 @@ namespace UOS{
 				assert(false);
 			}
 			if (new_lean == LEAN_BALANCE)
-				return result_type(pos,HOLD);
-			if (pos->lean == LEAN_BALANCE){
+				return result_type(pos, HOLD);
+			if (pos->lean == LEAN_BALANCE) {
 				assert(new_lean == LEAN_LEFT || new_lean == LEAN_RIGHT);
 				pos->lean = new_lean;
-				return result_type(pos,INC);
+				return result_type(pos, INC);
 			}
-			
-			if (pos->lean != new_lean){
-				
+
+			if (pos->lean != new_lean) {
+
 				assert((pos->lean == LEAN_LEFT && new_lean == LEAN_RIGHT) || (pos->lean == LEAN_RIGHT && new_lean == LEAN_LEFT));
 				pos->lean = LEAN_BALANCE;
-				return result_type(pos,HOLD);
+				return result_type(pos, HOLD);
 			}
-			
-			if (pos->lean == LEAN_LEFT){
+
+			if (pos->lean == LEAN_LEFT) {
 				assert(new_lean == LEAN_LEFT);
 				return result_type(rotate_right(pos), HOLD);
 			}
-			
-			if (pos->lean == LEAN_RIGHT){
+
+			if (pos->lean == LEAN_RIGHT) {
 				assert(new_lean == LEAN_RIGHT);
 				return result_type(rotate_left(pos), HOLD);
 			}
-		
+
 			assert(false);
 		}
 
@@ -412,15 +407,14 @@ namespace UOS{
 			node* target_parent = target->parent();
 			SIDE target_side = target->side;
 
-
 			node* replace = nullptr;
 			SIDE replace_side = NONE;
 
+			node* rebalance = nullptr;
+			//SIDE deleted_side = NONE;
+			LEAN new_lean = LEAN_BALANCE;
 
-			node* deleted_parent = nullptr;
-			SIDE deleted_side = NONE;
-
-			if (target->left() || target->right()) {
+			if (!target->is_leaf()) {	//target is not leaf
 				switch (target->lean) {
 				case LEAN_BALANCE:
 					assert(target->left() && target->right());
@@ -461,19 +455,28 @@ namespace UOS{
 					assert(replace->ref_r() == target);
 					if (replace->left()) {
 						assert(replace->prev()->ref_r() == replace);
+						assert(replace->left()->is_leaf());
 						replace->prev()->ref_r(target);
 
 						if (replace_parent == target) {
 							assert(replace_parent->left() == replace);
 							replace_parent->left(replace->left());
+
+							//replace_parent -L
+							rebalance = replace;	//target will be replaced
+							new_lean = LEAN_RIGHT;
 						}
 						else {
 							assert(replace_parent->right() == replace);
 							replace_parent->right(replace->left());
+
+							//replace_parent -R
+							rebalance = replace_parent;
+							new_lean = LEAN_LEFT;
 						}
 					}
 					else {
-
+						assert(replace->is_leaf());
 						if (replace_parent == target) {
 							assert(replace_parent->left() == replace);
 							replace_parent->left(nullptr);
@@ -490,18 +493,28 @@ namespace UOS{
 					assert(replace->ref_l() == target);
 					if (replace->right()) {
 						assert(replace->next()->ref_l() == replace);
+						assert(replace->right()->is_leaf());
 						replace->next()->ref_l(target);
 
 						if (replace_parent == target) {
 							assert(replace_parent->right() == replace);
 							replace_parent->right(replace->right());
+
+							//replace_parent -R
+							rebalance = replace;	//target will be replaced
+							new_lean = LEAN_LEFT;
 						}
 						else {
 							assert(replace_parent->left() == replace);
 							replace_parent->left(replace->right());
+
+							//replace_parent -L
+							rebalance = replace_parent;
+							new_lean = LEAN_RIGHT;
 						}
 					}
 					else {
+						assert(replace->is_leaf());
 						if (replace_parent == target) {
 							assert(replace_parent->right() == replace);
 							replace_parent->right(nullptr);
@@ -518,7 +531,7 @@ namespace UOS{
 
 				//at this point only replace is removed from the container and the chain is valid except that lean may be outdated
 
-				
+
 				{	//redirect ref pointing to target
 					node* prev = target->prev();
 					node* next = target->next();
@@ -552,8 +565,8 @@ namespace UOS{
 					break;
 				}
 
-				deleted_parent = replace_parent == target ? replace : replace_parent;	//????
-				deleted_side = replace_side;
+				//rebalance = replace_parent == target ? replace : replace_parent;	//????
+				//deleted_side = replace_side;
 
 			}
 			else {	//target is leaf
@@ -567,33 +580,89 @@ namespace UOS{
 					assert(target->ref_r() == target_parent);
 					target_parent->left(nullptr);
 					target_parent->ref_l(target->ref_l());
+
+					rebalance = target_parent;
+					new_lean = LEAN_RIGHT;
 					break;
 				case RIGHT:
 					assert(target->ref_l() == target_parent);
 					target_parent->right(nullptr);
 					target_parent->ref_r(target->ref_r());
+
+					rebalance = target_parent;
+					new_lean = LEAN_LEFT;
 					break;
 
 				}
 
-				deleted_parent = target_parent;
-				deleted_side = target_side;
 			}
-
-
+			//LEAN target_lean = target->lean;
 			delete target;
 
-
-
-#error "TODO rebalance"
 			//lean not updated yet
+#pragma message("for TEST rebalance not activated")
+			return;
 
 
+			while (rebalance && new_lean != LEAN_BALANCE) {
+				if (rebalance->lean == LEAN_BALANCE) {
+					rebalance->lean = new_lean;
+					break;
+				}
+
+				node* parent = rebalance->parent();
+				SIDE parent_side = rebalance->side;
+				node* new_root = nullptr;
+
+				if (rebalance->lean != new_lean) {
+					rebalance->lean = LEAN_BALANCE;
+					//depth dec
+				}
+
+
+				if (rebalance->lean == new_lean) {
+
+
+					switch (new_lean) {
+					case LEAN_LEFT:
+						new_root = rotate_right(rebalance, true);
+						//depth dec
+						break;
+					case LEAN_RIGHT:
+						new_root = rotate_left(rebalance, true);
+						//depth dec
+						break;
+					}
+				}
+				if (parent) {
+					switch (parent_side) {
+					case NONE:
+						assert(false);
+						break;
+					case LEFT:
+						if (new_root)
+							parent->left(new_root);
+						new_lean = LEAN_RIGHT;
+						break;
+					case RIGHT:
+						if (new_root)
+							parent->right(new_root);
+						new_lean = LEAN_LEFT;
+						break;
+					}
+				}
+				else {
+					assert(new_root);	//?????
+					root = new_root;
+					new_root->side = NONE;
+				}
+				rebalance = parent;
+			}
 
 
 		}
 
-		node* rotate_left(node* pos) {
+		node* rotate_left(node* pos,bool allow_weird_transform = false) {
 			assert(pos->lean == LEAN_RIGHT);
 			assert(pos->right());
 			switch (pos->right()->lean) {
@@ -652,7 +721,7 @@ namespace UOS{
 				pos = new_root;
 
 			}
-				break;
+			break;
 			case LEAN_RIGHT:	//RR
 			{
 				node* new_root = pos->right();
@@ -677,9 +746,16 @@ namespace UOS{
 
 				pos = new_root;
 			}
-				break;
+			break;
+			case LEAN_BALANCE:
+				if (allow_weird_transform) {
+
+#pragma message("TODO weird transform")
+
+					break;
+				}
 			default:
-				error(corrupted,pos);
+				error(corrupted, pos);
 			}
 
 			assert(get_lean(pos) == pos->lean);
@@ -687,8 +763,8 @@ namespace UOS{
 			assert(get_lean(pos->right()) == pos->right()->lean);
 			return pos;
 		}
-		
-		node* rotate_right(node* pos) {
+
+		node* rotate_right(node* pos,bool allow_weird_transform = false) {
 			assert(pos->lean == LEAN_LEFT);
 			assert(pos->left());
 			switch (pos->left()->lean)
@@ -716,7 +792,7 @@ namespace UOS{
 
 				pos = new_root;
 			}
-				break;
+			break;
 			case LEAN_RIGHT:	//LR
 			{
 				node* new_root = pos->left()->right();
@@ -772,9 +848,16 @@ namespace UOS{
 				pos = new_root;
 
 			}
-				break;
+			break;
+			case LEAN_BALANCE:
+				if (allow_weird_transform) {
+
+#pragma message("TODO weird transform")
+
+					break;
+				}
 			default:
-				error(corrupted,pos);
+				error(corrupted, pos);
 			}
 			assert(get_lean(pos) == pos->lean);
 			assert(get_lean(pos->left()) == pos->left()->lean);
@@ -782,50 +865,12 @@ namespace UOS{
 			return pos;
 		}
 
-		/*
-		node* weird_transform(node* pos) {
-			switch (pos->lean) {
-			case LEAN_BALANCE:
-				assert(false);
-				break;
-			case LEAN_LEFT:
-			{
-				assert(!pos->right());
-				node* new_root = pos->left();
-				assert(new_root->left() && new_root->right());
-
-				break;
-			}
-			case LEAN_RIGHT:
-			{
-				assert(!pos->left());
-				node* new_root = pos->right();
-				assert(new_root->left() && new_root->right());
-				assert(new_root->lean == LEAN_BALANCE);
-				assert(new_root->left()->ref_l() == pos);
-				assert(new_root->left()->ref_r() == new_root);
-				assert(new_root->right()->ref_l() == new_root);
-				assert(new_root->right()->ref_r(), true);
-				pos->right(nullptr);
-				new_root->left()->left(pos);
-				pos->ref_r(new_root->left());
-
-				pos->lean = LEAN_BALANCE;
-				new_root->left()->lean = LEAN_LEFT;
-				new_root->lean = LEAN_LEFT;
-
-				pos = new_root;
-				break;
-			}
-			}
-
-			return pos;
-		}
-		*/
 		template<typename F>
-		void check(F& fun,const node* pos) const {
-			assert(get_lean(pos) == pos->lean);
+		void check(F& fun, const node* pos) const {
+#pragma message("for TEST depth assert not activated")
+			//assert(get_lean(pos) == pos->lean);
 			if (pos->left()) {
+				assert(pos->left() != pos);
 				assert(pos->left()->side == LEFT);
 				check(fun, pos->left());
 			}
@@ -845,14 +890,15 @@ namespace UOS{
 
 			fun(pos->payload);
 			if (pos->right()) {
+				assert(pos->right() != pos);
 				assert(pos->right()->side == RIGHT);
 				check(fun, pos->right());
 			}
 		}
 
 	public:
-		
-		avl_tree(void) : root(nullptr),count(0) {}
+
+		avl_tree(void) : root(nullptr), count(0) {}
 		avl_tree(const C& c) : root(nullptr), count(0), cmp(c) {}
 		avl_tree(const avl_tree&) = delete;
 		avl_tree& operator=(const avl_tree&) = delete;
@@ -870,6 +916,8 @@ namespace UOS{
 
 		void clear(void) {
 			clear(root);
+			root = nullptr;
+			count = 0;
 		}
 
 		size_t size(void) const {
@@ -913,6 +961,16 @@ namespace UOS{
 			return iterator(this, new_node);
 		}
 
+		iterator erase(const_iterator pos) {
+			if (pos == cend())
+				error(invalid_argument,pos);
+			iterator ret(this,pos.pos->next());
+
+			erase(pos.pos);
+
+			return ret;
+		}
+
 		template<typename F>
 		void check(F& fun) {
 			if (!root)
@@ -933,7 +991,7 @@ namespace UOS{
 			assert(cnt == count);
 
 		}
-		
+
 
 	};
 
