@@ -1,6 +1,15 @@
 #pragma once
 #include "common.hpp"
 
+#ifndef BRANCH_TEST
+#define BRANCH_TEST
+#endif
+
+//#define BRANCH_TEST_INSERT
+//#define BRANCH_TEST_ROTATE
+#define BRANCH_TEST_ERASE
+
+
 namespace UOS {
 
 	template<typename T, typename C = UOS::less<T> >
@@ -26,7 +35,7 @@ namespace UOS {
 					   l = other->l;
 					   r = other->r;
 					   lean = other->lean;
-					   //side = other->side;
+					   side = other->side;
 					   type_l = other->type_l;
 					   type_r = other->type_r;
 				   }
@@ -105,8 +114,9 @@ namespace UOS {
 						   assert(res->left() == this);
 						   break;
 					   case RIGHT:
-						   while (res->left())
+						   while (res->left()) {
 							   res = res->left();
+						   }
 						   res = res->ref_l();
 						   assert(res->right() == this);
 						   break;
@@ -317,31 +327,49 @@ namespace UOS {
 
 		typedef pair<node*, DEPTH_CHANGE> result_type;
 
+#ifdef BRANCH_TEST_INSERT
+#define BRANCH BRANCH_TEST
+#endif
+
+#ifndef BRANCH
+#define BRANCH
+#endif
+
 		result_type insert(node* pos, node* item) {
 			assert(item);
 			assert(!item->left() && !item->right());
 			assert(item->lean == LEAN_BALANCE);
 
-			if (!pos)
+			if (!pos) {
+				BRANCH;
 				return result_type(item, INC);
+			}
 
 			SIDE side;
 
-			if (cmp(item->payload, pos->payload))
+			if (cmp(item->payload, pos->payload)) {
+				BRANCH;
 				side = LEFT;
-			else if (cmp(pos->payload, item->payload))
+			}
+			else if (cmp(pos->payload, item->payload)) {
+				BRANCH;
 				side = RIGHT;
-			else
+			}
+			else {
+				BRANCH;
 				side = pos->lean == LEAN_LEFT ? RIGHT : LEFT;
+			}
 			assert(side == LEFT || side == RIGHT);
 			node* ptr = (side == LEFT ? pos->left() : pos->right());
 			if (!ptr) {
 				switch (side) {
 				case LEFT:
+					BRANCH;
 					item->ref_r(pos);
 					item->ref_l(pos->ref_l());
 					break;
 				case RIGHT:
+					BRANCH;
 					item->ref_l(pos);
 					item->ref_r(pos->ref_r());
 					break;
@@ -352,9 +380,11 @@ namespace UOS {
 
 			switch (side) {
 			case LEFT:
+				BRANCH;
 				pos->left(res.first);
 				break;
 			case RIGHT:
+				BRANCH;
 				pos->right(res.first);
 				break;
 			}
@@ -362,44 +392,63 @@ namespace UOS {
 			LEAN new_lean;
 			switch (res.second) {
 			case HOLD:
+				BRANCH;
 				new_lean = LEAN_BALANCE;
 				break;
 			case INC:
+				BRANCH;
 				new_lean = (side == LEFT ? LEAN_LEFT : LEAN_RIGHT);
 				break;
 			case DEC:
+				assert(false);
+				//BRANCH;
 				new_lean = (side == LEFT ? LEAN_RIGHT : LEAN_LEFT);
 				break;
 			default:
 				assert(false);
 			}
-			if (new_lean == LEAN_BALANCE)
+			if (new_lean == LEAN_BALANCE) {
+				BRANCH;
 				return result_type(pos, HOLD);
+			}
 			if (pos->lean == LEAN_BALANCE) {
+				BRANCH;
 				assert(new_lean == LEAN_LEFT || new_lean == LEAN_RIGHT);
 				pos->lean = new_lean;
 				return result_type(pos, INC);
 			}
 
 			if (pos->lean != new_lean) {
-
+				BRANCH;
 				assert((pos->lean == LEAN_LEFT && new_lean == LEAN_RIGHT) || (pos->lean == LEAN_RIGHT && new_lean == LEAN_LEFT));
 				pos->lean = LEAN_BALANCE;
 				return result_type(pos, HOLD);
 			}
 
 			if (pos->lean == LEAN_LEFT) {
+				BRANCH;
 				assert(new_lean == LEAN_LEFT);
 				return result_type(rotate_right(pos), HOLD);
 			}
 
 			if (pos->lean == LEAN_RIGHT) {
+				BRANCH;
 				assert(new_lean == LEAN_RIGHT);
 				return result_type(rotate_left(pos), HOLD);
 			}
 
 			assert(false);
 		}
+
+#undef BRANCH
+
+#ifdef BRANCH_TEST_ERASE
+#define BRANCH BRANCH_TEST
+#endif
+
+#ifndef BRANCH
+#define BRANCH
+#endif
 
 		void erase(node* target) {
 			assert(target);
@@ -415,15 +464,19 @@ namespace UOS {
 			LEAN new_lean = LEAN_BALANCE;
 
 			if (!target->is_leaf()) {	//target is not leaf
+				BRANCH;
 				switch (target->lean) {
 				case LEAN_BALANCE:
+					BRANCH;
 					assert(target->left() && target->right());
 					//TRICK select left aka prev()
 				case LEAN_LEFT:
+					BRANCH;
 					replace = target->prev();
 					replace_side = LEFT;
 					break;
 				case LEAN_RIGHT:
+					BRANCH;
 					replace = target->next();
 					replace_side = RIGHT;
 					break;
@@ -434,31 +487,37 @@ namespace UOS {
 			assert(!replace || replace_side != NONE);
 
 			if (replace) {	//target is not leaf
+				BRANCH;
 				node* replace_parent = replace->parent();
 
+				/*	remove ref chain together with replace removal
 				{	//remove replace from ref chain
 					node* prev = replace->prev();
 					node* next = replace->next();
 					if (prev && !prev->right()) {	//right is ref
+						BRANCH;
 						assert(prev->ref_r() == replace);
 						prev->ref_r(next);
 					}
 					if (next && !next->left()) {	//left is ref
+						BRANCH;
 						assert(next->ref_l() == replace);
 						next->ref_l(prev);
 					}
-				}
-
+				}	*/
 				//delete replace from replace_parent's link
 				switch (replace_side) {
 				case LEFT:
+					BRANCH;
 					assert(replace->ref_r() == target);
 					if (replace->left()) {
-						assert(replace->prev()->ref_r() == replace);
+						BRANCH;
 						assert(replace->left()->is_leaf());
+						assert(replace->prev()->ref_r() == replace);
 						replace->prev()->ref_r(target);
 
 						if (replace_parent == target) {
+							BRANCH;
 							assert(replace_parent->left() == replace);
 							replace_parent->left(replace->left());
 
@@ -467,6 +526,7 @@ namespace UOS {
 							new_lean = LEAN_RIGHT;
 						}
 						else {
+							BRANCH;
 							assert(replace_parent->right() == replace);
 							replace_parent->right(replace->left());
 
@@ -476,13 +536,16 @@ namespace UOS {
 						}
 					}
 					else {
+						BRANCH;
 						assert(replace->is_leaf());
 						if (replace_parent == target) {
+							BRANCH;
 							assert(replace_parent->left() == replace);
 							replace_parent->left(nullptr);
 							replace_parent->ref_l(replace->ref_l());	//???
 						}
 						else {
+							BRANCH;
 							assert(replace_parent->right() == replace);
 							replace_parent->right(nullptr);
 							replace_parent->ref_r(target);
@@ -490,13 +553,16 @@ namespace UOS {
 					}
 					break;
 				case RIGHT:
+					BRANCH;
 					assert(replace->ref_l() == target);
 					if (replace->right()) {
-						assert(replace->next()->ref_l() == replace);
+						BRANCH;
 						assert(replace->right()->is_leaf());
+						assert(replace->next()->ref_l() == replace);
 						replace->next()->ref_l(target);
 
 						if (replace_parent == target) {
+							BRANCH;
 							assert(replace_parent->right() == replace);
 							replace_parent->right(replace->right());
 
@@ -505,6 +571,7 @@ namespace UOS {
 							new_lean = LEAN_LEFT;
 						}
 						else {
+							BRANCH;
 							assert(replace_parent->left() == replace);
 							replace_parent->left(replace->right());
 
@@ -514,13 +581,16 @@ namespace UOS {
 						}
 					}
 					else {
+						BRANCH;
 						assert(replace->is_leaf());
 						if (replace_parent == target) {
+							BRANCH;
 							assert(replace_parent->right() == replace);
 							replace_parent->right(nullptr);
 							replace_parent->ref_r(replace->ref_r());	//???
 						}
 						else {
+							BRANCH;
 							assert(replace_parent->left() == replace);
 							replace_parent->left(nullptr);
 							replace_parent->ref_l(target);
@@ -532,16 +602,18 @@ namespace UOS {
 				//at this point only replace is removed from the container and the chain is valid except that lean may be outdated
 
 
-				{	//redirect ref pointing to target
+				{	//redirect ref pointing to target to replace
 					node* prev = target->prev();
 					node* next = target->next();
 					if (prev && !prev->right()) {	//right is ref
+						BRANCH;
 						assert(prev->ref_r() == target);
-						prev->ref_r(next);
+						prev->ref_r(replace);
 					}
 					if (next && !next->left()) {	//left is ref
+						BRANCH;
 						assert(next->ref_l() == target);
-						next->ref_l(prev);
+						next->ref_l(replace);
 					}
 				}
 
@@ -552,15 +624,18 @@ namespace UOS {
 				//point target_parent's link to replace
 				switch (target_side) {
 				case NONE:
+					BRANCH;
 					assert(nullptr == target_parent);
 					assert(root == target);
 					root = replace;
 					replace->side = NONE;
 					break;
 				case LEFT:
+					BRANCH;
 					target_parent->left(replace);
 					break;
 				case RIGHT:
+					BRANCH;
 					target_parent->right(replace);
 					break;
 				}
@@ -570,13 +645,16 @@ namespace UOS {
 
 			}
 			else {	//target is leaf
+				BRANCH;
 				switch (target_side) {
 				case NONE:
+					BRANCH;
 					assert(nullptr == target_parent);
 					assert(root == target);
 					root = nullptr;
 					break;
 				case LEFT:
+					BRANCH;
 					assert(target->ref_r() == target_parent);
 					target_parent->left(nullptr);
 					target_parent->ref_l(target->ref_l());
@@ -585,6 +663,7 @@ namespace UOS {
 					new_lean = LEAN_RIGHT;
 					break;
 				case RIGHT:
+					BRANCH;
 					assert(target->ref_l() == target_parent);
 					target_parent->right(nullptr);
 					target_parent->ref_r(target->ref_r());
@@ -662,33 +741,49 @@ namespace UOS {
 
 		}
 
+#undef BRANCH
+
+#ifdef BRANCH_TEST_ROTATE
+#define BRANCH BRANCH_TEST
+#endif
+
+
+#ifndef BRANCH
+#define BRANCH
+#endif
+
 		node* rotate_left(node* pos,bool allow_weird_transform = false) {
 			assert(pos->lean == LEAN_RIGHT);
 			assert(pos->right());
 			switch (pos->right()->lean) {
 			case LEAN_LEFT:		//RL
 			{
+				BRANCH;
 				node* new_root = pos->right()->left();
 				assert(new_root);
 				node* new_left = pos;
 				node* new_right = pos->right();
 
 				if (new_left->left() && new_right->right()) {
-
+					BRANCH;
 					new_left->right(new_root->left());
 					new_right->left(new_root->right());
 
 					switch (new_root->lean) {
 					case LEAN_LEFT:
+						BRANCH;
 						assert(new_root->left());
 						if (!new_root->right()) {
+							BRANCH;
 							assert(new_root->ref_r() == new_right);
 							new_right->ref_l(new_root);
 						}
 						break;
 					case LEAN_RIGHT:
+						BRANCH;
 						assert(new_root->right());
 						if (!new_root->left()) {
+							BRANCH;
 							assert(new_root->ref_l() == new_left);
 							new_left->ref_r(new_root);
 						}
@@ -698,6 +793,7 @@ namespace UOS {
 					}
 				}
 				else {
+					BRANCH;
 					assert(!new_left->left() && !new_right->right());
 					assert(new_root->ref_l() == new_left);
 					assert(new_root->ref_r() == new_right);
@@ -724,12 +820,16 @@ namespace UOS {
 			break;
 			case LEAN_RIGHT:	//RR
 			{
+				BRANCH;
 				node* new_root = pos->right();
 				node* new_left = pos;
 
-				if (new_left->left() && new_root->left())
+				if (new_left->left() && new_root->left()) {
+					BRANCH;
 					new_left->right(new_root->left());
+				}
 				else {
+					BRANCH;
 					assert(!new_left->left() && !new_root->right()->right());
 					assert(new_root->right()->ref_l() == new_root);
 					assert(new_root->ref_l() == new_left);
@@ -763,7 +863,6 @@ namespace UOS {
 			assert(get_lean(pos->right()) == pos->right()->lean);
 			return pos;
 		}
-
 		node* rotate_right(node* pos,bool allow_weird_transform = false) {
 			assert(pos->lean == LEAN_LEFT);
 			assert(pos->left());
@@ -771,12 +870,16 @@ namespace UOS {
 			{
 			case LEAN_LEFT:		//LL
 			{
+				BRANCH;
 				node* new_root = pos->left();
 				node* new_right = pos;
 
-				if (new_right->right() && new_root->right())
+				if (new_right->right() && new_root->right()) {
+					BRANCH;
 					new_right->left(new_root->right());
+				}
 				else {
+					BRANCH;
 					assert(!new_right->right() && !new_root->left()->left());
 					assert(new_root->left()->ref_r() == new_root);
 					assert(new_root->ref_r() == new_right);
@@ -795,27 +898,32 @@ namespace UOS {
 			break;
 			case LEAN_RIGHT:	//LR
 			{
+				BRANCH;
 				node* new_root = pos->left()->right();
 				assert(new_root);
 				node* new_left = pos->left();
 				node* new_right = pos;
 
 				if (new_left->left() && new_right->right()) {
-
+					BRANCH;
 					new_left->right(new_root->left());
 					new_right->left(new_root->right());
 
 					switch (new_root->lean) {
 					case LEAN_LEFT:
+						BRANCH;
 						assert(new_root->left());
 						if (!new_root->right()) {
+							BRANCH;
 							assert(new_root->ref_r() == new_right);
 							new_right->ref_l(new_root);
 						}
 						break;
 					case LEAN_RIGHT:
+						BRANCH;
 						assert(new_root->right());
 						if (!new_root->left()) {
+							BRANCH;
 							assert(new_root->ref_l() == new_left);
 							new_left->ref_r(new_root);
 						}
@@ -825,6 +933,7 @@ namespace UOS {
 					}
 				}
 				else {
+					BRANCH;
 					assert(!new_left->left() && !new_right->right());
 					assert(new_root->ref_l() == new_left);
 					assert(new_root->ref_r() == new_right);
@@ -865,6 +974,8 @@ namespace UOS {
 			return pos;
 		}
 
+#undef BRANCH
+
 		template<typename F>
 		void check(F& fun, const node* pos) const {
 #pragma message("for TEST depth assert not activated")
@@ -874,6 +985,12 @@ namespace UOS {
 				assert(pos->left()->side == LEFT);
 				check(fun, pos->left());
 			}
+			node* prev = pos->prev();
+			node* next = pos->next();
+
+			assert(!prev || prev->next() == pos);
+			assert(!next || next->prev() == pos);
+
 			switch (pos->side) {
 			case NONE:
 				assert(!pos->parent());
@@ -965,9 +1082,9 @@ namespace UOS {
 			if (pos == cend())
 				error(invalid_argument,pos);
 			iterator ret(this,pos.pos->next());
-
+			assert(count);
 			erase(pos.pos);
-
+			--count;
 			return ret;
 		}
 
