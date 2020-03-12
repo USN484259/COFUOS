@@ -1,4 +1,11 @@
-#define _TEST
+//#define _TEST
+
+extern void branch_test(unsigned,const char*);
+
+#define _IMP_TOSTRING(x) #x
+#define TOSTRING(x) _IMP_TOSTRING(x)
+#define BRANCH_TEST branch_test(__COUNTER__,__FILE__ " : " TOSTRING(__LINE__))
+
 
 #include <iostream>
 #include "..\..\STL\vector.hpp"
@@ -13,7 +20,33 @@
 
 using namespace std;
 
+extern const unsigned branch_count;
+struct Record {
+	unsigned id;
+	const char* info;
+	bool operator<(const Record& cmp) const {
+		return id < cmp.id;
+	}
+};
 
+set<Record> record;
+
+void branch_test(unsigned id, const char* info) {
+
+	record.insert({ id,info });
+
+}
+
+void branch_report(void) {
+	cout << endl;
+	cout << "BRANCH TEST COVERAGE " << record.size() << '/' << branch_count << endl;
+
+	for (auto it = record.cbegin(); it != record.cend(); ++it) {
+		cout << it->id << '\t' << it->info << endl;
+	}
+
+	record.clear();
+}
 
 extern "C"
 void BugCheck(UOS::stopcode stat,...) {
@@ -311,33 +344,79 @@ void test_avl_tree(void) {
 	using namespace UOS;
 	UOS::avl_tree<object> container;
 
-	std::multiset<object> std_container;
+	if (false) {
 
-	std::random_device rng;
+		std::multiset<object> std_container;
 
-	//static const unsigned data[] = { 34,30,119,247,199,36 };
+		std::random_device rng;
+
+		//static const unsigned data[] = { 34,30,119,247,199,36 };
 
 
-	for (auto i = 0; i < 0x1000; ++i) {
-		object val(rng());
-		//object val(data[i]);
+		for (auto i = 0; i < 0x1000; ++i) {
+			object val(rng() % 0x1000);
+			//object val(data[i]);
 
-		//cout << val << endl;
+			//cout << val << endl;
 
-		container.insert(val);
+			container.insert(val);
 
-		container.check([](const object&) {});
+			container.check([](const object&) {});
 
-		std_container.insert(val);
+			std_container.insert(val);
+		}
+		auto std_it = std_container.cbegin();
+
+		container.check([&](const object& val) {
+			assert(val == *std_it);
+			++std_it;
+			//cout << val << endl;
+		});
+
+		assert(std_it == std_container.cend());
+
+		std_it = std_container.cbegin();
+		for (auto it = container.cbegin(); it != container.cend(); ++it) {
+			assert(*it == *std_it);
+			++std_it;
+		}
+		assert(std_it == std_container.cend());
 	}
-	auto it = std_container.cbegin();
 
-	container.check([&](const object& val) {
-		assert(val == *it);
-		++it;
-		//cout << val << endl;
-	});
+	if (true) {
+		for (auto count = 1; count < 0x40; ++count) {
+			cout << count << endl;
+			for (auto sel = 0; sel < count; ++sel) {
+				container.clear();
 
+				decltype(container)::iterator pos;
+
+				for (auto i = 0; i < count; ++i) {
+					auto it = container.insert(object(i));
+					if (i == sel)
+						pos = it;
+				}
+				container.check([&](const object& val) {});
+
+				//cout << *pos << '\t';
+				pos = container.erase(pos);
+				//if (pos != container.end())
+				//	cout << *pos;
+				//else
+				//	cout << "(end)";
+				//cout << endl;
+
+				container.check([&](const object& val) {
+					//cout << val << '\t';
+				});
+				//cout << endl;
+			}
+		}
+	}
+
+
+	branch_report();
+	//ERASE missing branches 6 7 8 15
 }
 
 
@@ -356,3 +435,6 @@ int main(void) {
 
 	return 0;
 }
+
+
+const unsigned branch_count = __COUNTER__;
