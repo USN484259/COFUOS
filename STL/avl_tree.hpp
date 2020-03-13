@@ -428,13 +428,17 @@ namespace UOS {
 			if (pos->lean == LEAN_LEFT) {
 				BRANCH;
 				assert(new_lean == LEAN_LEFT);
-				return result_type(rotate_right(pos), HOLD);
+				auto res = rotate_right(pos);
+				assert(res.second == DEC);
+				return result_type(res.first, HOLD);
 			}
 
 			if (pos->lean == LEAN_RIGHT) {
 				BRANCH;
 				assert(new_lean == LEAN_RIGHT);
-				return result_type(rotate_left(pos), HOLD);
+				auto res = rotate_left(pos);
+				assert(res.second == DEC);
+				return result_type(res.first, HOLD);
 			}
 
 			assert(false);
@@ -550,6 +554,7 @@ namespace UOS {
 							replace_parent->right(nullptr);
 							replace_parent->ref_r(target);
 						}
+#error "rebalance ?"
 					}
 					break;
 				case RIGHT:
@@ -595,6 +600,7 @@ namespace UOS {
 							replace_parent->left(nullptr);
 							replace_parent->ref_l(target);
 						}
+#error "rebalance ?"
 					}
 					break;
 				}
@@ -679,10 +685,10 @@ namespace UOS {
 			delete target;
 
 			//lean not updated yet
-#pragma message("for TEST rebalance not activated")
-			return;
+//#pragma message("for TEST rebalance not activated")
+//			return;
 
-
+			bool allow_weird_transform = true;
 			while (rebalance && new_lean != LEAN_BALANCE) {
 				if (rebalance->lean == LEAN_BALANCE) {
 					rebalance->lean = new_lean;
@@ -692,6 +698,7 @@ namespace UOS {
 				node* parent = rebalance->parent();
 				SIDE parent_side = rebalance->side;
 				node* new_root = nullptr;
+				DEPTH_CHANGE dc = DEC;
 
 				if (rebalance->lean != new_lean) {
 					rebalance->lean = LEAN_BALANCE;
@@ -701,18 +708,29 @@ namespace UOS {
 
 				if (rebalance->lean == new_lean) {
 
-
+					result_type res({ nullptr,HOLD });
 					switch (new_lean) {
 					case LEAN_LEFT:
-						new_root = rotate_right(rebalance, true);
-						//depth dec
+						res = rotate_right(rebalance, allow_weird_transform);
+						dc = res.second;
+						new_root = res.first;
 						break;
 					case LEAN_RIGHT:
-						new_root = rotate_left(rebalance, true);
-						//depth dec
+						res = rotate_left(rebalance, allow_weird_transform);
+						dc = res.second;
+						new_root = res.first;
 						break;
 					}
+					assert(res.second == DEC || (allow_weird_transform && res.second == HOLD));
+					if (res.second == HOLD) {
+						new_lean = LEAN_BALANCE;
+						allow_weird_transform = false;
+
+					}
 				}
+
+
+
 				if (parent) {
 					switch (parent_side) {
 					case NONE:
@@ -721,12 +739,14 @@ namespace UOS {
 					case LEFT:
 						if (new_root)
 							parent->left(new_root);
-						new_lean = LEAN_RIGHT;
+						if (dc == DEC)
+							new_lean = LEAN_RIGHT;
 						break;
 					case RIGHT:
 						if (new_root)
 							parent->right(new_root);
-						new_lean = LEAN_LEFT;
+						if (dc == DEC)
+							new_lean = LEAN_LEFT;
 						break;
 					}
 				}
@@ -752,9 +772,18 @@ namespace UOS {
 #define BRANCH
 #endif
 
-		node* rotate_left(node* pos,bool allow_weird_transform = false) {
+#ifdef BRANCH_TEST_ERASE
+#define BRANCH_WEIRD BRANCH
+#else
+#define BRANCH_WEIRD
+#endif
+
+		result_type rotate_left(node* pos,bool allow_weird_transform = false) {
 			assert(pos->lean == LEAN_RIGHT);
 			assert(pos->right());
+
+			DEPTH_CHANGE dc = DEC;
+
 			switch (pos->right()->lean) {
 			case LEAN_LEFT:		//RL
 			{
@@ -818,6 +847,14 @@ namespace UOS {
 
 			}
 			break;
+
+			case LEAN_BALANCE:
+				BRANCH_WEIRD;
+				if (!allow_weird_transform)
+					error(corrupted, pos);
+				dc = HOLD;
+				//TRICK do RR transform
+
 			case LEAN_RIGHT:	//RR
 			{
 				BRANCH;
@@ -832,42 +869,54 @@ namespace UOS {
 					BRANCH;
 					assert(!new_left->left() && !new_root->right()->right());
 					assert(new_root->right()->ref_l() == new_root);
-					assert(new_root->ref_l() == new_left);
 
-					new_left->right(nullptr);
-					new_left->ref_r(new_root);
+					if (allow_weird_transform) {
+						BRANCH_WEIRD;
+						assert(new_root->left()->ref_l() == new_left);
+						new_left->right(new_root->left());
+					}
+					else {
+						BRANCH;
+						assert(new_root->ref_l() == new_left);
+						new_left->right(nullptr);
+						new_left->ref_r(new_root);
+					}
 				}
 
 				//new_left->right(new_root->left());
 				new_root->left(new_left);
 
-				new_left->lean = LEAN_BALANCE;
-				new_root->lean = LEAN_BALANCE;
+				new_left->lean = allow_weird_transform ? LEAN_RIGHT : LEAN_BALANCE;
+				new_root->lean = allow_weird_transform ? LEAN_LEFT : LEAN_BALANCE;
 
 				pos = new_root;
 			}
 			break;
-			case LEAN_BALANCE:
-				if (allow_weird_transform) {
-
-#pragma message("TODO weird transform")
-
-					break;
-				}
 			default:
-				error(corrupted, pos);
+				assert(false);
 			}
 
 			assert(get_lean(pos) == pos->lean);
 			assert(get_lean(pos->left()) == pos->left()->lean);
 			assert(get_lean(pos->right()) == pos->right()->lean);
-			return pos;
+			return result_type(pos,dc);
 		}
-		node* rotate_right(node* pos,bool allow_weird_transform = false) {
+		
+		result_type rotate_right(node* pos,bool allow_weird_transform = false) {
 			assert(pos->lean == LEAN_LEFT);
 			assert(pos->left());
+
+			DEPTH_CHANGE dc = DEC;
+
 			switch (pos->left()->lean)
 			{
+			case LEAN_BALANCE:
+				BRANCH_WEIRD;
+				if (!allow_weird_transform)
+					error(corrupted, pos);
+				dc = HOLD;
+				//TRICK do LL transform
+
 			case LEAN_LEFT:		//LL
 			{
 				BRANCH;
@@ -882,16 +931,24 @@ namespace UOS {
 					BRANCH;
 					assert(!new_right->right() && !new_root->left()->left());
 					assert(new_root->left()->ref_r() == new_root);
-					assert(new_root->ref_r() == new_right);
 
-					new_right->left(nullptr);
-					new_right->ref_l(new_root);
+					if (allow_weird_transform) {
+						BRANCH_WEIRD;
+						assert(new_root->right()->ref_r() == new_right);
+						new_right->left(new_root->right());
+					}
+					else{
+						BRANCH;
+						assert(new_root->ref_r() == new_right);
+						new_right->left(nullptr);
+						new_right->ref_l(new_root);
+					}
 				}
 				//new_right->left(new_root->right());
 				new_root->right(new_right);
 
-				new_right->lean = LEAN_BALANCE;
-				new_root->lean = LEAN_BALANCE;
+				new_right->lean = allow_weird_transform ? LEAN_LEFT : LEAN_BALANCE;
+				new_root->lean = allow_weird_transform ? LEAN_RIGHT : LEAN_BALANCE;
 
 				pos = new_root;
 			}
@@ -958,28 +1015,22 @@ namespace UOS {
 
 			}
 			break;
-			case LEAN_BALANCE:
-				if (allow_weird_transform) {
-
-#pragma message("TODO weird transform")
-
-					break;
-				}
 			default:
-				error(corrupted, pos);
+				assert(false);
 			}
 			assert(get_lean(pos) == pos->lean);
 			assert(get_lean(pos->left()) == pos->left()->lean);
 			assert(get_lean(pos->right()) == pos->right()->lean);
-			return pos;
+			return result_type(pos,dc);
 		}
 
+#undef BRANCH_WEIRD
 #undef BRANCH
 
 		template<typename F>
 		void check(F& fun, const node* pos) const {
-#pragma message("for TEST depth assert not activated")
-			//assert(get_lean(pos) == pos->lean);
+//#pragma message("for TEST depth assert not activated")
+			assert(get_lean(pos) == pos->lean);
 			if (pos->left()) {
 				assert(pos->left() != pos);
 				assert(pos->left()->side == LEFT);
