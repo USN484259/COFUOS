@@ -343,12 +343,12 @@ void test_hash_map(void) {
 void test_avl_tree(void) {
 	using namespace UOS;
 	UOS::avl_tree<object> container;
+	std::random_device rng;
 
 	if (false) {
 
 		std::multiset<object> std_container;
 
-		std::random_device rng;
 
 		//static const unsigned data[] = { 34,30,119,247,199,36 };
 
@@ -383,9 +383,9 @@ void test_avl_tree(void) {
 		assert(std_it == std_container.cend());
 	}
 
-	if (true) {
+	if (false) {
 		for (auto count = 1; count < 0x40; ++count) {
-			cout << count << endl;
+			cout << "count " << count << endl;
 			for (auto sel = 0; sel < count; ++sel) {
 				container.clear();
 
@@ -398,16 +398,47 @@ void test_avl_tree(void) {
 				}
 				container.check([&](const object& val) {});
 
-				//cout << *pos << '\t';
+				cout << *pos << '\t';
 				pos = container.erase(pos);
-				//if (pos != container.end())
-				//	cout << *pos;
-				//else
-				//	cout << "(end)";
-				//cout << endl;
+				if (pos != container.end())
+					cout << *pos;
+				else
+					cout << "(end)";
+				cout << endl;
 
 				container.check([&](const object& val) {
-					//cout << val << '\t';
+					cout << val << '\t';
+				});
+				cout << endl;
+			}
+		}
+	}
+
+	if (true) {
+
+		for (auto round = 0; round < 0x100; ++round) {
+			cout << "round " << round << endl;
+			container.clear();
+			for (auto i = 0; i < 0x100; ++i) {
+				container.insert(object(i));
+			}
+			//static const unsigned table[] = { 7,1,2,6,5,2,8,2,0 };
+			while (container.size()) {
+			//for (auto i = 0;i < 9;++i){
+				auto it = container.cbegin();
+				auto id = rng() % container.size();
+				//auto id = table[i];
+
+				cout << id << '\t';
+
+				while (id--)
+					++it;
+
+				cout << *it << endl;
+				container.erase(it);
+
+				container.check([](const object& obj) {
+					//cout << obj << '\t';
 				});
 				//cout << endl;
 			}
