@@ -6,7 +6,7 @@
 #endif
 
 //#define BRANCH_TEST_INSERT
-//#define BRANCH_TEST_ROTATE
+#define BRANCH_TEST_ROTATE
 #define BRANCH_TEST_ERASE
 
 
@@ -373,6 +373,8 @@ namespace UOS {
 					item->ref_l(pos);
 					item->ref_r(pos->ref_r());
 					break;
+				default:
+					assert(false);
 				}
 			}
 			auto res = insert(ptr, item);
@@ -387,6 +389,8 @@ namespace UOS {
 				BRANCH;
 				pos->right(res.first);
 				break;
+			default:
+				assert(false);
 			}
 
 			LEAN new_lean;
@@ -514,95 +518,106 @@ namespace UOS {
 				case LEFT:
 					BRANCH;
 					assert(replace->ref_r() == target);
-					if (replace->left()) {
-						BRANCH;
-						assert(replace->left()->is_leaf());
-						assert(replace->prev()->ref_r() == replace);
-						replace->prev()->ref_r(target);
 
-						if (replace_parent == target) {
+
+					if (replace_parent == target) {
+						BRANCH;
+						assert(replace_parent->left() == replace);
+
+						if (replace->left()) {
 							BRANCH;
-							assert(replace_parent->left() == replace);
+							assert(replace->left()->is_leaf());
+							assert(replace->left()->ref_r() == replace);
+							replace->left()->ref_r(target);
 							replace_parent->left(replace->left());
 
-							//replace_parent -L
-							rebalance = replace;	//target will be replaced
-							new_lean = LEAN_RIGHT;
 						}
 						else {
 							BRANCH;
-							assert(replace_parent->right() == replace);
-							replace_parent->right(replace->left());
-
-							//replace_parent -R
-							rebalance = replace_parent;
-							new_lean = LEAN_LEFT;
-						}
-					}
-					else {
-						BRANCH;
-						assert(replace->is_leaf());
-						if (replace_parent == target) {
-							BRANCH;
-							assert(replace_parent->left() == replace);
+							assert(replace->is_leaf());
 							replace_parent->left(nullptr);
 							replace_parent->ref_l(replace->ref_l());	//???
 						}
+
+						//replace_parent -L
+						rebalance = replace;	//target will be replaced
+						new_lean = LEAN_RIGHT;
+					}
+					else {
+						BRANCH;
+						assert(replace_parent->right() == replace);
+
+						if (replace->left()) {
+							BRANCH;
+							assert(replace->left()->is_leaf());
+							assert(replace->left()->ref_r() == replace);
+							replace->left()->ref_r(target);
+							replace_parent->right(replace->left());
+						}
 						else {
 							BRANCH;
-							assert(replace_parent->right() == replace);
+							assert(replace->is_leaf());
 							replace_parent->right(nullptr);
 							replace_parent->ref_r(target);
 						}
-#error "rebalance ?"
+
+						//replace_parent -R
+						rebalance = replace_parent;
+						new_lean = LEAN_LEFT;
 					}
+
 					break;
 				case RIGHT:
 					BRANCH;
 					assert(replace->ref_l() == target);
-					if (replace->right()) {
+
+					if (replace_parent == target) {
 						BRANCH;
-						assert(replace->right()->is_leaf());
-						assert(replace->next()->ref_l() == replace);
-						replace->next()->ref_l(target);
+						assert(replace_parent->right() == replace);
 
-						if (replace_parent == target) {
+						if (replace->right()) {
 							BRANCH;
-							assert(replace_parent->right() == replace);
+							assert(replace->right()->is_leaf());
+							assert(replace->right()->ref_l() == replace);
+							replace->right()->ref_l(target);
 							replace_parent->right(replace->right());
-
-							//replace_parent -R
-							rebalance = replace;	//target will be replaced
-							new_lean = LEAN_LEFT;
 						}
 						else {
 							BRANCH;
-							assert(replace_parent->left() == replace);
-							replace_parent->left(replace->right());
-
-							//replace_parent -L
-							rebalance = replace_parent;
-							new_lean = LEAN_RIGHT;
-						}
-					}
-					else {
-						BRANCH;
-						assert(replace->is_leaf());
-						if (replace_parent == target) {
-							BRANCH;
-							assert(replace_parent->right() == replace);
+							assert(replace->is_leaf());
 							replace_parent->right(nullptr);
 							replace_parent->ref_r(replace->ref_r());	//???
 						}
+
+						//replace_parent -R
+						rebalance = replace;	//target will be replaced
+						new_lean = LEAN_LEFT;
+					}
+					else {
+						BRANCH;
+						assert(replace_parent->left() == replace);
+
+						if (replace->right()) {
+							BRANCH;
+							assert(replace->right()->is_leaf());
+							assert(replace->right()->ref_l() == replace);
+							replace->right()->ref_l(target);
+							replace_parent->left(replace->right());
+						}
 						else {
 							BRANCH;
-							assert(replace_parent->left() == replace);
+							assert(replace->is_leaf());
 							replace_parent->left(nullptr);
 							replace_parent->ref_l(target);
 						}
-#error "rebalance ?"
+
+						//replace_parent -L
+						rebalance = replace_parent;
+						new_lean = LEAN_RIGHT;
 					}
 					break;
+				default:
+					assert(false);
 				}
 
 				//at this point only replace is removed from the container and the chain is valid except that lean may be outdated
@@ -644,6 +659,8 @@ namespace UOS {
 					BRANCH;
 					target_parent->right(replace);
 					break;
+				default:
+					assert(false);
 				}
 
 				//rebalance = replace_parent == target ? replace : replace_parent;	//????
@@ -677,7 +694,8 @@ namespace UOS {
 					rebalance = target_parent;
 					new_lean = LEAN_LEFT;
 					break;
-
+				default:
+					assert(false);
 				}
 
 			}
@@ -691,6 +709,7 @@ namespace UOS {
 			bool allow_weird_transform = true;
 			while (rebalance && new_lean != LEAN_BALANCE) {
 				if (rebalance->lean == LEAN_BALANCE) {
+					BRANCH;
 					rebalance->lean = new_lean;
 					break;
 				}
@@ -701,57 +720,67 @@ namespace UOS {
 				DEPTH_CHANGE dc = DEC;
 
 				if (rebalance->lean != new_lean) {
+					BRANCH;
 					rebalance->lean = LEAN_BALANCE;
 					//depth dec
+					new_root = rebalance;
 				}
 
 
 				if (rebalance->lean == new_lean) {
-
+					BRANCH;
 					result_type res({ nullptr,HOLD });
 					switch (new_lean) {
 					case LEAN_LEFT:
+						BRANCH;
 						res = rotate_right(rebalance, allow_weird_transform);
 						dc = res.second;
 						new_root = res.first;
 						break;
 					case LEAN_RIGHT:
+						BRANCH;
 						res = rotate_left(rebalance, allow_weird_transform);
 						dc = res.second;
 						new_root = res.first;
 						break;
+					default:
+						assert(false);
 					}
 					assert(res.second == DEC || (allow_weird_transform && res.second == HOLD));
 					if (res.second == HOLD) {
+						BRANCH;
 						new_lean = LEAN_BALANCE;
 						allow_weird_transform = false;
 
 					}
 				}
 
-
+				assert(new_root);
 
 				if (parent) {
+					BRANCH;
 					switch (parent_side) {
 					case NONE:
 						assert(false);
 						break;
 					case LEFT:
-						if (new_root)
-							parent->left(new_root);
+						BRANCH;
+						parent->left(new_root);
 						if (dc == DEC)
 							new_lean = LEAN_RIGHT;
 						break;
 					case RIGHT:
-						if (new_root)
-							parent->right(new_root);
+						BRANCH;
+						parent->right(new_root);
 						if (dc == DEC)
 							new_lean = LEAN_LEFT;
 						break;
+					default:
+						assert(false);
 					}
 				}
 				else {
-					assert(new_root);	//?????
+					BRANCH;
 					root = new_root;
 					new_root->side = NONE;
 				}
@@ -799,6 +828,11 @@ namespace UOS {
 					new_right->left(new_root->right());
 
 					switch (new_root->lean) {
+					case LEAN_BALANCE:
+						BRANCH_WEIRD;
+						assert(allow_weird_transform);
+						assert(new_root->left() && new_root->right());
+						break;
 					case LEAN_LEFT:
 						BRANCH;
 						assert(new_root->left());
@@ -870,8 +904,9 @@ namespace UOS {
 					assert(!new_left->left() && !new_root->right()->right());
 					assert(new_root->right()->ref_l() == new_root);
 
-					if (allow_weird_transform) {
+					if (dc == HOLD) {
 						BRANCH_WEIRD;
+						assert(allow_weird_transform);
 						assert(new_root->left()->ref_l() == new_left);
 						new_left->right(new_root->left());
 					}
@@ -886,8 +921,8 @@ namespace UOS {
 				//new_left->right(new_root->left());
 				new_root->left(new_left);
 
-				new_left->lean = allow_weird_transform ? LEAN_RIGHT : LEAN_BALANCE;
-				new_root->lean = allow_weird_transform ? LEAN_LEFT : LEAN_BALANCE;
+				new_left->lean = (dc == HOLD ? LEAN_RIGHT : LEAN_BALANCE);
+				new_root->lean = (dc == HOLD ? LEAN_LEFT : LEAN_BALANCE);
 
 				pos = new_root;
 			}
@@ -932,8 +967,9 @@ namespace UOS {
 					assert(!new_right->right() && !new_root->left()->left());
 					assert(new_root->left()->ref_r() == new_root);
 
-					if (allow_weird_transform) {
+					if (dc == HOLD) {
 						BRANCH_WEIRD;
+						assert(allow_weird_transform);
 						assert(new_root->right()->ref_r() == new_right);
 						new_right->left(new_root->right());
 					}
@@ -947,8 +983,8 @@ namespace UOS {
 				//new_right->left(new_root->right());
 				new_root->right(new_right);
 
-				new_right->lean = allow_weird_transform ? LEAN_LEFT : LEAN_BALANCE;
-				new_root->lean = allow_weird_transform ? LEAN_RIGHT : LEAN_BALANCE;
+				new_right->lean = (dc == HOLD ? LEAN_LEFT : LEAN_BALANCE);
+				new_root->lean = (dc == HOLD ? LEAN_RIGHT : LEAN_BALANCE);
 
 				pos = new_root;
 			}
@@ -967,6 +1003,11 @@ namespace UOS {
 					new_right->left(new_root->right());
 
 					switch (new_root->lean) {
+					case LEAN_BALANCE:
+						BRANCH_WEIRD;
+						assert(allow_weird_transform);
+						assert(new_root->left() && new_root->right());
+						break;
 					case LEAN_LEFT:
 						BRANCH;
 						assert(new_root->left());
