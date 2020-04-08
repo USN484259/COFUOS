@@ -158,7 +158,7 @@ namespace UOS {
 
 			iterator_base(const avl_tree* c, node* p) : container(c), pos(p) {}
 			iterator_base(const avl_tree* c, node* p, const node** r) : container(c), pos(p)/*, route(r)*/ {}
-			iterator_base(const avl_tree* c, node* p, const route_type& r) : container(c), pos(p)/*, route(r)*/ {}
+			//iterator_base(const avl_tree* c, node* p, const route_type& r) : container(c), pos(p)/*, route(r)*/ {}
 
 			//const route_type get_route(void) const {
 			//	if (!route)
@@ -286,10 +286,6 @@ namespace UOS {
 			stack(size_t depth) {
 				stk.reserve(depth);
 			}
-		public:
-			stack(const stack&) = default;
-			stack(stack&&) = default;
-
 			node*& top(void) {
 				return stk.back();
 			}
@@ -299,9 +295,18 @@ namespace UOS {
 			void pop(void) {
 				stk.pop_back();
 			}
+
+		public:
+			stack(const stack&) = default;
+			stack(stack&&) = default;
+
 			bool empty(void) const {
 				return stk.empty();
 			}
+			void clear(void) {
+				stk.clear();
+			}
+
 
 		};
 
@@ -337,7 +342,7 @@ namespace UOS {
 			size_t size = count;
 			size_t res = 0;
 			for (size_t i = 0; size; ++i) {
-				assert(i < 8*sizeof(size_t));
+				assert(i < 8 * sizeof(size_t));
 				if (size & 1) {
 					res = i + 1;
 				}
@@ -354,7 +359,8 @@ namespace UOS {
 			delete pos;
 		}
 
-		static void trace(stack& stk, node* pos,node* start) {
+		static void trace(stack& stk, node* pos, node* start) {
+#error "MSVC compile failed with C1001 internal error"
 			auto fun = [&](node* cur) -> bool {
 				if (!cur)
 					return false;
@@ -384,7 +390,7 @@ namespace UOS {
 				stk.push(cur);
 
 				return true;
-			};
+			};	//C1001 here
 
 			if (fun(start)) {
 				//assert(index < limit);
@@ -394,7 +400,7 @@ namespace UOS {
 
 		}
 
-		static void trace_prev(stack& stk) {
+		static inline void trace_prev(stack& stk) {
 			assert(!stk.empty());
 			node* pos = stk.top()->left();
 			while (pos) {
@@ -403,7 +409,7 @@ namespace UOS {
 			}
 		}
 
-		static void trace_next(stack& stk) {
+		static inline void trace_next(stack& stk) {
 			assert(!stk.empty());
 			node* pos = stk.top()->right();
 			while (pos) {
@@ -412,81 +418,81 @@ namespace UOS {
 			}
 		}
 
-/*
-		node** route(const node* pos) const {
-			size_t limit = depth() + 1;
-			size_t index = 0;
-			node** stk = new node*[limit];
+		/*
+				node** route(const node* pos) const {
+					size_t limit = depth() + 1;
+					size_t index = 0;
+					node** stk = new node*[limit];
 
-			auto fun = [&](node* cur) -> bool {
-				if (!cur)
-					return false;
-				do{
-					if (cur == pos)
-						break;
-					if (cmp(stk[index]->payload, pos->payload)) {	//right
-						if (!fun(cur->right()))
+					auto fun = [&](node* cur) -> bool {
+						if (!cur)
 							return false;
-						break;
+						do{
+							if (cur == pos)
+								break;
+							if (cmp(stk[index]->payload, pos->payload)) {	//right
+								if (!fun(cur->right()))
+									return false;
+								break;
 
-					}
-					if (cmp(pos->payload, stk[index]->payload)) {	//left
-						if (!fun(cur->left()))
+							}
+							if (cmp(pos->payload, stk[index]->payload)) {	//left
+								if (!fun(cur->left()))
+									return false;
+								break;
+							}
+							//payload equal but not pos
+
+							if (fun(cur->left()) || fun(cur->right()))
+								break;
 							return false;
-						break;
+
+						} while (false);
+
+						assert(index < limit);
+						stk[index++] = cur;
+
+						return true;
+					};
+
+					if (fun(root)) {
+						assert(index < limit);
+						stk[index++] = nullptr;
+						return stk;
 					}
-					//payload equal but not pos
-
-					if (fun(cur->left()) || fun(cur->right()))
-						break;
-					return false;
-
-				} while (false);
-
-				assert(index < limit);
-				stk[index++] = cur;
-
-				return true;
-			};
-
-			if (fun(root)) {
-				assert(index < limit);
-				stk[index++] = nullptr;
-				return stk;
-			}
-			error(out_of_range, pos);
-		}
-
-		template<typename C>
-		iterator find(const C& val) {
-			size_t limit = depth() + 1;
-			size_t index = 0;
-			node** stk = new node*[limit];
-
-			auto fun = [&](node* cur) {
-				if (!cur)
-					return false;
-				bool res = true;
-				if (cmp(stk[index]->payload, val)) {	//right
-					res = fun(cur->right());
+					error(out_of_range, pos);
 				}
-				else if (cmp(val, stk[index]->payload)) {	//left
-					res = fun(cur->left());
-				}
-				//equal
-				assert(index < limit);
-				stk[index++] = cur;
-				return res;
-			};
-			bool res = fun(root);
-			assert(index < limit);
-			stk[index++] = cur;
-			return iterator(this, res ? stk[0] : nullptr, stk);
-		}
-		*/
 
+				template<typename C>
+				iterator find(const C& val) {
+					size_t limit = depth() + 1;
+					size_t index = 0;
+					node** stk = new node*[limit];
+
+					auto fun = [&](node* cur) {
+						if (!cur)
+							return false;
+						bool res = true;
+						if (cmp(stk[index]->payload, val)) {	//right
+							res = fun(cur->right());
+						}
+						else if (cmp(val, stk[index]->payload)) {	//left
+							res = fun(cur->left());
+						}
+						//equal
+						assert(index < limit);
+						stk[index++] = cur;
+						return res;
+					};
+					bool res = fun(root);
+					assert(index < limit);
+					stk[index++] = cur;
+					return iterator(this, res ? stk[0] : nullptr, stk);
+				}
+				*/
+	public:
 		template<typename C>
-		bool find(const C& val,stack& stk) const{
+		bool find(const C& val, stack& stk) const {
 			stk.push(root);
 			while (true) {
 				node* cur = stk.top();
@@ -510,6 +516,7 @@ namespace UOS {
 
 		//typedef pair<node*, DEPTH_CHANGE> result_type;
 
+	private:
 #ifdef BRANCH_TEST_INSERT
 #define BRANCH BRANCH_TEST
 #endif
@@ -620,7 +627,7 @@ namespace UOS {
 
 			while (lean != LEAN_BALANCE) {
 				BRANCH;
-				assert(!stk.emtpy());
+				assert(!stk.empty());
 				pos = stk.top();
 				stk.pop();
 				if (pos->lean == LEAN_BALANCE) {
@@ -675,123 +682,124 @@ namespace UOS {
 			}
 		}
 
-/*
+		/*
 
-		result_type insert(node* pos, node* item) {
-			assert(item);
-			assert(!item->left() && !item->right());
-			assert(item->lean == LEAN_BALANCE);
+				result_type insert(node* pos, node* item) {
+					assert(item);
+					assert(!item->left() && !item->right());
+					assert(item->lean == LEAN_BALANCE);
 
-			if (!pos) {
-				BRANCH;
-				return result_type(item, INC);
-			}
+					if (!pos) {
+						BRANCH;
+						return result_type(item, INC);
+					}
 
-			SIDE side;
+					SIDE side;
 
-			if (cmp(item->payload, pos->payload)) {
-				BRANCH;
-				side = LEFT;
-			}
-			else if (cmp(pos->payload, item->payload)) {
-				BRANCH;
-				side = RIGHT;
-			}
-			else {
-				BRANCH;
-				side = pos->lean == LEAN_LEFT ? RIGHT : LEFT;
-			}
-			assert(side == LEFT || side == RIGHT);
-			node* ptr = (side == LEFT ? pos->left() : pos->right());
-			if (!ptr) {
-				switch (side) {
-				case LEFT:
-					BRANCH;
-					item->ref_r(pos);
-					item->ref_l(pos->ref_l());
-					break;
-				case RIGHT:
-					BRANCH;
-					item->ref_l(pos);
-					item->ref_r(pos->ref_r());
-					break;
-				default:
+					if (cmp(item->payload, pos->payload)) {
+						BRANCH;
+						side = LEFT;
+					}
+					else if (cmp(pos->payload, item->payload)) {
+						BRANCH;
+						side = RIGHT;
+					}
+					else {
+						BRANCH;
+						side = pos->lean == LEAN_LEFT ? RIGHT : LEFT;
+					}
+					assert(side == LEFT || side == RIGHT);
+					node* ptr = (side == LEFT ? pos->left() : pos->right());
+					if (!ptr) {
+						switch (side) {
+						case LEFT:
+							BRANCH;
+							item->ref_r(pos);
+							item->ref_l(pos->ref_l());
+							break;
+						case RIGHT:
+							BRANCH;
+							item->ref_l(pos);
+							item->ref_r(pos->ref_r());
+							break;
+						default:
+							assert(false);
+						}
+					}
+					auto res = insert(ptr, item);
+
+
+					switch (side) {
+					case LEFT:
+						BRANCH;
+						pos->left(res.first);
+						break;
+					case RIGHT:
+						BRANCH;
+						pos->right(res.first);
+						break;
+					default:
+						assert(false);
+					}
+
+					LEAN new_lean;
+					switch (res.second) {
+					case HOLD:
+						BRANCH;
+						new_lean = LEAN_BALANCE;
+						break;
+					case INC:
+						BRANCH;
+						new_lean = (side == LEFT ? LEAN_LEFT : LEAN_RIGHT);
+						break;
+					case DEC:
+						assert(false);
+						//BRANCH;
+						new_lean = (side == LEFT ? LEAN_RIGHT : LEAN_LEFT);
+						break;
+					default:
+						assert(false);
+					}
+					if (new_lean == LEAN_BALANCE) {
+						BRANCH;
+						return result_type(pos, HOLD);
+					}
+					if (pos->lean == LEAN_BALANCE) {
+						BRANCH;
+						assert(new_lean == LEAN_LEFT || new_lean == LEAN_RIGHT);
+						pos->lean = new_lean;
+						return result_type(pos, INC);
+					}
+
+					if (pos->lean != new_lean) {
+						BRANCH;
+						assert((pos->lean == LEAN_LEFT && new_lean == LEAN_RIGHT) || (pos->lean == LEAN_RIGHT && new_lean == LEAN_LEFT));
+						pos->lean = LEAN_BALANCE;
+						return result_type(pos, HOLD);
+					}
+
+					if (pos->lean == LEAN_LEFT) {
+						BRANCH;
+						assert(new_lean == LEAN_LEFT);
+						auto res = rotate_right(pos);
+						assert(res.second == DEC);
+						return result_type(res.first, HOLD);
+					}
+
+					if (pos->lean == LEAN_RIGHT) {
+						BRANCH;
+						assert(new_lean == LEAN_RIGHT);
+						auto res = rotate_left(pos);
+						assert(res.second == DEC);
+						return result_type(res.first, HOLD);
+					}
+
 					assert(false);
 				}
-			}
-			auto res = insert(ptr, item);
-
-
-			switch (side) {
-			case LEFT:
-				BRANCH;
-				pos->left(res.first);
-				break;
-			case RIGHT:
-				BRANCH;
-				pos->right(res.first);
-				break;
-			default:
-				assert(false);
-			}
-
-			LEAN new_lean;
-			switch (res.second) {
-			case HOLD:
-				BRANCH;
-				new_lean = LEAN_BALANCE;
-				break;
-			case INC:
-				BRANCH;
-				new_lean = (side == LEFT ? LEAN_LEFT : LEAN_RIGHT);
-				break;
-			case DEC:
-				assert(false);
-				//BRANCH;
-				new_lean = (side == LEFT ? LEAN_RIGHT : LEAN_LEFT);
-				break;
-			default:
-				assert(false);
-			}
-			if (new_lean == LEAN_BALANCE) {
-				BRANCH;
-				return result_type(pos, HOLD);
-			}
-			if (pos->lean == LEAN_BALANCE) {
-				BRANCH;
-				assert(new_lean == LEAN_LEFT || new_lean == LEAN_RIGHT);
-				pos->lean = new_lean;
-				return result_type(pos, INC);
-			}
-
-			if (pos->lean != new_lean) {
-				BRANCH;
-				assert((pos->lean == LEAN_LEFT && new_lean == LEAN_RIGHT) || (pos->lean == LEAN_RIGHT && new_lean == LEAN_LEFT));
-				pos->lean = LEAN_BALANCE;
-				return result_type(pos, HOLD);
-			}
-
-			if (pos->lean == LEAN_LEFT) {
-				BRANCH;
-				assert(new_lean == LEAN_LEFT);
-				auto res = rotate_right(pos);
-				assert(res.second == DEC);
-				return result_type(res.first, HOLD);
-			}
-
-			if (pos->lean == LEAN_RIGHT) {
-				BRANCH;
-				assert(new_lean == LEAN_RIGHT);
-				auto res = rotate_left(pos);
-				assert(res.second == DEC);
-				return result_type(res.first, HOLD);
-			}
-
-			assert(false);
-		}
-		*/
+				*/
 #undef BRANCH
 
+	public:
 #ifdef BRANCH_TEST_ERASE
 #define BRANCH BRANCH_TEST
 #endif
@@ -807,12 +815,15 @@ namespace UOS {
 			LEAN lean = LEAN_BALANCE;
 			stk.pop();
 			if (target->is_leaf()) {
+				BRANCH;
 				switch (target->side) {
 				case NONE:
+					BRANCH;
 					assert(stk.empty() && root == target && count == 1);
 					root = nullptr;
 					break;
 				case LEFT:
+					BRANCH;
 					assert(!stk.empty() && stk.top()->left() == target);
 					assert(target->ref_r() == stk.top());
 					stk.top()->left(nullptr);
@@ -820,6 +831,7 @@ namespace UOS {
 					lean = LEAN_RIGHT;
 					break;
 				case RIGHT:
+					BRANCH;
 					assert(!stk.empty() && stk.top()->right() == target);
 					assert(target->ref_l() == stk.top());
 					stk.top()->right(nullptr);
@@ -831,15 +843,17 @@ namespace UOS {
 				}
 			}
 			else {
-
+				BRANCH;
 				node* target_parent = stk.empty() ? nullptr : stk.top();
 				switch (target->lean) {
 				case LEAN_BALANCE:
+					BRANCH;
 					assert(target->left() && target->right());
 					//TRICK select left
 				case LEAN_LEFT:
 				{
-					stk.push(pos);
+					BRANCH;
+					stk.push(target);
 					trace_prev(stk);
 					replace = stk.top();
 					assert(replace == target->prev() && replace->ref_r() == target);
@@ -847,8 +861,10 @@ namespace UOS {
 					//stack top replace_parent
 
 					if (stk.top() == target) {	//replace_parent == target
+						BRANCH;
 						assert(target->left() == replace);
 						if (replace->left()) {
+							BRANCH;
 							assert(replace->left()->is_leaf());
 							assert(replace->left()->ref_r() == replace);
 							replace->left()->ref_r(target);
@@ -856,6 +872,7 @@ namespace UOS {
 
 						}
 						else {
+							BRANCH;
 							assert(replace->is_leaf());
 							target->left(nullptr);
 							target->ref_l(replace->ref_l());
@@ -864,14 +881,17 @@ namespace UOS {
 						lean = LEAN_RIGHT;
 					}
 					else {	//replace_parent != target
+						BRANCH;
 						assert(stk.top()->right() == replace);
 						if (replace->left()) {
+							BRANCH;
 							assert(replace->left()->is_leaf());
 							assert(replace->left()->ref_r() == replace);
 							replace->left()->ref_r(target);
 							stk.top()->right(replace->left());
 						}
 						else {
+							BRANCH;
 							assert(replace->is_leaf());
 							stk.top()->right(nullptr);
 							stk.top()->ref_r(target);
@@ -882,7 +902,8 @@ namespace UOS {
 				}
 				case LEAN_RIGHT:
 				{
-					stk.push(pos);
+					BRANCH;
+					stk.push(target);
 					trace_next(stk);
 					replace = stk.top();
 					assert(replace == target->next() && replace->ref_l() == target);
@@ -890,14 +911,17 @@ namespace UOS {
 					//stack top replace_parent
 
 					if (stk.top() == target) {	//replace_parent == target
+						BRANCH;
 						assert(target->right() == replace);
 						if (replace->right()) {
+							BRANCH;
 							assert(replace->right()->is_leaf());
 							assert(replace->right()->ref_l() == replace);
 							replace->right()->ref_l(target);
 							target->right(replace->right());
 						}
 						else {
+							BRANCH;
 							assert(replace->is_leaf());
 							target->right(nullptr);
 							target->ref_r(replace->ref_l());
@@ -905,14 +929,17 @@ namespace UOS {
 						lean = LEAN_LEFT;
 					}
 					else {	//replace_parent != target
+						BRANCH;
 						assert(stk.top()->left() == replace);
 						if (replace->right()) {
+							BRANCH;
 							assert(replace->right()->is_leaf());
 							assert(replace->right()->ref_l() == replace);
 							replace->right()->ref_l(target);
 							stk.top()->left(replace->right());
 						}
 						else {
+							BRANCH;
 							assert(replace->is_leaf());
 							stk.top()->left(nullptr);
 							stk.top()->ref_l(target);
@@ -941,19 +968,22 @@ namespace UOS {
 				}
 
 				//replace target
-				replace.set(target);
+				replace->set(target);
 
 				switch (target->side) {
 				case NONE:
+					BRANCH;
 					assert(nullptr == target_parent && target == root);
 					root = replace;
 					root->side = NONE;
 					break;
 				case LEFT:
+					BRANCH;
 					assert(target_parent->left() == target);
 					target_parent->left(replace);
 					break;
 				case RIGHT:
+					BRANCH;
 					assert(target_parent->right() == target);
 					target_parent->right(replace);
 					break;
@@ -965,6 +995,7 @@ namespace UOS {
 			//rebalance
 
 			while (lean != LEAN_BALANCE) {
+				BRANCH;
 				assert(!stk.empty());
 
 				node* pos = stk.top();
@@ -974,38 +1005,48 @@ namespace UOS {
 
 				switch (side) {	//#A
 				case NONE:
+					BRANCH;
 					assert(stk.empty() && root == pos);
 					break;
 				case LEFT:
+					BRANCH;
 					assert(!stk.empty() && stk.top()->left() == pos);
 					break;
 				case RIGHT:
+					BRANCH;
 					assert(!stk.empty() && stk.top()->right() == pos);
 					break;
 				default:
 					break;
 				}
 
-				if (replace && pos == target)
+				if (replace && pos == target) {
+					BRANCH;
 					pos = replace;
+				}
 
 				if (pos->lean == LEAN_BALANCE) {
+					BRANCH;
 					pos->lean = lean;
 					break;
 				}
 				if (pos->lean != lean) {
+					BRANCH;
 					assert((pos->lean == LEAN_LEFT && lean == LEAN_RIGHT) || (pos->lean == LEAN_RIGHT && lean == LEAN_LEFT));
 					pos->lean = LEAN_BALANCE;
 					//depth dec
 				}
 				else {
+					BRANCH;
 					assert(pos->lean == lean);
 
 					switch (lean) {
 					case LEAN_LEFT:
+						BRANCH;
 						pos = rotate_right(pos, &wired_transform);
 						break;
 					case LEAN_RIGHT:
+						BRANCH;
 						pos = rotate_left(pos, &wired_transform);
 						break;
 					default:
@@ -1015,15 +1056,18 @@ namespace UOS {
 
 				switch (side) {	//assert see #A
 				case NONE:
+					BRANCH;
 					root = pos;
 					root->side = NONE;
 					lean = LEAN_BALANCE;	//exit loop
 					break;
 				case LEFT:
+					BRANCH;
 					stk.top()->left(pos);
 					lean = wired_transform ? LEAN_BALANCE : LEAN_RIGHT;
 					break;
 				case RIGHT:
+					BRANCH;
 					stk.top()->right(pos);
 					lean = wired_transform ? LEAN_BALANCE : LEAN_LEFT;
 					break;
@@ -1359,6 +1403,8 @@ namespace UOS {
 		*/
 #undef BRANCH
 
+
+	private:
 #ifdef BRANCH_TEST_ROTATE
 #define BRANCH BRANCH_TEST
 #endif
@@ -1374,7 +1420,7 @@ namespace UOS {
 #define BRANCH_WEIRD
 #endif
 
-		node* rotate_left(node* pos,bool* weird_transform = nullptr) {
+		node* rotate_left(node* pos, bool* weird_transform = nullptr) {
 			assert(pos->lean == LEAN_RIGHT);
 			assert(pos->right());
 
@@ -1504,8 +1550,8 @@ namespace UOS {
 			assert(get_lean(pos->right()) == pos->right()->lean);
 			return pos;
 		}
-		
-		node* rotate_right(node* pos,bool* weird_transform = nullptr) {
+
+		node* rotate_right(node* pos, bool* weird_transform = nullptr) {
 			assert(pos->lean == LEAN_LEFT);
 			assert(pos->left());
 
@@ -1542,7 +1588,7 @@ namespace UOS {
 						assert(new_root->right()->ref_r() == new_right);
 						new_right->left(new_root->right());
 					}
-					else{
+					else {
 						BRANCH;
 						assert(new_root->ref_r() == new_right);
 						new_right->left(nullptr);
@@ -1639,7 +1685,7 @@ namespace UOS {
 
 		template<typename F>
 		void check(F& fun, const node* pos) const {
-//#pragma message("for TEST depth assert not activated")
+			//#pragma message("for TEST depth assert not activated")
 			assert(get_lean(pos) == pos->lean);
 			if (pos->left()) {
 				assert(pos->left() != pos);
@@ -1675,7 +1721,6 @@ namespace UOS {
 		}
 
 	public:
-#error "TODO bookmark"
 
 		avl_tree(void) : root(nullptr), count(0) {}
 		avl_tree(const C& c) : root(nullptr), count(0), cmp(c) {}
@@ -1726,29 +1771,33 @@ namespace UOS {
 			return const_iterator(this, nullptr);
 		}
 
-		iterator insert(const T& val) {
+		iterator insert(const T& val, stack& stk) {
 			node* new_node = new node(val);
-			root = insert(root, new_node).first;
-			root->side = NONE;
+			insert(stk, new_node);
 			++count;
 			return iterator(this, new_node);
 		}
-		iterator insert(T&& val) {
+		iterator insert(T&& val, stack& stk) {
 			node* new_node = new node(move(val));
-			root = insert(root, new_node).first;
-			root->side = NONE;
+			insert(stk, new_node);
 			++count;
 			return iterator(this, new_node);
+		}
+		iterator erase(const_iterator it) {
+			if (it == end())
+				error(out_of_range, it);
+			iterator ret(this, it.pos);
+			++ret;
+			auto stk = get_stack();
+			trace(stk, it.pos, root);
+			erase(stk);
+			return ret;
 		}
 
-		iterator erase(const_iterator pos) {
-			if (pos == cend())
-				error(invalid_argument,pos);
-			iterator ret(this,pos.pos->next());
-			assert(count);
-			erase(pos.pos);
-			--count;
-			return ret;
+		static iterator iterator_from_stack(const stack& stk) {
+			if (stk.empty)
+				error(null_deref, stk);
+			return iterator(this, stk.top());
 		}
 
 		template<typename F>
