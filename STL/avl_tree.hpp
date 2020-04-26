@@ -359,45 +359,76 @@ namespace UOS {
 			delete pos;
 		}
 
-		static void trace(stack& stk, node* pos, node* start) {
-#error "MSVC compile failed with C1001 internal error"
-			auto fun = [&](node* cur) -> bool {
-				if (!cur)
-					return false;
-				do {
-					if (cur == pos)
-						break;
-					if (cmp(stk.top()->payload, pos->payload)) {	//right
-						if (!fun(cur->right()))
-							return false;
-						break;
+		bool trace(stack& stk, node* pos) const{
+			assert(!stk.empty());
+			node* cur = stk.top();
+			if (!cur)
+				return false;
 
-					}
-					if (cmp(pos->payload, stk.top()->payload)) {	//left
-						if (!fun(cur->left()))
-							return false;
-						break;
-					}
-					//payload equal but not pos
-
-					if (fun(cur->left()) || fun(cur->right()))
-						break;
-					return false;
-
-				} while (false);
-
-				assert(index < limit);
-				stk.push(cur);
-
+			if (cur == pos)
 				return true;
-			};	//C1001 here
 
-			if (fun(start)) {
-				//assert(index < limit);
-				return;
-			}
-			error(out_of_range, pos);
+			bool equal = false;
 
+			do {
+
+				if (equal || cmp(cur->payload, pos->payload)) {	//right
+					stk.push(cur->right());
+					if (trace(stk, pos))
+						return true;
+
+					stk.pop();
+					if (!equal)
+						return false;
+				}
+
+				if (equal || cmp(pos->payload, cur->payload)) {	//left
+					stk.push(cur->left());
+					if (trace(stk, pos))
+						return true;
+
+					stk.pop();
+					if (!equal)
+						return false;
+				}
+
+				if (equal)
+					return false;
+
+				//equal but not pos
+				equal = true;
+
+			} while (true);
+			assert(false);
+
+			/*
+
+			do {
+				if (cur == pos)
+					break;
+				if (cmp(stk.top()->payload, pos->payload)) {	//right
+					if (!trace(stk, pos, cur->right()))
+						return false;
+					break;
+
+				}
+				if (cmp(pos->payload, stk.top()->payload)) {	//left
+					if (!trace(stk, pos, cur->left()))
+						return false;
+					break;
+				}
+				//payload equal but not pos
+
+				if (trace(stk, pos, cur->left()) || trace(stk, pos, cur->right()))
+					break;
+				return false;
+
+			} while (false);
+
+			stk.push(cur);
+
+			return true;
+			*/
 		}
 
 		static inline void trace_prev(stack& stk) {
@@ -548,33 +579,35 @@ namespace UOS {
 				//pos = stk.top();
 			}
 			else {	//find place to insert
-				BRANCH;
-				if (cmp(item->payload, pos->payload)) {	//left
-					BRANCH;
-					trace_prev(stk);
+				//BRANCH;
 
-					//pos = pos->left();
-					//while (pos) {
-					//	BRANCH;
-					//	stk.push(pos);
-					//	pos = pos->right();
-					//}
-					//pos = stk.top();
-				}
-				else if (cmp(pos->payload, item->payload)) {	//right
+				//must be equal
+
+				//if (cmp(item->payload, pos->payload)) {	//left
+				//	BRANCH;
+				//	trace_prev(stk);
+				//}
+				//else if (cmp(pos->payload, item->payload)) {	//right
+				//	BRANCH;
+				//	trace_next(stk);
+				//}
+				//else {	//equal
 					BRANCH;
-					trace_next(stk);
-					//pos = pos->right();
-					//while (pos) {
-					//	BRANCH;
-					//	stk.push(pos);
-					//	pos = pos->left();
-					//}
-					//pos = stk.top();
-				}
-				else {
-					assert(false);
-				}
+					switch (pos->lean) {
+					case LEAN_BALANCE:
+						//TRICK go left
+					case LEAN_LEFT:
+						BRANCH;
+						trace_next(stk);
+						break;
+					case LEAN_RIGHT:
+						BRANCH;
+						trace_prev(stk);
+						break;
+					default:
+						assert(false);
+					}
+				//}
 			}
 			pos = stk.top();
 			LEAN lean;
@@ -601,6 +634,13 @@ namespace UOS {
 				item->ref_r(pos);
 				item->ref_l(pos->ref_l());
 				pos->left(item);
+
+				if (pos->lean == LEAN_RIGHT) {
+					BRANCH;
+					lean = LEAN_BALANCE;
+				}
+				pos->lean = lean;
+
 				break;
 			case LEAN_RIGHT:
 				BRANCH;
@@ -609,6 +649,13 @@ namespace UOS {
 				item->ref_l(pos);
 				item->ref_r(pos->ref_r());
 				pos->right(item);
+
+				if (pos->lean == LEAN_LEFT) {
+					BRANCH;
+					lean = LEAN_BALANCE;
+				}
+				pos->lean = lean;
+
 				break;
 			default:
 				assert(false);
@@ -616,16 +663,39 @@ namespace UOS {
 
 			++count;
 
-			if (!pos->is_leaf()) {	//impossible for child to have more than 1 depth
+			//if (!pos->is_leaf()) {	//impossible for child to have more than 1 depth
+			//	BRANCH;
+			//	assert(pos->left()->is_leaf() && pos->right()->is_leaf());
+			//	pos->lean = LEAN_BALANCE;
+			//	return;
+			//}
+
+//#error "WHERE TO LEAN ?"
+
+			//rebalance
+			if (lean == LEAN_BALANCE) {
 				BRANCH;
-				assert(pos->left()->is_leaf() && pos->right()->is_leaf());
-				pos->lean = LEAN_BALANCE;
 				return;
 			}
 
-			//rebalance
+			switch (stk.top()->side) {
+			case NONE:
+				BRANCH;
+				break;
+			case LEFT:
+				BRANCH;
+				lean = LEAN_LEFT;
+				break;
+			case RIGHT:
+				BRANCH;
+				lean = LEAN_RIGHT;
+				break;
+			default:
+				assert(false);
+			}
+			stk.pop();
 
-			while (lean != LEAN_BALANCE) {
+			while (!stk.empty() && lean != LEAN_BALANCE) {
 				BRANCH;
 				assert(!stk.empty());
 				pos = stk.top();
@@ -633,7 +703,24 @@ namespace UOS {
 				if (pos->lean == LEAN_BALANCE) {
 					BRANCH;
 					pos->lean = lean;
-					break;
+
+					switch (pos->side) {
+					case NONE:
+						BRANCH;
+						assert(stk.empty());
+						break;
+					case LEFT:
+						BRANCH;
+						lean = LEAN_LEFT;
+						break;
+					case RIGHT:
+						BRANCH;
+						lean = LEAN_RIGHT;
+						break;
+					default:
+						assert(false);
+					}
+					continue;
 				}
 				if (pos->lean != lean) {
 					BRANCH;
@@ -644,17 +731,18 @@ namespace UOS {
 				assert(pos->lean == lean);
 
 				SIDE side = pos->side;
-				assert(side == LEFT || side == RIGHT);
 				switch (lean) {
 				case LEAN_LEFT:
 					BRANCH;
 					pos = rotate_right(pos);
-					lean = (side == LEFT) ? LEAN_RIGHT : LEAN_LEFT;
+					lean = LEAN_BALANCE;
+					//lean = (side == LEFT) ? LEAN_RIGHT : LEAN_LEFT;
 					break;
 				case LEAN_RIGHT:
 					BRANCH;
 					pos = rotate_left(pos);
-					lean = (side == LEFT) ? LEAN_RIGHT : LEAN_LEFT;
+					lean = LEAN_BALANCE;
+					//lean = (side == LEFT) ? LEAN_RIGHT : LEAN_LEFT;
 					break;
 				default:
 					assert(false);
@@ -662,6 +750,7 @@ namespace UOS {
 
 				if (stk.empty()) {
 					BRANCH;
+					assert(side == NONE);
 					root = pos;
 					pos->side = NONE;
 					break;
@@ -836,7 +925,7 @@ namespace UOS {
 					assert(target->ref_l() == stk.top());
 					stk.top()->right(nullptr);
 					stk.top()->ref_r(target->ref_r());
-					lean = LEAN_RIGHT;
+					lean = LEAN_LEFT;
 					break;
 				default:
 					assert(false);
@@ -874,9 +963,14 @@ namespace UOS {
 						else {
 							BRANCH;
 							assert(replace->is_leaf());
+							node* p = replace->ref_l();
 							target->left(nullptr);
-							target->ref_l(replace->ref_l());
-
+							target->ref_l(p);
+							//if (p) {
+							//	BRANCH;
+							//	assert(p->ref_r() == replace);
+							//	p->ref_r(target);
+							//}
 						}
 						lean = LEAN_RIGHT;
 					}
@@ -923,8 +1017,14 @@ namespace UOS {
 						else {
 							BRANCH;
 							assert(replace->is_leaf());
+							node* p = replace->ref_r();
 							target->right(nullptr);
-							target->ref_r(replace->ref_l());
+							target->ref_r(p);
+							//if (p) {
+							//	BRANCH;
+							//	assert(p->ref_l() == replace);
+							//	p->ref_l(target);
+							//}
 						}
 						lean = LEAN_LEFT;
 					}
@@ -952,6 +1052,7 @@ namespace UOS {
 					assert(false);
 				}
 
+//#error "assert failed since ref has been changed"
 				{	//redirect ref pointing to target to replace
 					node* prev = target->prev();
 					node* next = target->next();
@@ -994,14 +1095,24 @@ namespace UOS {
 			}
 			//rebalance
 
+			auto redirect = [&](node* p) -> node* {
+				return (replace && p == target) ? replace : p;
+			};
+
+
 			while (lean != LEAN_BALANCE) {
 				BRANCH;
 				assert(!stk.empty());
 
-				node* pos = stk.top();
+				node* pos = redirect(stk.top());
 				stk.pop();
-				SIDE side = pos->side;
 				bool wired_transform = false;
+
+				//if (replace && pos == target) {
+				//	BRANCH;
+				//	pos = replace;
+				//}
+				SIDE side = pos->side;
 
 				switch (side) {	//#A
 				case NONE:
@@ -1018,11 +1129,6 @@ namespace UOS {
 					break;
 				default:
 					break;
-				}
-
-				if (replace && pos == target) {
-					BRANCH;
-					pos = replace;
 				}
 
 				if (pos->lean == LEAN_BALANCE) {
@@ -1063,12 +1169,12 @@ namespace UOS {
 					break;
 				case LEFT:
 					BRANCH;
-					stk.top()->left(pos);
+					redirect(stk.top())->left(pos);
 					lean = wired_transform ? LEAN_BALANCE : LEAN_RIGHT;
 					break;
 				case RIGHT:
 					BRANCH;
-					stk.top()->right(pos);
+					redirect(stk.top())->right(pos);
 					lean = wired_transform ? LEAN_BALANCE : LEAN_LEFT;
 					break;
 				default:
@@ -1078,7 +1184,7 @@ namespace UOS {
 			}
 
 			delete target;
-
+			--count;
 
 
 		}
@@ -1536,7 +1642,7 @@ namespace UOS {
 				new_root->left(new_left);
 
 				new_left->lean = (wt ? LEAN_RIGHT : LEAN_BALANCE);
-				new_root->lean = (wt ? HOLD ? LEAN_LEFT : LEAN_BALANCE);
+				new_root->lean = (wt ? LEAN_LEFT : LEAN_BALANCE);
 
 				pos = new_root;
 			}
@@ -1599,7 +1705,7 @@ namespace UOS {
 				new_root->right(new_right);
 
 				new_right->lean = (wt ? LEAN_LEFT : LEAN_BALANCE);
-				new_root->lean = (wt ? HOLD ? LEAN_RIGHT : LEAN_BALANCE);
+				new_root->lean = (wt ? LEAN_RIGHT : LEAN_BALANCE);
 
 				pos = new_root;
 			}
@@ -1620,7 +1726,7 @@ namespace UOS {
 					switch (new_root->lean) {
 					case LEAN_BALANCE:
 						BRANCH_WEIRD;
-						assert(allow_weird_transform);
+						assert(weird_transform);
 						assert(new_root->left() && new_root->right());
 						break;
 					case LEAN_LEFT:
@@ -1774,13 +1880,11 @@ namespace UOS {
 		iterator insert(const T& val, stack& stk) {
 			node* new_node = new node(val);
 			insert(stk, new_node);
-			++count;
 			return iterator(this, new_node);
 		}
 		iterator insert(T&& val, stack& stk) {
 			node* new_node = new node(move(val));
 			insert(stk, new_node);
-			++count;
 			return iterator(this, new_node);
 		}
 		iterator erase(const_iterator it) {
@@ -1789,7 +1893,9 @@ namespace UOS {
 			iterator ret(this, it.pos);
 			++ret;
 			auto stk = get_stack();
-			trace(stk, it.pos, root);
+			stk.push(root);
+			bool res = trace(stk, it.pos);
+			assert(res);
 			erase(stk);
 			return ret;
 		}
