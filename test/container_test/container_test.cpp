@@ -1,6 +1,6 @@
 //#define _TEST
 
-extern void branch_test(unsigned,const char*);
+extern void branch_test(unsigned, const char*);
 
 #define _IMP_TOSTRING(x) #x
 #define TOSTRING(x) _IMP_TOSTRING(x)
@@ -17,6 +17,8 @@ extern void branch_test(unsigned,const char*);
 
 #include <set>
 #include <random>
+
+#include <cmath>
 
 using namespace std;
 
@@ -49,7 +51,7 @@ void branch_report(void) {
 }
 
 extern "C"
-void BugCheck(UOS::stopcode stat,...) {
+void BugCheck(UOS::stopcode stat, ...) {
 	__debugbreak();
 	abort();
 }
@@ -98,7 +100,7 @@ public:
 	bool operator!=(const object& cmp) const {
 		return val != cmp.val;
 	}
-	struct hash : public UOS::hash<unsigned>{
+	struct hash : public UOS::hash<unsigned> {
 		qword operator()(const object& obj) const {
 			return UOS::hash<unsigned>::operator()(obj.val);
 		}
@@ -193,7 +195,7 @@ void test_list(void) {
 	cout << container.front() << '\t' << container.back() << endl;
 	container.pop_back();
 	container.pop_front();
-	
+
 	print(container);
 
 	while (container.size() < 128) {
@@ -234,18 +236,18 @@ void test_list(void) {
 
 }
 
-void test_hash_bucket(void){
+void test_hash_bucket(void) {
 
 	//object::log = true;
 	object::hash h;
 	UOS::equal_to<object> e;
-	UOS::hash_bucket<object, object::hash> container(64,UOS::move(h),UOS::move(e));
+	UOS::hash_bucket<object, object::hash> container(64, UOS::move(h), UOS::move(e));
 	unsigned counter = 0;
 
 	while (counter != 128) {
-		container.insert(container.cend(),object(counter++));
+		container.insert(container.cend(), object(counter++));
 	}
-	
+
 	cout << container.bucket_count() << '\t' << container.size() << '\t' << container.max_load() << endl;
 
 	for (auto it = container.cbegin(); it != container.cend(); ++it) {
@@ -343,14 +345,15 @@ void test_hash_map(void) {
 void test_avl_tree(void) {
 	using namespace UOS;
 	UOS::avl_tree<object> container;
+	auto stk = container.get_stack();
 	std::random_device rng;
 
-	if (false) {
+	if (true) {
 
 		std::multiset<object> std_container;
 
 
-		//static const unsigned data[] = { 34,30,119,247,199,36 };
+		//static const unsigned data[] = { 14,10,7,4,14,11 };
 
 
 		for (auto i = 0; i < 0x1000; ++i) {
@@ -359,7 +362,10 @@ void test_avl_tree(void) {
 
 			//cout << val << endl;
 
-			container.insert(val);
+			stk.clear();
+			container.find(val, stk);
+
+			container.insert(val,stk);
 
 			container.check([](const object&) {});
 
@@ -383,7 +389,8 @@ void test_avl_tree(void) {
 		assert(std_it == std_container.cend());
 	}
 
-	if (false) {
+
+	if (true) {
 		for (auto count = 1; count < 0x40; ++count) {
 			cout << "count " << count << endl;
 			for (auto sel = 0; sel < count; ++sel) {
@@ -392,13 +399,18 @@ void test_avl_tree(void) {
 				decltype(container)::iterator pos;
 
 				for (auto i = 0; i < count; ++i) {
-					auto it = container.insert(object(i));
+					object val(i);
+					stk.clear();
+					container.find(val, stk);
+
+					auto it = container.insert(val,stk);
 					if (i == sel)
 						pos = it;
 				}
 				container.check([&](const object& val) {});
 
 				cout << *pos << '\t';
+
 				pos = container.erase(pos);
 				if (pos != container.end())
 					cout << *pos;
@@ -420,11 +432,14 @@ void test_avl_tree(void) {
 			cout << "round " << round << endl;
 			container.clear();
 			for (auto i = 0; i < 0x100; ++i) {
-				container.insert(object(i));
+				object val(i);
+				stk.clear();
+				container.find(val, stk);
+				container.insert(val, stk);
 			}
 			//static const unsigned table[] = { 7,1,2,6,5,2,8,2,0 };
 			while (container.size()) {
-			//for (auto i = 0;i < 9;++i){
+				//for (auto i = 0;i < 9;++i){
 				auto it = container.cbegin();
 				auto id = rng() % container.size();
 				//auto id = table[i];
@@ -443,6 +458,59 @@ void test_avl_tree(void) {
 				//cout << endl;
 			}
 		}
+	}
+
+	if (true) {
+		std::multiset<object> std_container;
+
+		for (auto count = 1; count <= 0x100; ++count) {
+			cout << "count " << count << endl;
+			container.clear();
+			std_container.clear();
+
+			for (auto i = 0; i < count; ++i) {
+				object val(rng() % 0x100);
+
+				stk.clear();
+				container.find(val, stk);
+				container.insert(val, stk);
+				std_container.insert(val);
+
+				container.check([](const object&) {});
+
+			}
+
+			while (container.size()) {
+				auto it = container.cbegin();
+				auto std_it = std_container.cbegin();
+
+				auto pos = rng() % container.size();
+				decltype(container)::const_iterator target;
+				decltype(std_container)::const_iterator std_target;
+
+				for (auto i = 0; it != container.cend(); ++i) {
+					if (i == pos) {
+						target = it;
+						std_target = std_it;
+					}
+					assert(*it == *std_it);
+					++it, ++std_it;
+				}
+
+				assert(std_it == std_container.cend());
+
+				it = container.erase(target);
+				std_it = std_container.erase(std_target);
+
+				container.check([](const object&) {});
+
+			}
+
+
+		}
+
+
+
 	}
 
 
