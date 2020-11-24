@@ -1,4 +1,0 @@
-﻿  Assembling bitswap.asm...
-bitswap.asm(6): error A2006: undefined symbol : rax
-bitswap.asm(7): error A2006: undefined symbol : rax
-C:\Program Files (x86)\MSBuild\Microsoft.Cpp\v4.0\V140\BuildCustomizations\masm.targets(50,5): error MSB3721: 命令“ml.exe /c /nologo /Zi /Fo"Debug\bitswap.obj" /W3 /errorReport:prompt  /Tabitswap.asm”已退出，返回代码为 1。

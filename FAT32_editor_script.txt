@@ -1,3 +1,0 @@
-put krnldr.bin bin\krnldr.bin
-put COFUOS.sys bin\COFUOS.sys
-list
