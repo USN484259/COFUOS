@@ -1,0 +1,2 @@
+put krnldr.bin bin\krnldr.bin
+list

@@ -1,0 +1,1985 @@
+     1                                  IA32_EFER equ 0xC0000080
+     2                                  IA32_APIC_BASE equ 0x1B
+     3                                  
+     4                                  HIGHADDR equ 0xFFFF_8000_0000_0000
+     5                                  
+     6                                  IDT_BASE equ 0x0400
+     7                                  IDT_LIM equ 0x400	;64 entries
+     8                                  
+     9                                  GDT_BASE equ 0x0800
+    10                                  GDT_LIM equ 0x100	;16 entries
+    11                                  TSS_BASE equ 0x0900
+    12                                  TSS_LIM equ 0x80
+    13                                  
+    14                                  SYSINFO_BASE equ 0x0A00
+    15                                  MPCTRL_BASE equ 0x1000
+    16                                  
+    17                                  PMMSCAN_BASE equ 0x1000
+    18                                  
+    19                                  PAGE_SIZE equ 0x1000
+    20                                  SECTOR_SIZE equ 0x200
+    21                                  
+    22                                  ISR_STK equ 0x03000
+    23                                  
+    24                                  ISR_MP equ 0x9000
+    25                                  
+    26                                  PL4T equ 0x03000
+    27                                  
+    28                                  PDPT0 equ 0x4000
+    29                                  PDPT8 equ 0x5000
+    30                                  
+    31                                  PDT0 equ 0x06000
+    32                                  
+    33                                  PT0	equ 0x07000
+    34                                  
+    35                                  PT_BASE equ 0x3000
+    36                                  
+    37                                  ;PT_PMM equ 0x8000
+    38                                  
+    39                                  PT_LEN equ (0x8000-PT_BASE)
+    40                                  
+    41                                  PMMQMP_PBASE equ 0x8000
+    42                                  ;PMMQMP_PBASE equ 0x100000
+    43                                  
+    44                                  ;	physical Memory layout
+    45                                  
+    46                                  
+    47                                  
+    48                                  ;	000000		001000		RW	TSS & GDT & IDT & sysinfo
+    49                                  ;	001000		002000		RW	PMMSCAN & MP sync area
+    50                                  ;	002000		003000		RWX	loader & ISR stack
+    51                                  ;	003000		004000		RW	PL4T
+    52                                  ;	004000		005000		RW	PDPT low	
+    53                                  ;	005000		006000		RW	PDPT high
+    54                                  ;	006000		007000		RW	PDT
+    55                                  ;	007000		008000		RW	PT
+    56                                  ;	008000		009000		RW	PMMQMP within 2M
+    57                                  ;------------------------	008000		009000		RW	PT for PMM
+    58                                  ;	009000		010000		RW	MP ISR
+    59                                  ;-------------direct map---------------------
+    60                                  
+    61                                  
+    62                                  
+    63                                  
+    64                                  
+    65                                  struc sysinfo
+    66 00000000 <res 00000008>          .sig			resq 1
+    67 00000008 <res 00000008>          .PMM_avl_top	resq 1
+    68                                  
+    69 00000010 <res 00000008>          .PMM_qmp_vbase	resq 1
+    70 00000018 <res 00000004>          .PMM_qmp_page	resd 1
+    71 0000001C <res 00000004>          .cpu			resd 1
+    72                                  
+    73 00000020 <res 00000002>          .bus			resw 1
+    74 00000022 <res 0000000E>          .port			resw 7
+    75                                  
+    76 00000030 <res 00000002>          .VBE_bpp		resw 1
+    77 00000032 <res 00000002>          .VBE_mode		resw 1
+    78 00000034 <res 00000002>          .VBE_width		resw 1
+    79 00000036 <res 00000002>          .VBE_height		resw 1
+    80 00000038 <res 00000004>          .VBE_addr		resd 1
+    81 0000003C <res 00000004>          .VBE_lim		resd 1
+    82                                  
+    83 00000040 <res 00000004>          .FAT_header		resd 1
+    84 00000044 <res 00000004>          .FAT_table		resd 1
+    85 00000048 <res 00000004>          .FAT_data		resd 1
+    86 0000004C <res 00000004>          .FAT_cluster	resd 1
+    87                                  
+    88                                  .PE_filekrnl:
+    89 00000050 <res 00000008>          .krnlbase		resq 1
+    90 00000058 <res 00000004>          .AP_entry		resd 1
+    91 0000005C <res 00000002>          .MP_cnt			resw 1
+    92 0000005E <res 00000002>          				resw 1
+    93                                  .MP_id:
+    94                                  endstruc
+    95                                  
+    96                                  
+    97                                  struc mpctrl
+    98 00000000 <res 00000002>          .guard		resw 1
+    99 00000002 <res 00000002>          .owner		resw 1
+   100 00000004 <res 00000002>          .command	resw 1
+   101 00000006 <res 00000002>          .count		resw 1
+   102                                  endstruc
+   103                                  
+   104                                  
+   105                                  
+   106                                  
+   107                                  section code vstart=0x2000
+   108                                  
+   109                                  [bits 16]
+   110                                  
+   111                                  
+   112                                  
+   113 00000000 0E                      push cs
+   114 00000001 1F                      pop ds
+   115 00000002 FC                      cld
+   116                                  
+   117 00000003 31C9                    xor cx,cx
+   118 00000005 BB007C                  mov bx,0x7C00
+   119 00000008 8EC1                    mov es,cx
+   120                                  
+   121                                  
+   122                                  ;	ds	->	cur code segment
+   123                                  ;	es	->	flat address
+   124 0000000A 2681BFFE0155AA          cmp WORD [es:bx+0x200-2],0xAA55
+   125 00000011 0F849801                jz near BSP_entry
+   126                                  
+   127 00000015 31D2                    xor dx,dx
+   128 00000017 BB0010                  mov bx,MPCTRL_BASE+mpctrl.guard
+   129 0000001A 42                      inc dx
+   130                                  
+   131                                  AP_entry:
+   132                                  ;acquire lock
+   133                                  
+   134 0000001B 31C0                    xor ax,ax
+   135 0000001D F390                    pause
+   136 0000001F F0260FB117              lock cmpxchg [es:bx],dx
+   137 00000024 75F5                    jnz AP_entry
+   138                                  
+   139                                  ;inc WORD [es:bx+2]	;MP_cnt
+   140                                  
+   141 00000026 8ED1                    mov ss,cx
+   142 00000028 BC0030                  mov sp,ISR_STK
+   143                                  
+   144 0000002B BF5C0A                  mov di,SYSINFO_BASE+sysinfo.MP_cnt
+   145                                  
+   146 0000002E 26813D0800              cmp WORD [es:di],8
+   147 00000033 0F82D902                jb near AP_PE	;currently support less than 8 processors
+   148                                  
+   149 00000037 31C0                    xor ax,ax
+   150 00000039 F0268907                lock mov [es:bx],ax
+   151                                  
+   152 0000003D FA                      cli
+   153                                  .reset:
+   154 0000003E F4                      hlt
+   155 0000003F EBFD                    jmp .reset
+   156                                  
+   157                                  
+   158 00000041 90<rept>                align 4
+   159                                  
+   160 00000044 434F46554F53204C6F-     strboot db 'COFUOS Loading ...',0
+   161 0000004D 6164696E67202E2E2E-
+   162 00000056 00                 
+   163 00000057 90                      align 4
+   164 00000058 4E6F2070726F706572-     strvberr db 'No proper video mode',0
+   165 00000061 20766964656F206D6F-
+   166 0000006A 646500             
+   167                                  
+   168 0000006D 90<rept>                align 16
+   169                                  
+   170                                  gdt32_base:
+   171 00000070 0000000000000000        dq 0	;first empty entrance
+   172                                  
+   173 00000078 FFFF                    dw 0xFFFF
+   174 0000007A 0000                    dw 0
+   175 0000007C 00                      db 0	;base addr
+   176 0000007D 9A                      db 1001_1010_b
+   177 0000007E CF                      db 1100_1111_b
+   178 0000007F 00                      db 0		;sys cs
+   179                                  
+   180 00000080 FFFF                    dw 0xFFFF
+   181 00000082 0000                    dw 0
+   182 00000084 00                      db 0
+   183 00000085 92                      db 1001_0010_b
+   184 00000086 CF                      db 1100_1111_b
+   185 00000087 00                      db 0		;sys ds
+   186                                  
+   187                                  
+   188 00000088 0000000000000000        dq 0	;end of GDT
+   189                                  
+   190                                  gdt32_len equ ($-gdt32_base)
+   191                                  
+   192                                  gdt64_base:
+   193                                  
+   194                                  
+   195 00000090 00000000                dd 0
+   196 00000094 00982000                dd 0000_0000_0010_0000_1001_1000_0000_0000_b	;sys64 CS
+   197                                  
+   198 00000098 00000000                dd 0
+   199 0000009C 00920000                dd 1001_0010_0000_0000_b	;sys64 DS
+   200                                  
+   201                                  
+   202 000000A0 FFFF                    dw 0xFFFF
+   203 000000A2 0000                    dw 0
+   204 000000A4 00                      db 0
+   205 000000A5 FA                      db 1111_1010_b
+   206 000000A6 CF                      db 1100_1111_b
+   207 000000A7 00                      db 0		;user cs
+   208                                  
+   209 000000A8 FFFF                    dw 0xFFFF
+   210 000000AA 0000                    dw 0
+   211 000000AC 00                      db 0
+   212 000000AD F2                      db 1111_0010_b
+   213 000000AE CF                      db 1100_1111_b
+   214 000000AF 00                      db 0		;user ds
+   215                                  
+   216                                  
+   217                                  
+   218 000000B0 00000000                dd 0
+   219 000000B4 00F82000                dd 0000_0000_0010_0000_1111_1000_0000_0000_b	;user64 CS
+   220                                  
+   221 000000B8 00000000                dd 0
+   222 000000BC 00F20000                dd 1111_0010_0000_0000_b	;user64 DS
+   223                                  
+   224                                  
+   225 000000C0 8000                    dw TSS_LIM
+   226 000000C2 0009                    dw TSS_BASE
+   227 000000C4 0089                    dw 0x8900
+   228 000000C6 0000                    dw 0
+   229 000000C8 0000000000000000        dq 0		;TSS
+   230                                  
+   231                                  
+   232                                  
+   233                                  gdt64_len equ ($-gdt64_base)
+   234                                  
+   235                                  GDT_TSS equ 7*8
+   236                                  GDT_SYS_CS equ 1*8
+   237                                  GDT_SYS_DS equ 2*8
+   238                                  
+   239                                  
+   240                                  align 16
+   241                                  
+   242                                  
+   243                                  tss64_base:
+   244                                  
+   245 000000D0 00000000                dd 0
+   246 000000D4 003000000080FFFF        dq HIGHADDR+ISR_STK
+   247 000000DC 0000000000000000        dq 0
+   248 000000E4 0000000000000000        dq 0
+   249 000000EC 0000000000000000        dq 0
+   250 000000F4 00A000000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*1
+   251 000000FC 00B000000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*2
+   252 00000104 00C000000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*3
+   253 0000010C 00D000000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*4
+   254 00000114 00E000000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*5
+   255 0000011C 00F000000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*6
+   256 00000124 000001000080FFFF        dq HIGHADDR+ISR_MP+PAGE_SIZE*7
+   257 0000012C 0000000000000000        dq 0
+   258 00000134 00000000                dd 0
+   259                                  
+   260                                  tss64_len equ ($-tss64_base)
+   261                                  
+   262                                  print16:
+   263                                  
+   264 00000138 B80003                  mov ax,0x0300
+   265 0000013B 31DB                    xor bx,bx
+   266 0000013D CD10                    int 0x10
+   267                                  
+   268 0000013F 31C9                    xor cx,cx
+   269 00000141 89F5                    mov bp,si
+   270 00000143 F7D1                    not cx
+   271                                  .cnt:
+   272 00000145 AC                      lodsb
+   273 00000146 41                      inc cx
+   274 00000147 84C0                    test al,al
+   275 00000149 75FA                    jnz .cnt
+   276                                  
+   277 0000014B 06                      push es
+   278 0000014C 1E                      push ds
+   279 0000014D BB0F00                  mov bx,0x0F
+   280 00000150 07                      pop es
+   281                                  
+   282 00000151 B80013                  mov ax,0x1300
+   283 00000154 CD10                    int 0x10
+   284                                  
+   285 00000156 07                      pop es
+   286                                  
+   287 00000157 FEC6                    inc dh
+   288 00000159 31DB                    xor bx,bx
+   289 0000015B B80002                  mov ax,0x200
+   290 0000015E CD10                    int 0x10
+   291                                  
+   292 00000160 C3                      ret
+   293                                  
+   294                                  
+   295                                  
+   296                                  
+   297                                  abort16:
+   298 00000161 E8D4FF                  call print16
+   299 00000164 FB                      sti
+   300                                  .hlt:
+   301 00000165 F4                      hlt
+   302 00000166 EBFD                    jmp .hlt
+   303                                  
+   304                                  
+   305                                  
+   306                                  set_PMM_top:	;si INFO	di PMMSCAN
+   307                                  
+   308 00000168 26668B4510              mov eax,[es:di+0x10]
+   309 0000016D 6648                    dec eax
+   310 0000016F 753B                    jnz .end
+   311                                  
+   312                                  
+   313                                  
+   314 00000171 26668B05                mov eax,[es:di]
+   315 00000175 26668B4D04              mov ecx,[es:di+4]
+   316                                  
+   317 0000017A 2666034508              add eax,[es:di+8]
+   318 0000017F 2666134D0C              adc ecx,[es:di+0x0C]
+   319                                  
+   320 00000184 26663B05                cmp eax,[es:di]
+   321 00000188 750A                    jnz .nzero
+   322 0000018A 26663B4D04              cmp ecx,[es:di+4]
+   323 0000018F 7503                    jnz .nzero
+   324                                  
+   325 00000191 E91800                  jmp .end
+   326                                  
+   327                                  .nzero:
+   328 00000194 26663B4C04              cmp ecx,[es:si+4]
+   329 00000199 7211                    jb .end
+   330 0000019B 7706                    ja .found
+   331                                  
+   332 0000019D 26663B04                cmp eax,[es:si]
+   333 000001A1 7609                    jbe .end
+   334                                  
+   335                                  .found:
+   336 000001A3 26668904                mov [es:si],eax
+   337 000001A7 2666894C04              mov [es:si+4],ecx
+   338                                  
+   339                                  .end:
+   340                                  
+   341 000001AC C3                      ret
+   342                                  
+   343                                  
+   344                                  BSP_entry:
+   345 000001AD 8ED1                    mov ss,cx
+   346 000001AF 89DC                    mov sp,bx	;0x7C00
+   347                                  
+   348                                  ;	ds	->	cur code segment
+   349                                  ;	es	->	flat address
+   350                                  
+   351                                  
+   352 000001B1 BE[4400]                mov si,strboot
+   353 000001B4 E881FF                  call print16
+   354                                  
+   355                                  
+   356                                  ;sysinfo setup
+   357 000001B7 31C0                    xor ax,ax
+   358 000001B9 BF000A                  mov di,SYSINFO_BASE
+   359 000001BC B90004                  mov cx,0x800/2
+   360 000001BF F3AB                    rep stosw
+   361                                  
+   362 000001C1 BF000A                  mov di,SYSINFO_BASE+sysinfo.sig
+   363                                  
+   364 000001C4 66B853595349            mov eax,'SYSI'
+   365 000001CA 66AB                    stosd
+   366 000001CC 66B84E464F00            mov eax,'NFO'
+   367 000001D2 66AB                    stosd
+   368                                  
+   369 000001D4 BF200A                  mov di,SYSINFO_BASE+sysinfo.bus
+   370 000001D7 B82420                  mov ax,0x2024
+   371 000001DA AB                      stosw
+   372                                  
+   373 000001DB BF300A                  mov di,SYSINFO_BASE+sysinfo.VBE_bpp
+   374 000001DE B81800                  mov ax,24
+   375 000001E1 AB                      stosw
+   376                                  
+   377                                  
+   378 000001E2 BEF07D                  mov si,0x7C00+0x200-0x10	;FAT_INFO from boot
+   379 000001E5 BF400A                  mov di,SYSINFO_BASE+sysinfo.FAT_header
+   380 000001E8 B90700                  mov cx,7
+   381 000001EB F326A5                  es rep movsw
+   382                                  
+   383                                  
+   384                                  
+   385                                  ;detect VBE
+   386 000001EE BF0012                  mov di,PMMSCAN_BASE+0x200
+   387 000001F1 66B956424532            mov ecx,'VBE2'
+   388 000001F7 66890D                  mov [di],ecx
+   389 000001FA B8004F                  mov ax,0x4F00
+   390 000001FD CD10                    int 0x10
+   391 000001FF 3D4F00                  cmp ax,0x4F
+   392 00000202 BE[5800]                mov si,strvberr
+   393 00000205 0F8558FF                jnz abort16
+   394                                  
+   395                                  
+   396 00000209 31C9                    xor cx,cx
+   397 0000020B 8EC1                    mov es,cx
+   398                                  
+   399                                  
+   400                                  
+   401 0000020D 66BA56455341            mov edx,'VESA'
+   402 00000213 266639160012            cmp [es:PMMSCAN_BASE+0x200],edx
+   403 00000219 0F8544FF                jnz abort16
+   404                                  
+   405 0000021D 268B360E12              mov si,[es:PMMSCAN_BASE+0x200+0x0E]	;video modes offset
+   406 00000222 268B0E1012              mov cx,[es:PMMSCAN_BASE+0x200+0x10]	;video modes segment
+   407                                  
+   408                                  
+   409                                  ;	WARNING DS changed
+   410 00000227 8ED9                    mov ds,cx
+   411                                  
+   412                                  
+   413                                  video_loop:
+   414 00000229 AD                      lodsw	;next mode
+   415 0000022A 89C1                    mov cx,ax
+   416 0000022C 89C3                    mov bx,ax
+   417 0000022E 40                      inc ax
+   418 0000022F 7473                    jz .end
+   419                                  
+   420                                  
+   421                                  
+   422 00000231 BF0010                  mov di,PMMSCAN_BASE
+   423                                  
+   424 00000234 B8014F                  mov ax,0x4F01
+   425 00000237 CD10                    int 0x10	;query video mode
+   426                                  
+   427 00000239 31D2                    xor dx,dx
+   428 0000023B 8EC2                    mov es,dx
+   429                                  
+   430 0000023D 3D4F00                  cmp ax,0x4F
+   431 00000240 7562                    jnz .end
+   432                                  
+   433                                  
+   434 00000242 26F606001080            test BYTE [es:PMMSCAN_BASE],0x80
+   435 00000248 74DF                    jz video_loop
+   436                                  
+   437                                  
+   438 0000024A 268B0E1210              mov cx,[es:PMMSCAN_BASE+0x12]
+   439 0000024F 81F92003                cmp cx,800
+   440 00000253 72D4                    jb video_loop
+   441                                  
+   442 00000255 268B161410              mov dx,[es:PMMSCAN_BASE+0x14]
+   443 0000025A 81FA5802                cmp dx,600
+   444 0000025E 72C9                    jb video_loop
+   445                                  
+   446                                  
+   447                                  
+   448                                  
+   449 00000260 263B0E340A              cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_width]
+   450 00000265 72C2                    jb video_loop
+   451 00000267 263B16360A              cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
+   452 0000026C 72BB                    jb video_loop
+   453                                  
+   454 0000026E 260FB6061910            movzx ax,BYTE [es:PMMSCAN_BASE+0x19]
+   455 00000274 263B06300A              cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
+   456 00000279 72AE                    jb video_loop
+   457                                  
+   458                                  
+   459                                  ;save current video mode
+   460                                  
+   461 0000027B BF300A                  mov di,SYSINFO_BASE+sysinfo.VBE_bpp
+   462                                  
+   463 0000027E AB                      stosw
+   464                                  
+   465 0000027F 93                      xchg ax,bx
+   466 00000280 AB                      stosw
+   467                                  
+   468 00000281 89C8                    mov ax,cx
+   469 00000283 AB                      stosw
+   470                                  
+   471 00000284 89D0                    mov ax,dx
+   472 00000286 AB                      stosw
+   473                                  
+   474 00000287 F7E1                    mul cx
+   475                                  
+   476 00000289 66C1E210                shl edx,16
+   477 0000028D C1EB03                  shr bx,3
+   478 00000290 89C2                    mov dx,ax
+   479                                  
+   480                                  
+   481                                  
+   482                                  
+   483                                  ;mov [es:VBE_width],ax
+   484                                  ;mov [es:VBE_height],dx
+   485                                  ;mov [es:VBE_bpp],bx
+   486                                  
+   487 00000292 2666A12810              mov eax,[es:PMMSCAN_BASE+0x28]
+   488 00000297 66AB                    stosd
+   489                                  
+   490 00000299 660FB7C3                movzx eax,bx
+   491 0000029D 66F7E2                  mul edx
+   492                                  
+   493                                  ;mov eax,[es:PMMSCAN_BASE+0x2C]
+   494 000002A0 66AB                    stosd
+   495                                  
+   496                                  
+   497 000002A2 EB85                    jmp video_loop
+   498                                  
+   499                                  .end:
+   500                                  
+   501 000002A4 0E                      push cs
+   502 000002A5 1F                      pop ds
+   503                                  
+   504 000002A6 BE[5800]                mov si,strvberr
+   505                                  
+   506 000002A9 268B1E320A              mov bx,[es:SYSINFO_BASE+sysinfo.VBE_mode]
+   507 000002AE 85DB                    test bx,bx
+   508 000002B0 0F84ADFE                jz abort16
+   509 000002B4 B8024F                  mov ax,0x4F02
+   510 000002B7 81CB0040                or bx,0x4000	;LFB enable
+   511 000002BB CD10                    int 0x10
+   512 000002BD 3D4F00                  cmp ax,0x4F
+   513 000002C0 0F859DFE                jnz abort16
+   514                                  
+   515                                  
+   516                                  
+   517 000002C4 6631DB                  xor ebx,ebx
+   518                                  
+   519                                  
+   520 000002C7 31C0                    xor ax,ax
+   521 000002C9 BF0010                  mov di,PMMSCAN_BASE
+   522 000002CC B90008                  mov cx,0x800
+   523 000002CF F3AB                    rep stosw		;clear memscan area
+   524                                  
+   525 000002D1 BE080A                  mov si,SYSINFO_BASE+sysinfo.PMM_avl_top
+   526 000002D4 BF0010                  mov di,PMMSCAN_BASE
+   527 000002D7 6689D9                  mov ecx,ebx
+   528 000002DA 66BA50414D53            mov edx,0x534D4150	;'SMAP'
+   529                                  
+   530                                  
+   531                                  ;	QWORD		base
+   532                                  ;	QWORD		length
+   533                                  ;	DWORD		type
+   534                                  ;	BYTE[4]		alignment
+   535                                  
+   536                                  memscan_loop:
+   537                                  ;mov edx,eax
+   538 000002E0 B91400                  mov cx,20
+   539 000002E3 66B820E80000            mov eax,0xE820
+   540 000002E9 CD15                    int 0x15			;BIOS memory detection
+   541 000002EB 720F                    jc .end
+   542                                  
+   543                                  ;get PMM_avl_top here
+   544                                  
+   545 000002ED 6689C2                  mov edx,eax
+   546                                  
+   547                                  
+   548 000002F0 E875FE                  call set_PMM_top
+   549                                  
+   550                                  
+   551 000002F3 81C71800                add di,24
+   552 000002F7 6685DB                  test ebx,ebx
+   553 000002FA 75E4                    jnz memscan_loop
+   554                                  
+   555                                  .end:
+   556                                  
+   557                                  ;align PMM_avl_top to 4K
+   558                                  
+   559 000002FC 26812400F0              and WORD [es:si],0xF000	;4K align
+   560                                  
+   561                                  
+   562                                  ;notify BIOS of long mode
+   563 00000301 B800EC                  mov ax,0xEC00
+   564 00000304 BB0200                  mov bx,2
+   565 00000307 CD15                    int 0x15
+   566                                  
+   567                                  ;A20 gate
+   568 00000309 BA9200                  mov dx,0x92
+   569 0000030C EC                      in al,dx
+   570 0000030D 0C02                    or al,2
+   571 0000030F EE                      out dx,al
+   572                                  
+   573                                  
+   574                                  AP_PE:
+   575                                  
+   576                                  
+   577 00000310 31C9                    xor cx,cx
+   578 00000312 B8[7000]                mov ax,gdt32_base
+   579 00000315 BA1F00                  mov dx,gdt32_len-1
+   580 00000318 51                      push cx
+   581 00000319 50                      push ax
+   582 0000031A 52                      push dx
+   583 0000031B 89E7                    mov di,sp
+   584 0000031D 360F0115                lgdt [ss:di]
+   585                                  
+   586                                  ;	sp+0	WORD length-1
+   587                                  ;	sp+2	DWORD linear base
+   588                                  
+   589                                  
+   590                                  ;pg cd nw AM WP NE ET ts em MP PE
+   591 00000321 66B833000500            mov eax,101_0000_0000_0011_0011_b
+   592 00000327 0F22C0                  mov cr0,eax
+   593                                  
+   594                                  
+   595 0000032A 66EA[47030000]0800      jmp DWORD 0x0008:pe_entry	;sys cs
+   596                                  
+   597 00000332 90<rept>                align 4
+   598                                  
+   599                                  [bits 32]
+   600                                  
+   601                                  abort:
+   602 00000334 F4                      hlt
+   603 00000335 EBFD                    jmp abort
+   604                                  
+   605                                  
+   606                                  zeromemory:		;edi target		ecx size align to DWORD
+   607 00000337 57                      push edi
+   608                                  
+   609 00000338 F6C103                  test cl,0011_b
+   610 0000033B 75F7                    jnz abort
+   611 0000033D 31C0                    xor eax,eax
+   612 0000033F C1E902                  shr ecx,2
+   613 00000342 FC                      cld
+   614 00000343 F3AB                    rep stosd
+   615                                  
+   616 00000345 5F                      pop edi
+   617 00000346 C3                      ret
+   618                                  
+   619                                  
+   620                                  pe_entry:
+   621                                  
+   622                                  ;reload all segments
+   623 00000347 66B81000                mov ax,0x10
+   624 0000034B 8ED8                    mov ds,ax
+   625 0000034D 8EC0                    mov es,ax
+   626 0000034F 8EE0                    mov fs,ax
+   627 00000351 8EE8                    mov gs,ax
+   628 00000353 8ED0                    mov ss,ax
+   629 00000355 BC00300000              mov esp,ISR_STK
+   630 0000035A 89E5                    mov ebp,esp		;stack frame
+   631                                  
+   632                                  
+   633                                  
+   634 0000035C 6802002000              push 10_0000_0000_0000_0000_0010_b
+   635 00000361 9D                      popfd
+   636                                  
+   637 00000362 B91B000000              mov ecx,IA32_APIC_BASE
+   638 00000367 0F32                    rdmsr
+   639                                  
+   640 00000369 0FBAE008                bt eax,8	;BSP
+   641 0000036D 0F8382020000            jnc near AP_LM
+   642                                  
+   643                                  
+   644                                  ;save ports
+   645 00000373 BE00040000              mov esi,0x0400
+   646 00000378 BF220A0000              mov edi,SYSINFO_BASE+sysinfo.port
+   647 0000037D B907000000              mov ecx,7
+   648 00000382 F366A5                  rep movsw
+   649                                  
+   650                                  ;check cpuid
+   651 00000385 9C                      pushfd
+   652 00000386 5A                      pop edx
+   653 00000387 F7C200002000            test edx,1<<21
+   654 0000038D 74A5                    jz abort
+   655                                  
+   656                                  
+   657                                  
+   658 0000038F 31C0                    xor eax,eax
+   659 00000391 0FA2                    cpuid
+   660                                  
+   661 00000393 3C01                    cmp al,1
+   662 00000395 729D                    jb abort
+   663                                  
+   664                                  
+   665 00000397 3C07                    cmp al,7
+   666 00000399 720F                    jb cpuid0_basic
+   667                                  
+   668 0000039B 31C9                    xor ecx,ecx
+   669 0000039D B807000000              mov eax,7
+   670 000003A2 0FA2                    cpuid
+   671                                  
+   672 000003A4 891D1C0A0000            mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMEP (SMAP INVPCID ?)
+   673                                  
+   674                                  cpuid0_basic:
+   675                                  
+   676 000003AA B801000000              mov eax,1
+   677 000003AF 0FA2                    cpuid
+   678                                  
+   679                                  ;bt edx,16	;PAT	?
+   680                                  ;jnc abort
+   681                                  
+   682 000003B1 0FBAE20F                bt edx,15	;cmovcc
+   683 000003B5 0F8379FFFFFF            jnc abort
+   684                                  
+   685 000003BB 0FBAE20D                bt edx,13	;PGE
+   686 000003BF 0F836FFFFFFF            jnc abort
+   687                                  
+   688 000003C5 0FBAE20B                bt edx,11	;SYSENTER
+   689 000003C9 0F8365FFFFFF            jnc abort
+   690                                  
+   691 000003CF 0FBAE209                bt edx,9	;APIC
+   692 000003D3 0F835BFFFFFF            jnc abort
+   693                                  
+   694 000003D9 0FBAE206                bt edx,6	;PAE
+   695 000003DD 0F8351FFFFFF            jnc abort
+   696                                  
+   697 000003E3 0FBAE205                bt edx,5	;MSR
+   698 000003E7 0F8347FFFFFF            jnc abort
+   699                                  
+   700                                  
+   701 000003ED B800000080              mov eax,0x80000000
+   702 000003F2 0FA2                    cpuid
+   703                                  
+   704 000003F4 3C01                    cmp al,1
+   705 000003F6 0F8238FFFFFF            jb abort
+   706                                  
+   707                                  
+   708 000003FC 3C08                    cmp al,8
+   709 000003FE 720D                    jb cpuid8_basic
+   710 00000400 B808000080              mov eax,0x80000008
+   711 00000405 0FA2                    cpuid
+   712                                  
+   713 00000407 66A3200A0000            mov [SYSINFO_BASE+sysinfo.bus],ax	;MAXPHYADDR
+   714                                  
+   715                                  
+   716                                  cpuid8_basic:
+   717                                  
+   718 0000040D B801000080              mov eax,0x80000001
+   719 00000412 0FA2                    cpuid
+   720                                  
+   721 00000414 0FBAE21D                bt edx,29	;long mode
+   722 00000418 0F8316FFFFFF            jnc abort
+   723                                  
+   724 0000041E 0FBAE214                bt edx,20	;NX
+   725 00000422 0F830CFFFFFF            jnc abort
+   726                                  
+   727                                  ;TODO  test all necessary functionalities
+   728                                  
+   729                                  
+   730                                  
+   731                                  
+   732                                  ;init GDT64
+   733 00000428 BF00080000              mov edi,GDT_BASE
+   734 0000042D B900010000              mov ecx,GDT_LIM
+   735 00000432 E800FFFFFF              call zeromemory
+   736                                  
+   737 00000437 BE[90000000]            mov esi,gdt64_base
+   738 0000043C BF08080000              mov edi,GDT_BASE+8
+   739 00000441 B910000000              mov ecx,gdt64_len/4
+   740 00000446 F3A5                    rep movsd
+   741                                  
+   742                                  ;init TSS
+   743 00000448 BF00090000              mov edi,TSS_BASE
+   744                                  
+   745 0000044D BE[D0000000]            mov esi,tss64_base
+   746 00000452 B91A000000              mov ecx,tss64_len/4
+   747 00000457 F3A5                    rep movsd
+   748                                  
+   749                                  
+   750                                  ;zeroing IDT
+   751 00000459 BF00040000              mov edi,IDT_BASE
+   752 0000045E B900040000              mov ecx,IDT_LIM
+   753 00000463 E8CFFEFFFF              call zeromemory
+   754                                  
+   755                                  
+   756                                  ;paging init
+   757                                  
+   758                                  
+   759 00000468 BF00300000              mov edi,PT_BASE
+   760 0000046D B900500000              mov ecx,PT_LEN
+   761 00000472 E8C0FEFFFF              call zeromemory
+   762                                  
+   763 00000477 BF00300000              mov edi,PL4T
+   764 0000047C 31C9                    xor ecx,ecx
+   765 0000047E BB00400000              mov ebx,PDPT0
+   766 00000483 BA03000000              mov edx,0x03
+   767 00000488 41                      inc ecx
+   768 00000489 E8C1010000              call map_page
+   769                                  
+   770 0000048E BF00380000              mov edi,PL4T+0x800
+   771 00000493 BB00500000              mov ebx,PDPT8
+   772 00000498 41                      inc ecx
+   773 00000499 E8B1010000              call map_page
+   774                                  
+   775                                  
+   776 0000049E BF00400000              mov edi,PDPT0
+   777 000004A3 BB00600000              mov ebx,PDT0
+   778 000004A8 41                      inc ecx
+   779 000004A9 E8A1010000              call map_page
+   780                                  
+   781                                  
+   782 000004AE BF00500000              mov edi,PDPT8
+   783 000004B3 BB00600000              mov ebx,PDT0
+   784 000004B8 41                      inc ecx
+   785 000004B9 E891010000              call map_page
+   786                                  
+   787                                  
+   788 000004BE BF00600000              mov edi,PDT0
+   789 000004C3 BB00700000              mov ebx,PT0
+   790 000004C8 41                      inc ecx
+   791 000004C9 E881010000              call map_page
+   792                                  
+   793                                  
+   794                                  
+   795                                  
+   796                                  
+   797                                  
+   798 000004CE BF00700000              mov edi,PT0
+   799 000004D3 31DB                    xor ebx,ebx
+   800 000004D5 BA03010080              mov edx,0x80000103
+   801 000004DA 41                      inc ecx
+   802 000004DB E86F010000              call map_page
+   803                                  
+   804 000004E0 BB00100000              mov ebx,0x1000
+   805 000004E5 BA1B010080              mov edx,0x8000011B	;CD WT
+   806 000004EA 41                      inc ecx
+   807 000004EB E85F010000              call map_page
+   808                                  
+   809                                  
+   810 000004F0 BB00200000              mov ebx,0x2000
+   811 000004F5 BA03010000              mov edx,0x103		;RWX
+   812 000004FA 41                      inc ecx
+   813 000004FB E84F010000              call map_page
+   814                                  
+   815 00000500 BB00300000              mov ebx,PT_BASE
+   816 00000505 BA1B010080              mov edx,0x8000011B	;CD WT
+   817                                  ;mov edx,0x80000103
+   818 0000050A B105                    mov cl,PT_LEN>>12
+   819 0000050C E83E010000              call map_page
+   820                                  
+   821                                  
+   822                                  ; up to 0x10000
+   823 00000511 BB00800000              mov ebx,PT_BASE+PT_LEN
+   824 00000516 BA03010080              mov edx,0x80000103
+   825 0000051B B108                    mov cl,0x10-((PT_BASE+PT_LEN)>>12)
+   826 0000051D E82D010000              call map_page
+   827                                  
+   828                                  
+   829                                  
+   830                                  PMMQMP_init:
+   831                                  
+   832                                  ;init PDT here
+   833                                  ;map PMMQMP to 0xFFFF8000_00200000
+   834                                  
+   835                                  ;mov edi,PDT0+8
+   836                                  ;mov ebx,PT_PMM
+   837                                  ;mov edx,0x80000003
+   838                                  ;inc ecx
+   839                                  ;call map_page
+   840                                  
+   841 00000522 A1080A0000              mov eax,[SYSINFO_BASE+sysinfo.PMM_avl_top]
+   842 00000527 8B0D0C0A0000            mov ecx,[SYSINFO_BASE+sysinfo.PMM_avl_top+4]
+   843 0000052D A9FFFF1F00              test eax,0x001FFFFF
+   844                                  ;test ecx,0x007FFFFF
+   845                                  
+   846 00000532 740B                    jz .nalign
+   847                                  
+   848 00000534 0500002000              add eax,0x00200000
+   849                                  ;add eax,0x00800000
+   850 00000539 81D100000000            adc ecx,0
+   851                                  .nalign:
+   852                                  
+   853 0000053F 0FACC815                shrd eax,ecx,21		; / 0x200 * 0x1000
+   854                                  ;shrd ecx,eax,23		;/0x800*0x1000
+   855                                  
+   856                                  ;ecx PMM page
+   857 00000543 A3180A0000              mov [SYSINFO_BASE+sysinfo.PMM_qmp_page],eax
+   858                                  
+   859                                  
+   860 00000548 BF00780000              mov edi,PT0+0x800
+   861 0000054D 85C9                    test ecx,ecx
+   862 0000054F BB00800000              mov ebx,PMMQMP_PBASE
+   863 00000554 BA1B010080              mov edx,0x8000011B
+   864 00000559 7406                    jz .page_set
+   865                                  
+   866 0000055B E8(31040000)            call BugCheck
+   867 00000560 CC                      int3
+   868                                  
+   869                                  .page_set:
+   870 00000561 41                      inc ecx
+   871 00000562 E8E8000000              call map_page
+   872                                  
+   873                                  
+   874 00000567 BF00800000              mov edi,PMMQMP_PBASE
+   875 0000056C B900100000              mov ecx,PAGE_SIZE
+   876 00000571 E8C1FDFFFF              call zeromemory
+   877                                  
+   878 00000576 BE00100000              mov esi,PMMSCAN_BASE
+   879 0000057B 31DB                    xor ebx,ebx		;addr
+   880                                  
+   881                                  
+   882                                  ; PMMSCAN* block;
+   883                                  ; qword* cur;
+   884                                  ; qword* limit;
+   885                                  
+   886                                  ; for(;block && cur<limit;++cur){
+   887                                  	; qword addr=get_addr(cur)
+   888                                  	; if (addr < block->base)
+   889                                  		; continue
+   890                                  	
+   891                                  	; if (addr+PAGE_SIZE-1 > block->base + block->len){
+   892                                  		; ++block;
+   893                                  		; continue
+   894                                  	; }
+   895                                  	; if (!block->avl)
+   896                                  		; continue
+   897                                  
+   898                                  	; *cur = avl
+   899                                  
+   900                                  ; }
+   901                                  
+   902                                  
+   903                                  .scan:
+   904 0000057D 81FF00900000            cmp edi,PMMQMP_PBASE+PAGE_SIZE
+   905 00000583 7358                    jae .end
+   906                                  
+   907 00000585 31D2                    xor edx,edx
+   908 00000587 8B06                    mov eax,[esi]	;base
+   909 00000589 3B5604                  cmp edx,[esi+4]
+   910                                  
+   911 0000058C 751A                    jnz .big
+   912                                  
+   913 0000058E 39C3                    cmp ebx,eax
+   914 00000590 721C                    jb .next
+   915                                  
+   916 00000592 3B560C                  cmp edx,[esi+0x0C]
+   917 00000595 89DA                    mov edx,ebx
+   918 00000597 750F                    jnz .big
+   919 00000599 034608                  add eax,[esi+8]	;len
+   920 0000059C 720A                    jc .big
+   921 0000059E 81C2FF0F0000            add edx,PAGE_SIZE-1
+   922 000005A4 39C2                    cmp edx,eax
+   923 000005A6 7614                    jbe .range
+   924                                  
+   925                                  .big:
+   926 000005A8 81C618000000            add esi,24
+   927                                  
+   928                                  .next:
+   929 000005AE 81C708000000            add edi,8
+   930 000005B4 81C300100000            add ebx,PAGE_SIZE
+   931 000005BA EBC1                    jmp .scan
+   932                                  
+   933                                  .range:
+   934                                  
+   935 000005BC 8B5610                  mov edx,[esi+0x10]	;status
+   936 000005BF 4A                      dec edx		;status
+   937 000005C0 7407                    jz .avl
+   938 000005C2 79EA                    jns .next	;.rev
+   939 000005C4 E914000000              jmp .end
+   940                                  
+   941                                  .avl:
+   942 000005C9 81C704000000            add edi,4
+   943 000005CF B800000080              mov eax,0x80000000
+   944 000005D4 81C300100000            add ebx,PAGE_SIZE
+   945 000005DA AB                      stosd
+   946 000005DB EBA0                    jmp .scan
+   947                                  
+   948                                  
+   949                                  .end:
+   950                                  
+   951                                  
+   952                                  ;set current state of PMM
+   953                                  
+   954 000005DD B910000000              mov ecx,0x10
+   955 000005E2 31D2                    xor edx,edx
+   956 000005E4 BF00800000              mov edi,PMMQMP_PBASE
+   957                                  
+   958                                  .cur_state:
+   959 000005E9 89D0                    mov eax,edx
+   960 000005EB 42                      inc edx
+   961 000005EC AB                      stosd
+   962 000005ED B808000000              mov eax,8
+   963 000005F2 AB                      stosd
+   964 000005F3 E2F4                    loop .cur_state
+   965                                  
+   966                                  
+   967                                  
+   968                                  
+   969                                  
+   970                                  AP_LM:
+   971                                  
+   972 000005F5 0F20E0                  mov eax,cr4
+   973 000005F8 0FBAE805                bts eax,5	;PAE
+   974 000005FC 0FBAE809                bts eax,9	;OSFXSR
+   975 00000600 0FBAE80A                bts eax,10	;OSXMMEXCPT
+   976 00000604 0F22E0                  mov cr4,eax
+   977                                  
+   978 00000607 B9800000C0              mov ecx,IA32_EFER
+   979 0000060C 0F32                    rdmsr
+   980 0000060E 660D0109                or ax,0000_1001_0000_0001_b		;NXE LME SCE
+   981 00000612 0F30                    wrmsr
+   982                                  
+   983                                  
+   984                                  
+   985 00000614 B800300000              mov eax,PL4T
+   986 00000619 0F22D8                  mov cr3,eax
+   987                                  
+   988                                  ;enable PG
+   989 0000061C 0F20C0                  mov eax,cr0
+   990 0000061F 0FBAE81F                bts eax,31
+   991 00000623 0F22C0                  mov cr0,eax
+   992                                  
+   993                                  
+   994                                  ;test LMA
+   995                                  
+   996 00000626 B9800000C0              mov ecx,IA32_EFER
+   997 0000062B 0F32                    rdmsr
+   998 0000062D 0FBAE00A                bt eax,10
+   999 00000631 0F83FDFCFFFF            jnc abort
+  1000                                  
+  1001                                  
+  1002                                  ;load GDTR and jmp to 64-bit mode
+  1003                                  ;xor eax,eax
+  1004                                  
+  1005                                  ;mov eax,0xFFFF8000
+  1006 00000637 BA00080000              mov edx,GDT_BASE
+  1007 0000063C B90000FF00              mov ecx,(GDT_LIM-1)<<16
+  1008                                  ;push eax
+  1009 00000641 52                      push edx
+  1010 00000642 51                      push ecx
+  1011 00000643 0F01542402              lgdt [esp+2]
+  1012                                  
+  1013                                  
+  1014 00000648 EA[70060000]0800        jmp DWORD GDT_SYS_CS:LM_entry
+  1015                                  
+  1016                                  
+  1017                                  map_page:	;edi PT		ebx PMM		ecx cnt		edx attrib
+  1018                                  
+  1019 0000064F 89D8                    mov eax,ebx
+  1020 00000651 31DB                    xor ebx,ebx
+  1021 00000653 6609D0                  or ax,dx
+  1022                                  ;mov al,dl
+  1023                                  
+  1024 00000656 0FBAE21F                bt edx,31
+  1025 0000065A D1DB                    rcr ebx,1
+  1026                                  
+  1027                                  .st:
+  1028                                  
+  1029 0000065C AB                      stosd
+  1030 0000065D 0500100000              add eax,0x1000
+  1031 00000662 891F                    mov [edi],ebx
+  1032 00000664 81C704000000            add edi,4
+  1033                                  
+  1034 0000066A E2F0                    loop .st
+  1035                                  
+  1036 0000066C C3                      ret
+  1037                                  
+  1038                                  
+  1039                                  [bits 64]
+  1040                                  
+  1041                                  PMMQMP_VBASE equ HIGHADDR+0x00100000
+  1042                                  KRNL_VBASE equ HIGHADDR+0x02000000
+  1043                                  
+  1044                                  TMP_PT_VBASE equ HIGHADDR+0x10000
+  1045                                  CMN_BUF_VBASE equ HIGHADDR+0x11000
+  1046                                  PT_MAP_PT equ PT0+8*0x10
+  1047                                  BUF_MAP_PT equ PT0+8*0x11
+  1048                                  
+  1049                                  KRNL_STK_GUARD equ KRNL_VBASE-0x1000
+  1050                                  KRNL_STK_TOP equ KRNL_STK_GUARD
+  1051                                  
+  1052                                  
+  1053                                  
+  1054                                  
+  1055                                  ;	virtual address of HIGHADDR
+  1056                                  ;	00000000	00010000	lowPMM
+  1057                                  ;	00010000	0001C000	VMG info
+  1058                                  ;	00010000	00011000	TMP_PT
+  1059                                  ;	00011000	?			CMN_BUF
+  1060                                  ;	00100000	?			PMMQMP
+  1061                                  ;	?			02000000	krnlstk for all MPs
+  1062                                  ;	02000000	?			KERNEL
+  1063                                  ;-------------------------------	20000000	40000000	PDTmap
+  1064                                  
+  1065                                  
+  1066                                  
+  1067                                  struc peinfo
+  1068 00000000 <res 00000008>          .headerpmm	resq 1
+  1069 00000008 <res 00000008>          .vbase		resq 1
+  1070 00000010 <res 00000004>          .entry		resd 1
+  1071 00000014 <res 00000002>          .section	resw 1
+  1072 00000016 <res 00000002>          .sec_attrib	resw 1
+  1073 00000018 <res 00000004>          .sec_size	resd 1
+  1074 0000001C <res 00000004>          .sec_off	resd 1
+  1075                                  endstruc
+  1076                                  
+  1077                                  
+  1078                                  
+  1079 0000066D 90<rept>                align 16
+  1080                                  
+  1081                                  LM_entry:
+  1082                                  
+  1083                                  ;reload GDT to HIGHADDR
+  1084 00000670 48BA000800000080FF-     mov rdx,HIGHADDR+GDT_BASE
+  1085 00000679 FF                 
+  1086 0000067A 48B9000000000000FF-     mov rcx,(GDT_LIM-1)<<(16+32)
+  1087 00000683 00                 
+  1088                                  
+  1089 00000684 52                      push rdx
+  1090 00000685 51                      push rcx
+  1091                                  
+  1092 00000686 0F01542406              lgdt [rsp+6]
+  1093                                  
+  1094                                  
+  1095                                  
+  1096 0000068B 66B81000                mov ax,GDT_SYS_DS
+  1097 0000068F 8ED8                    mov ds,ax
+  1098 00000691 8EC0                    mov es,ax
+  1099 00000693 8EE0                    mov fs,ax
+  1100 00000695 8EE8                    mov gs,ax
+  1101 00000697 8ED0                    mov ss,ax
+  1102 00000699 48BC003000000080FF-     mov rsp,HIGHADDR+ISR_STK
+  1103 000006A2 FF                 
+  1104                                  ;mov rbp,rsp
+  1105                                  
+  1106 000006A3 B908000000              mov ecx,8
+  1107 000006A8 B8[B3060000]            mov eax,.cs_reload
+  1108 000006AD 51                      push rcx
+  1109 000006AE 50                      push rax
+  1110                                  
+  1111 000006AF 48FF1424                call qword [rsp]
+  1112                                  
+  1113                                  
+  1114                                  ; mov rax,.cs_reload
+  1115                                  ; push rcx
+  1116                                  ; push rax
+  1117                                  ; db 0x48
+  1118                                  ; retf
+  1119                                  
+  1120                                  .cs_reload:
+  1121                                  
+  1122 000006B3 48BA-                   mov rdx,LM_high
+  1123 000006B5 [1000000000000000] 
+  1124 000006BD 48BC003000000080FF-     mov rsp,HIGHADDR+ISR_STK
+  1125 000006C6 FF                 
+  1126 000006C7 48FFE2                  jmp rdx
+  1127                                  
+  1128 000006CA 90<rept>                align 4
+  1129                                  
+  1130                                  CODE64OFF equ ($-$$)
+  1131                                  
+  1132                                  section codehigh vstart=0xFFFF8000_00002000+CODE64OFF
+  1133                                  
+  1134                                  
+  1135                                  TR_selector:
+  1136 00000000 3800                    dw GDT_TSS
+  1137                                  
+  1138 00000002 90<rept>                align 4
+  1139                                  
+  1140 00000004 434F46554F53202053-     strkrnl db 'COFUOS',0x20,0x20,'SYS',0
+  1141 0000000D 595300             
+  1142                                  
+  1143                                  align 8
+  1144                                  
+  1145                                  LM_high:
+  1146                                  
+  1147 00000010 48BA-                   mov rdx,TR_selector
+  1148 00000012 [0000000000000000] 
+  1149 0000001A 0F001A                  ltr [rdx]
+  1150                                  
+  1151                                  
+  1152                                  ;unmap lowaddr
+  1153                                  ;mov rdi,HIGHADDR+PDPT0
+  1154                                  ;xor rax,rax
+  1155                                  ;stosq
+  1156                                  
+  1157                                  ;ebable PGE SMEP disable WRGSBASE
+  1158                                  
+  1159                                  ;mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.cpu
+  1160 0000001D 418B44241C              mov eax,[r12+sysinfo.cpu]
+  1161 00000022 0F20E2                  mov rdx,cr4
+  1162                                  ;lodsd
+  1163 00000025 0FBAE007                bt eax,7
+  1164 00000029 7305                    jnc .nosmep
+  1165 0000002B 480FBAEA14              bts rdx,20	;SMEP
+  1166                                  
+  1167                                  .nosmep:
+  1168 00000030 480FBAEA07              bts rdx,7	;PGE
+  1169 00000035 480FBAF210              btr rdx,16	;FSGSBASE
+  1170                                  
+  1171 0000003A 0F22E2                  mov cr4,rdx
+  1172                                  
+  1173                                  ;no need to reload CR3 since setting PGE flushs TLB
+  1174                                  ;mov rdx,cr3
+  1175                                  ;mov cr3,rdx
+  1176                                  
+  1177 0000003D 49BC000A00000080FF-     mov r12,HIGHADDR+SYSINFO_BASE
+  1178 00000046 FF                 
+  1179                                  
+  1180                                  
+  1181 00000047 B91B000000              mov ecx,IA32_APIC_BASE
+  1182 0000004C 0F32                    rdmsr
+  1183                                  
+  1184 0000004E 0FBAE008                bt eax,8	;BSP
+  1185 00000052 7225                    jc .BSP
+  1186                                  
+  1187                                  
+  1188                                  
+  1189                                  
+  1190 00000054 418B4C2458              mov ecx,[r12+sysinfo.AP_entry]
+  1191 00000059 498B542450              mov rdx,[r12+sysinfo.krnlbase]
+  1192 0000005E 4889E5                  mov rbp,rsp
+  1193 00000061 4801CA                  add rdx,rcx
+  1194 00000064 4881EC20000000          sub rsp,0x20
+  1195 0000006B 490FB74C245C            movzx rcx,WORD [r12+sysinfo.MP_cnt]
+  1196 00000071 48FFD2                  call rdx
+  1197                                  
+  1198 00000074 E9B8030000              jmp BugCheck
+  1199                                  
+  1200                                  
+  1201                                  .BSP:
+  1202                                  
+  1203                                  
+  1204                                  
+  1205                                  ;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_qmp_vbase
+  1206 00000079 48B8000010000080FF-     mov rax,PMMQMP_VBASE
+  1207 00000082 FF                 
+  1208 00000083 4989442410              mov [r12+sysinfo.PMM_qmp_vbase],rax
+  1209                                  
+  1210                                  ;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+  1211 00000088 66418B44244C            mov ax,[r12+sysinfo.FAT_cluster]
+  1212 0000008E 663D0800                cmp ax,8
+  1213 00000092 7606                    jbe .unmap_low
+  1214                                  
+  1215 00000094 E898030000              call BugCheck
+  1216 00000099 CC                      int3
+  1217                                  .unmap_low:
+  1218                                  
+  1219                                  
+  1220                                  
+  1221                                  
+  1222                                  
+  1223 0000009A 4889E5                  mov rbp,rsp
+  1224 0000009D 4881EC20000000          sub rsp,0x20
+  1225                                  
+  1226 000000A4 48BE001001000080FF-     mov rsi,CMN_BUF_VBASE
+  1227 000000AD FF                 
+  1228 000000AE 4889F1                  mov rcx,rsi		;VA		;re-mapped to module_base
+  1229 000000B1 E860040000              call PmmAlloc
+  1230 000000B6 4889C2                  mov rdx,rax
+  1231 000000B9 4889F1                  mov rcx,rsi
+  1232 000000BC 49B803000000000000-     mov r8,0x80000000_00000003
+  1233 000000C5 80                 
+  1234                                  ;mov r12,rax		;r12 PMM
+  1235 000000C6 48890424                mov [rsp+peinfo.headerpmm],rax
+  1236 000000CA E89C040000              call MapPage
+  1237                                  
+  1238                                  find_krnl:
+  1239                                  ;xor rdx,rdx
+  1240 000000CF 4D31C0                  xor r8,r8
+  1241 000000D2 4889F1                  mov rcx,rsi
+  1242 000000D5 418B542448              mov edx,[r12+sysinfo.FAT_data]
+  1243 000000DA 49FFC0                  inc r8
+  1244 000000DD E85A030000              call ReadSector
+  1245                                  
+  1246 000000E2 48BB00020000000000-     mov rbx,SECTOR_SIZE
+  1247 000000EB 00                 
+  1248 000000EC 4831C9                  xor rcx,rcx
+  1249 000000EF 4801F3                  add rbx,rsi
+  1250                                  ;xor rax,rax
+  1251                                  
+  1252 000000F2 E911000000              jmp .findfile
+  1253                                  
+  1254                                  .fail:
+  1255 000000F7 E835030000              call BugCheck
+  1256 000000FC CC                      int3
+  1257                                  
+  1258                                  .next:
+  1259 000000FD 4881C620000000          add rsi,0x20
+  1260 00000104 4080E6E0                and sil,(~ 0x1F)
+  1261                                  
+  1262                                  .findfile:
+  1263                                  
+  1264 00000108 4839DE                  cmp rsi,rbx
+  1265 0000010B 73EA                    jae .fail
+  1266                                  
+  1267 0000010D 803E00                  cmp BYTE [rsi],0
+  1268 00000110 74E5                    jz .fail
+  1269                                  
+  1270 00000112 48BF-                   mov rdi,strkrnl
+  1271 00000114 [0400000000000000] 
+  1272 0000011C B10B                    mov cl,11
+  1273                                  
+  1274                                  .name:
+  1275 0000011E AC                      lodsb
+  1276 0000011F 3207                    xor al,[rdi]
+  1277 00000121 A8DF                    test al,(~ 0x20)
+  1278 00000123 75D8                    jnz .next
+  1279 00000125 48FFC7                  inc rdi
+  1280 00000128 E2F4                    loop .name
+  1281                                  
+  1282 0000012A AC                      lodsb
+  1283 0000012B A810                    test al,0x10
+  1284 0000012D 75C8                    jnz .fail
+  1285                                  
+  1286 0000012F 4881C608000000          add rsi,8
+  1287 00000136 66AD                    lodsw
+  1288 00000138 C1E010                  shl eax,16
+  1289 0000013B 4881C604000000          add rsi,4
+  1290 00000142 66AD                    lodsw
+  1291                                  
+  1292                                  ;rax firstcluster
+  1293                                  
+  1294 00000144 4885C0                  test rax,rax
+  1295 00000147 74AE                    jz .fail
+  1296                                  
+  1297 00000149 3DF8FFFF0F              cmp eax,0x0FFFFFF8
+  1298 0000014E 73A7                    jae .fail
+  1299                                  
+  1300 00000150 498D7C2450              lea rdi,[r12+sysinfo.PE_filekrnl]
+  1301                                  ;mov rdi,HIGHADDR+SYSINFO_BASE+sysinfo.PE_filekrnl
+  1302 00000155 48BE001001000080FF-     mov rsi,CMN_BUF_VBASE
+  1303 0000015E FF                 
+  1304                                  
+  1305                                  .load_cluster:
+  1306                                  
+  1307 0000015F 4831D2                  xor rdx,rdx
+  1308 00000162 B980000000              mov ecx,128
+  1309 00000167 AB                      stosd
+  1310 00000168 4D31C0                  xor r8,r8
+  1311 0000016B F7F1                    div ecx
+  1312                                  ;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
+  1313 0000016D 4889D3                  mov rbx,rdx		;remainder
+  1314 00000170 4889F1                  mov rcx,rsi
+  1315 00000173 4889C2                  mov rdx,rax
+  1316 00000176 49FFC0                  inc r8
+  1317 00000179 4103542444              add edx,[r12+sysinfo.FAT_table]
+  1318                                  
+  1319 0000017E E8B9020000              call ReadSector
+  1320                                  
+  1321 00000183 8B049E                  mov eax,[rsi+4*rbx]
+  1322                                  
+  1323 00000186 85C0                    test eax,eax
+  1324 00000188 0F8469FFFFFF            jz .fail
+  1325                                  
+  1326 0000018E 3DF8FFFF0F              cmp eax,0x0FFFFFF8
+  1327 00000193 72CA                    jb .load_cluster
+  1328                                  
+  1329                                  
+  1330                                  
+  1331 00000195 4889F1                  mov rcx,rsi
+  1332 00000198 4831D2                  xor rdx,rdx
+  1333 0000019B 4889F7                  mov rdi,rsi
+  1334 0000019E 49B800020000000000-     mov r8,SECTOR_SIZE
+  1335 000001A7 00                 
+  1336 000001A8 E8F2020000              call ReadFile
+  1337 000001AD 4801C7                  add rdi,rax
+  1338                                  
+  1339                                  
+  1340                                  ;verify PE header
+  1341 000001B0 668B06                  mov ax,[rsi]
+  1342                                  ;xor rdx,rdx
+  1343 000001B3 663D4D5A                cmp ax,'MZ'
+  1344 000001B7 0F853AFFFFFF            jnz .fail
+  1345                                  
+  1346 000001BD 8B563C                  mov edx,[rsi+0x3C]
+  1347 000001C0 4801D6                  add rsi,rdx
+  1348                                  
+  1349 000001C3 AD                      lodsd
+  1350 000001C4 3D50450000              cmp eax,'PE'
+  1351 000001C9 0F8528FFFFFF            jnz .fail
+  1352                                  
+  1353 000001CF 66AD                    lodsw	;machine
+  1354 000001D1 663D6486                cmp ax,0x8664
+  1355 000001D5 0F851CFFFFFF            jnz near .fail
+  1356                                  
+  1357 000001DB 66AD                    lodsw	;section count
+  1358 000001DD 4881C60C000000          add rsi,0x0C
+  1359 000001E4 6685C0                  test ax,ax
+  1360 000001E7 6689442414              mov [rsp+peinfo.section],ax
+  1361 000001EC 0F8405FFFFFF            jz .fail
+  1362                                  
+  1363 000001F2 66AD                    lodsw	;opt header size
+  1364 000001F4 663DF000                cmp ax,0xF0
+  1365 000001F8 0F85F9FEFFFF            jnz .fail
+  1366 000001FE 66AD                    lodsw	;Characteristics
+  1367 00000200 660FBAE001              bt ax,1		;executable
+  1368 00000205 0F83ECFEFFFF            jnc .fail
+  1369                                  
+  1370                                  ;SYSTEM flag may be deprecated
+  1371                                  
+  1372                                  ;bt ax,12	;SYSTEM
+  1373                                  ;nc near .fail
+  1374                                  
+  1375 0000020B AD                      lodsd
+  1376 0000020C 4881C60C000000          add rsi,0x0C
+  1377 00000213 663D0B02                cmp ax,0x20B
+  1378 00000217 0F85DAFEFFFF            jnz .fail
+  1379                                  
+  1380 0000021D AD                      lodsd	;entrypoint RVA
+  1381 0000021E 89442410                mov [rsp+peinfo.entry],eax
+  1382                                  
+  1383 00000222 AD                      lodsd
+  1384 00000223 48AD                    lodsq	;vbase
+  1385 00000225 4889442408              mov [rsp+peinfo.vbase],rax
+  1386                                  
+  1387 0000022A AD                      lodsd	;section alignment
+  1388 0000022B 4881C618000000          add rsi,0x18
+  1389 00000232 A9FF0F0000              test eax,(PAGE_SIZE-1)
+  1390 00000237 0F85BAFEFFFF            jnz .fail
+  1391                                  ;lodsd	;file alignment
+  1392                                  ;add rsi,0x14
+  1393                                  ;mov [rsp+peinfo.filealign],ax	;needed ?
+  1394                                  
+  1395                                  ;xor rbx,rbx
+  1396                                  
+  1397 0000023D AD                      lodsd	;header size
+  1398                                  ;xor r8,r8
+  1399 0000023E 4839FE                  cmp rsi,rdi
+  1400 00000241 0F83B0FEFFFF            jae .fail
+  1401                                  
+  1402 00000247 2D00020000              sub eax,SECTOR_SIZE
+  1403                                  ;mov rdx,r8
+  1404 0000024C 7613                    jbe .smallheader
+  1405                                  
+  1406 0000024E 4889F9                  mov rcx,rdi
+  1407 00000251 BA00020000              mov edx,SECTOR_SIZE
+  1408 00000256 4189C0                  mov r8d,eax
+  1409 00000259 E841020000              call ReadFile
+  1410 0000025E 4801C7                  add rdi,rax
+  1411                                  
+  1412                                  .smallheader:
+  1413                                  
+  1414                                  
+  1415 00000261 AD                      lodsd
+  1416 00000262 AD                      lodsd	;(DLLCharacteristics<<16) | Subsystem
+  1417 00000263 0FBAE018                bt eax,24	;DEP
+  1418 00000267 0F838AFEFFFF            jnc .fail
+  1419                                  
+  1420                                  
+  1421                                  ;map vbase and stack
+  1422                                  ;rbx cluster size
+  1423                                  
+  1424 0000026D AD                      lodsd	;stkrev
+  1425                                  
+  1426 0000026E 3D00001000              cmp eax,0x100000	;1M
+  1427 00000273 89C2                    mov edx,eax
+  1428 00000275 0F877CFEFFFF            ja .fail
+  1429                                  
+  1430 0000027B AD                      lodsd	;stkrev high
+  1431 0000027C 85C0                    test eax,eax
+  1432 0000027E 0F8573FEFFFF            jnz .fail
+  1433                                  
+  1434 00000284 AD                      lodsd	;stkcmt
+  1435 00000285 39D0                    cmp eax,edx
+  1436 00000287 48BF00F0FF010080FF-     mov rdi,KRNL_STK_TOP
+  1437 00000290 FF                 
+  1438 00000291 0F8760FEFFFF            ja .fail
+  1439 00000297 89C3                    mov ebx,eax
+  1440                                  
+  1441 00000299 AD                      lodsd	;stkcmt high
+  1442                                  
+  1443 0000029A C1EB0C                  shr ebx,12	;rbx commit page count
+  1444 0000029D 85C0                    test eax,eax
+  1445 0000029F 0F8552FEFFFF            jnz .fail
+  1446                                  
+  1447 000002A5 81FB10000000            cmp ebx,0x10	;16 pages
+  1448 000002AB 0F8746FEFFFF            ja .fail
+  1449                                  
+  1450                                  
+  1451                                  ;no heap support
+  1452 000002B1 48AD                    lodsq
+  1453 000002B3 4885C0                  test rax,rax
+  1454 000002B6 0F853BFEFFFF            jnz .fail
+  1455 000002BC 48AD                    lodsq
+  1456 000002BE 4885C0                  test rax,rax
+  1457 000002C1 0F8530FEFFFF            jnz .fail
+  1458                                  
+  1459 000002C7 AD                      lodsd
+  1460 000002C8 AD                      lodsd	;datadir cnt
+  1461                                  
+  1462 000002C9 C1E003                  shl eax,3
+  1463 000002CC 4801C6                  add rsi,rax		;skip datadir
+  1464                                  
+  1465 000002CF 4889FD                  mov rbp,rdi
+  1466                                  
+  1467                                  .makestk:
+  1468                                  
+  1469                                  
+  1470 000002D2 4881EF00100000          sub rdi,PAGE_SIZE
+  1471 000002D9 4889F9                  mov rcx,rdi
+  1472 000002DC E835020000              call PmmAlloc
+  1473 000002E1 49B803000000000000-     mov r8,0x80000000_00000003
+  1474 000002EA 80                 
+  1475 000002EB 4889C2                  mov rdx,rax
+  1476 000002EE 4889F9                  mov rcx,rdi
+  1477 000002F1 E875020000              call MapPage
+  1478                                  
+  1479 000002F6 FFCB                    dec ebx
+  1480 000002F8 75D8                    jnz .makestk
+  1481                                  
+  1482                                  ;change rsp just before jmp to krnl
+  1483                                  
+  1484                                  
+  1485                                  ;map header to vbase and refresh QMP's record
+  1486                                  
+  1487 000002FA 488B4C2408              mov rcx,[rsp+peinfo.vbase]
+  1488 000002FF 488B1424                mov rdx,[rsp+peinfo.headerpmm]
+  1489                                  
+  1490 00000303 48B8FFFFFFFF0F0000-     mov rax,0x000F_FFFF_FFFF
+  1491 0000030C 00                 
+  1492 0000030D 4989C9                  mov r9,rcx
+  1493 00000310 4989D2                  mov r10,rdx
+  1494 00000313 49C1E90C                shr r9,12	;VA index
+  1495 00000317 4D8B442410              mov r8,[r12+sysinfo.PMM_qmp_vbase]
+  1496 0000031C 4C21C8                  and rax,r9
+  1497 0000031F 49C1EA0C                shr r10,12	;PMM index
+  1498 00000323 4B8704D0                xchg [r8+8*r10],rax
+  1499 00000327 480FBAE023              bt rax,35
+  1500 0000032C 0F83C5FDFFFF            jnc .fail
+  1501                                  
+  1502 00000332 49B801000000000000-     mov r8,0x80000000_00000001
+  1503 0000033B 80                 
+  1504 0000033C E82A020000              call MapPage
+  1505                                  
+  1506                                  
+  1507                                  
+  1508                                  
+  1509                                  ;process sections
+  1510                                  
+  1511                                  .section:
+  1512                                  
+  1513 00000341 48AD                    lodsq	;name
+  1514 00000343 AD                      lodsd	;originsize
+  1515                                  ;xor rax,rax
+  1516 00000344 488B7C2408              mov rdi,[rsp+peinfo.vbase]
+  1517 00000349 89442418                mov [rsp+peinfo.sec_size],eax
+  1518 0000034D 89C1                    mov ecx,eax		;originsize
+  1519                                  
+  1520 0000034F AD                      lodsd	;RVA
+  1521 00000350 4801C7                  add rdi,rax		;section vbase
+  1522                                  
+  1523 00000353 AD                      lodsd	;size
+  1524 00000354 85C0                    test eax,eax
+  1525 00000356 89442418                mov [rsp+peinfo.sec_size],eax	;size in file
+  1526 0000035A 0F45C8                  cmovnz ecx,eax
+  1527                                  
+  1528                                  
+  1529                                  
+  1530                                  
+  1531 0000035D 66F7C1FF0F              test cx,(PAGE_SIZE-1)
+  1532 00000362 7406                    jz .section_aligned
+  1533                                  
+  1534 00000364 81C100100000            add ecx,PAGE_SIZE
+  1535                                  
+  1536                                  .section_aligned:
+  1537 0000036A 89CB                    mov ebx,ecx		;size in memory
+  1538                                  
+  1539 0000036C AD                      lodsd	;offset
+  1540 0000036D 4881C60C000000          add rsi,0x0C
+  1541                                  ;or ebx,eax		;rbx	( size<<32 ) | offset
+  1542 00000374 8944241C                mov [rsp+peinfo.sec_off],eax
+  1543                                  
+  1544 00000378 AD                      lodsd	;attrib
+  1545 00000379 C1E810                  shr eax,16
+  1546 0000037C 0FBAE009                bt eax,9	;discard
+  1547 00000380 7275                    jc .section_discard
+  1548 00000382 6689442416              mov [rsp+peinfo.sec_attrib],ax
+  1549                                  
+  1550 00000387 49B803000000000000-     mov r8,0x80000000_00000003
+  1551 00000390 80                 
+  1552 00000391 C1EB0C                  shr ebx,12		;page count
+  1553 00000394 4889F9                  mov rcx,rdi		;vbase
+  1554 00000397 4889DA                  mov rdx,rbx
+  1555 0000039A E8B4020000              call VirtualAlloc
+  1556                                  
+  1557                                  
+  1558                                  
+  1559 0000039F 448B442418              mov r8d,[rsp+peinfo.sec_size]	;size
+  1560 000003A4 8B54241C                mov edx,[rsp+peinfo.sec_off]	;offset
+  1561 000003A8 4585C0                  test r8d,r8d
+  1562 000003AB 4889F9                  mov rcx,rdi		;dst
+  1563 000003AE 7405                    jz .nofile
+  1564 000003B0 E8EA000000              call ReadFile
+  1565                                  
+  1566                                  .nofile:
+  1567                                  
+  1568 000003B5 895C2418                mov [rsp+peinfo.sec_size],ebx	;pagecount
+  1569 000003B9 668B542416              mov dx,WORD [rsp+peinfo.sec_attrib]
+  1570 000003BE 4831DB                  xor rbx,rbx
+  1571                                  
+  1572 000003C1 660FBAE20D              bt dx,13	;X
+  1573 000003C6 7205                    jc .attrib_X
+  1574 000003C8 480FBAEB3F              bts rbx,63
+  1575                                  
+  1576                                  .attrib_X:
+  1577                                  
+  1578 000003CD 660FBAE20F              bt dx,15	;W
+  1579                                  
+  1580 000003D2 7305                    jnc .attrib_W
+  1581 000003D4 480FBAEB01              bts rbx,1
+  1582                                  
+  1583                                  .attrib_W:
+  1584                                  
+  1585 000003D9 48FFC3                  inc rbx
+  1586                                  
+  1587                                  .section_attrib:
+  1588 000003DC 4889F9                  mov rcx,rdi
+  1589 000003DF 4831D2                  xor rdx,rdx
+  1590 000003E2 4989D8                  mov r8,rbx
+  1591 000003E5 E881010000              call MapPage
+  1592                                  
+  1593                                  
+  1594 000003EA 4881C700100000          add rdi,PAGE_SIZE
+  1595 000003F1 FF4C2418                dec DWORD [rsp+peinfo.sec_size]
+  1596 000003F5 75E5                    jnz .section_attrib
+  1597                                  
+  1598                                  .section_discard:
+  1599                                  
+  1600 000003F7 66FF4C2414              dec WORD [rsp+peinfo.section]
+  1601 000003FC 0F853FFFFFFF            jnz .section
+  1602                                  
+  1603                                  
+  1604                                  ;unmap CMN_BUF
+  1605 00000402 48B9001001000080FF-     mov rcx,CMN_BUF_VBASE
+  1606 0000040B FF                 
+  1607 0000040C 4831D2                  xor rdx,rdx
+  1608 0000040F 4D31C0                  xor r8,r8
+  1609 00000412 E854010000              call MapPage
+  1610                                  
+  1611                                  ;xor rdx,rdx
+  1612 00000417 488B4C2408              mov rcx,[rsp+peinfo.vbase]
+  1613 0000041C 8B542410                mov edx,[rsp+peinfo.entry]
+  1614 00000420 4889EC                  mov rsp,rbp
+  1615 00000423 4801CA                  add rdx,rcx
+  1616 00000426 4881EC20000000          sub rsp,0x20
+  1617                                  
+  1618                                  
+  1619 0000042D 48FFD2                  call rdx	;rcx module base
+  1620                                  
+  1621 00000430 90                      nop
+  1622                                  
+  1623                                  BugCheck:
+  1624 00000431 66BA9200                mov dx,0x92
+  1625 00000435 EC                      in al,dx
+  1626 00000436 0C01                    or al,1
+  1627 00000438 EE                      out dx,al
+  1628 00000439 F4                      hlt
+  1629 0000043A EBF5                    jmp BugCheck
+  1630                                  
+  1631                                  
+  1632                                  ;ReadSector dst,LBA,cnt
+  1633                                  ;TODO get ports from PCI
+  1634                                  ReadSector:
+  1635                                  
+  1636 0000043C 57                      push rdi
+  1637                                  
+  1638                                  
+  1639 0000043D 4989D1                  mov r9,rdx		;LBA
+  1640 00000440 4C89C0                  mov rax,r8		;cnt
+  1641 00000443 4889CF                  mov rdi,rcx		;dst
+  1642                                  
+  1643 00000446 66BAF201                mov dx,0x1F2
+  1644 0000044A EE                      out dx,al
+  1645                                  
+  1646 0000044B 4C89C8                  mov rax,r9
+  1647 0000044E 66FFC2                  inc dx
+  1648 00000451 EE                      out dx,al		;0x1F3
+  1649                                  
+  1650 00000452 C1E808                  shr eax,8
+  1651 00000455 66FFC2                  inc dx
+  1652 00000458 EE                      out dx,al		;0x1F4
+  1653                                  
+  1654 00000459 C1E808                  shr eax,8
+  1655 0000045C 66FFC2                  inc dx
+  1656 0000045F EE                      out dx,al		;0x1F5
+  1657                                  
+  1658 00000460 C1E808                  shr eax,8
+  1659 00000463 66FFC2                  inc dx
+  1660 00000466 0FBAF004                btr eax,4
+  1661 0000046A 0CE0                    or al,0xE0
+  1662 0000046C EE                      out dx,al		;0x1F6
+  1663                                  
+  1664 0000046D B020                    mov al,0x20
+  1665 0000046F 66FFC2                  inc dx
+  1666 00000472 EE                      out dx,al		;0x1F7
+  1667                                  
+  1668 00000473 31C9                    xor ecx,ecx
+  1669                                  .wait:
+  1670                                  
+  1671 00000475 FFC1                    inc ecx
+  1672 00000477 7420                    jz .fail
+  1673                                  
+  1674 00000479 F390                    pause
+  1675                                  
+  1676 0000047B EC                      in al,dx
+  1677 0000047C A880                    test al,0x80
+  1678 0000047E 75F5                    jnz .wait
+  1679 00000480 A821                    test al,0010_0001_b
+  1680 00000482 7515                    jnz .fail
+  1681 00000484 A808                    test al,8
+  1682 00000486 74ED                    jz .wait
+  1683                                  
+  1684 00000488 490FB6C8                movzx rcx,r8b
+  1685 0000048C 66BAF001                mov dx,0x1F0
+  1686 00000490 48C1E108                shl rcx,8		;*256
+  1687 00000494 F3666D                  rep insw
+  1688                                  
+  1689 00000497 5F                      pop rdi
+  1690                                  
+  1691 00000498 C3                      ret
+  1692                                  
+  1693                                  .fail:
+  1694 00000499 E893FFFFFF              call BugCheck
+  1695 0000049E CC                      int3
+  1696                                  
+  1697                                  
+  1698                                  
+  1699                                  
+  1700                                  ;ReadFile dst,off,size
+  1701                                  ;NOTE works but low efficiency
+  1702                                  ;return size
+  1703                                  ReadFile:
+  1704                                  
+  1705 0000049F 66F7C2FF01              test dx,0x1FF
+  1706 000004A4 756A                    jnz .fail
+  1707                                  
+  1708 000004A6 6641F7C0FF01            test r8w,0x1FF
+  1709 000004AC 7562                    jnz .fail
+  1710                                  
+  1711 000004AE 4150                    push r8		;size
+  1712 000004B0 48C1EA09                shr rdx,9	;in sector
+  1713 000004B4 49C1E809                shr r8,9	;in sector
+  1714                                  
+  1715 000004B8 56                      push rsi
+  1716 000004B9 57                      push rdi
+  1717 000004BA 53                      push rbx
+  1718                                  
+  1719                                  
+  1720 000004BB 4889D6                  mov rsi,rdx		;offset in sector
+  1721 000004BE 4889CF                  mov rdi,rcx		;dst
+  1722 000004C1 4C89C3                  mov rbx,r8		;size in sector
+  1723                                  
+  1724                                  
+  1725                                  .read:
+  1726 000004C4 4831D2                  xor rdx,rdx
+  1727                                  ;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
+  1728 000004C7 4889F0                  mov rax,rsi
+  1729 000004CA 41F774244C              div DWORD [r12+sysinfo.FAT_cluster]
+  1730                                  
+  1731 000004CF 4889D1                  mov rcx,rdx	;remainder
+  1732 000004D2 418B448450              mov eax,[r12+sysinfo.PE_filekrnl+4*rax]
+  1733                                  
+  1734 000004D7 2D02000000              sub eax,2
+  1735                                  
+  1736 000004DC 41F764244C              mul DWORD [r12+sysinfo.FAT_cluster]
+  1737                                  
+  1738 000004E1 85D2                    test edx,edx
+  1739 000004E3 89C2                    mov edx,eax
+  1740 000004E5 7529                    jnz .fail
+  1741                                  
+  1742                                  
+  1743 000004E7 4103542448              add edx,[r12+sysinfo.FAT_data]	;edx sector of target cluster
+  1744 000004EC 4D31C0                  xor r8,r8
+  1745 000004EF 01CA                    add edx,ecx		;target sector
+  1746 000004F1 49FFC0                  inc r8
+  1747 000004F4 4889F9                  mov rcx,rdi
+  1748 000004F7 E840FFFFFF              call ReadSector
+  1749                                  
+  1750 000004FC 4881C700020000          add rdi,SECTOR_SIZE
+  1751 00000503 48FFC6                  inc rsi
+  1752                                  
+  1753 00000506 48FFCB                  dec rbx
+  1754 00000509 75B9                    jnz .read
+  1755                                  
+  1756                                  
+  1757 0000050B 5B                      pop rbx
+  1758 0000050C 5F                      pop rdi
+  1759 0000050D 5E                      pop rsi
+  1760 0000050E 58                      pop rax		;size
+  1761                                  
+  1762 0000050F C3                      ret
+  1763                                  
+  1764                                  .fail:
+  1765 00000510 E81CFFFFFF              call BugCheck
+  1766 00000515 CC                      int3
+  1767                                  
+  1768                                  
+  1769                                  ; ==	0		->		reserved
+  1770                                  ; >	0		->		used
+  1771                                  ; ==	8-00000000		->		maps to nowhere
+  1772                                  ; >=	80000000-00000000		->		avl(linked)
+  1773                                  ; >	80000000-00000000		->		used,multiple-mapping
+  1774                                  
+  1775                                  
+  1776                                  PmmAlloc:	;rcx VA
+  1777                                  
+  1778 00000516 56                      push rsi
+  1779 00000517 57                      push rdi
+  1780 00000518 53                      push rbx
+  1781                                  
+  1782 00000519 498B742410              mov rsi,[r12+sysinfo.PMM_qmp_vbase]
+  1783 0000051E 48BF00100000000000-     mov rdi,PAGE_SIZE
+  1784 00000527 00                 
+  1785 00000528 4889F3                  mov rbx,rsi
+  1786 0000052B 4801F7                  add rdi,rsi
+  1787                                  
+  1788                                  .find:
+  1789                                  
+  1790 0000052E 48AD                    lodsq
+  1791 00000530 480FBAE03F              bt rax,63
+  1792 00000535 720B                    jc .found
+  1793                                  
+  1794 00000537 4839FE                  cmp rsi,rdi
+  1795                                  
+  1796 0000053A 72F2                    jb .find
+  1797                                  
+  1798 0000053C E8F0FEFFFF              call BugCheck
+  1799 00000541 CC                      int3
+  1800                                  
+  1801                                  .found:
+  1802 00000542 48B8FFFFFFFF0F0000-     mov rax,0xF_FFFFFFFF
+  1803 0000054B 00                 
+  1804 0000054C 48C1E90C                shr rcx,12
+  1805 00000550 4881EE08000000          sub rsi,8
+  1806 00000557 4821C1                  and rcx,rax
+  1807 0000055A 4889F0                  mov rax,rsi
+  1808 0000055D 48890E                  mov [rsi],rcx
+  1809 00000560 4829D8                  sub rax,rbx
+  1810                                  
+  1811                                  
+  1812 00000563 5B                      pop rbx
+  1813 00000564 5F                      pop rdi
+  1814 00000565 5E                      pop rsi
+  1815                                  
+  1816 00000566 48C1E009                shl rax,12-3
+  1817                                  
+  1818 0000056A C3                      ret
+  1819                                  
+  1820                                  
+  1821                                  
+  1822                                  ;MapAddress VirtualAddr,PhysicalAddr,attrib
+  1823                                  ;PMM==0	change attrib
+  1824                                  ;attrib==0 unmap
+  1825                                  MapPage:
+  1826                                  
+  1827                                  
+  1828                                  
+  1829 0000056B B800000040              mov eax,0x40000000		;1G
+  1830                                  
+  1831 00000570 39C1                    cmp ecx,eax
+  1832 00000572 7353                    jae .fail
+  1833                                  
+  1834 00000574 480FBAE12F              bt rcx,47
+  1835 00000579 734C                    jnc .fail
+  1836                                  
+  1837 0000057B 53                      push rbx
+  1838 0000057C 56                      push rsi
+  1839 0000057D 57                      push rdi
+  1840                                  
+  1841 0000057E 4889D3                  mov rbx,rdx		;PMM
+  1842                                  ;xor rsi,rsi
+  1843                                  
+  1844 00000581 4D85C0                  test r8,r8
+  1845 00000584 490F44D8                cmovz rbx,r8
+  1846                                  
+  1847 00000588 89CE                    mov esi,ecx		;VA within 1G
+  1848                                  
+  1849                                  
+  1850 0000058A 48BF006000000080FF-     mov rdi,HIGHADDR+PDT0
+  1851 00000593 FF                 
+  1852 00000594 4889F0                  mov rax,rsi
+  1853                                  ;xor dil,dil
+  1854 00000597 48C1E815                shr rax,21
+  1855                                  
+  1856 0000059B 488D3CC7                lea rdi,[rdi+rax*8]
+  1857                                  
+  1858 0000059F 480FBA2700              bt QWORD [rdi],0
+  1859 000005A4 7326                    jnc .newPT
+  1860                                  
+  1861 000005A6 488B07                  mov rax,[rdi]
+  1862 000005A9 48BF807000000080FF-     mov rdi,HIGHADDR+PT_MAP_PT
+  1863 000005B2 FF                 
+  1864 000005B3 48AB                    stosq
+  1865                                  
+  1866 000005B5 48BF000001000080FF-     mov rdi,TMP_PT_VBASE
+  1867 000005BE FF                 
+  1868 000005BF 0F013F                  invlpg [rdi]
+  1869                                  
+  1870 000005C2 E94E000000              jmp .next
+  1871                                  
+  1872                                  .fail:
+  1873 000005C7 E865FEFFFF              call BugCheck
+  1874                                  
+  1875                                  
+  1876                                  .newPT:
+  1877                                  
+  1878 000005CC 4885DB                  test rbx,rbx
+  1879 000005CF 74F6                    jz .fail
+  1880                                  
+  1881 000005D1 4D85C0                  test r8,r8
+  1882 000005D4 7479                    jz .end
+  1883                                  
+  1884 000005D6 4150                    push r8
+  1885                                  
+  1886                                  ;alloc new PT
+  1887 000005D8 48B900000000080000-     mov rcx,0x8_00000000	;map to nowhere
+  1888 000005E1 00                 
+  1889 000005E2 E82FFFFFFF              call PmmAlloc
+  1890 000005E7 B003                    mov al,3
+  1891 000005E9 48AB                    stosq
+  1892                                  
+  1893 000005EB 48BF807000000080FF-     mov rdi,HIGHADDR+PT_MAP_PT
+  1894 000005F4 FF                 
+  1895 000005F5 48AB                    stosq
+  1896                                  
+  1897 000005F7 48BF000001000080FF-     mov rdi,TMP_PT_VBASE
+  1898 00000600 FF                 
+  1899 00000601 4831C0                  xor rax,rax
+  1900 00000604 0F013F                  invlpg [rdi]
+  1901                                  ;mov rcx,PAGE_SIZE/8
+  1902 00000607 48AB                    stosq
+  1903                                  
+  1904 00000609 48BF000001000080FF-     mov rdi,TMP_PT_VBASE
+  1905 00000612 FF                 
+  1906 00000613 4158                    pop r8
+  1907                                  
+  1908                                  .next:
+  1909 00000615 48C1EE0C                shr rsi,12
+  1910 00000619 480FB7C6                movzx rax,si
+  1911 0000061D 6625FF01                and ax,0x01FF
+  1912                                  
+  1913 00000621 488D3CC7                lea rdi,[rdi+rax*8]
+  1914                                  
+  1915 00000625 4885DB                  test rbx,rbx
+  1916 00000628 751F                    jnz .set
+  1917                                  
+  1918 0000062A 488B1F                  mov rbx,[rdi]
+  1919                                  
+  1920 0000062D 480FBAF33F              btr rbx,63
+  1921 00000632 6681E300F0              and bx,0xF000
+  1922                                  
+  1923 00000637 4D85C0                  test r8,r8
+  1924                                  
+  1925 0000063A 0F013B                  invlpg [rbx]
+  1926                                  
+  1927 0000063D 750A                    jnz .set
+  1928                                  
+  1929 0000063F 4831C0                  xor rax,rax
+  1930 00000642 48AB                    stosq
+  1931                                  ;PmmFree(rbx)
+  1932                                  
+  1933 00000644 E906000000              jmp .end
+  1934                                  
+  1935                                  .set:
+  1936                                  
+  1937                                  ;ASSERT(rbx is valid PMM)
+  1938                                  ;ASSERT(r8 is valid attrib)
+  1939 00000649 4C09C3                  or rbx,r8
+  1940 0000064C 48871F                  xchg [rdi],rbx
+  1941                                  
+  1942                                  ;PmmFree(rbx)
+  1943                                  
+  1944                                  
+  1945                                  .end:
+  1946                                  
+  1947 0000064F 5F                      pop rdi
+  1948 00000650 5E                      pop rsi
+  1949 00000651 5B                      pop rbx
+  1950                                  
+  1951 00000652 C3                      ret
+  1952                                  
+  1953                                  ;VirtualAlloc vbase,pagecount,attrib
+  1954                                  VirtualAlloc:
+  1955                                  
+  1956 00000653 56                      push rsi
+  1957 00000654 57                      push rdi
+  1958 00000655 53                      push rbx
+  1959                                  
+  1960 00000656 4C89C6                  mov rsi,r8		;attrib
+  1961 00000659 4889CF                  mov rdi,rcx		;vbase
+  1962 0000065C 4889D3                  mov rbx,rdx		;pagecount
+  1963                                  
+  1964                                  .map:
+  1965 0000065F 4889F9                  mov rcx,rdi		;vaddr
+  1966 00000662 E8AFFEFFFF              call PmmAlloc
+  1967 00000667 4989F0                  mov r8,rsi		;attrib
+  1968 0000066A 4889F9                  mov rcx,rdi		;vaddr
+  1969 0000066D 4889C2                  mov rdx,rax		;paddr
+  1970 00000670 E8F6FEFFFF              call MapPage
+  1971                                  
+  1972 00000675 4881C700100000          add rdi,PAGE_SIZE
+  1973                                  
+  1974 0000067C 48FFCB                  dec rbx
+  1975 0000067F 75DE                    jnz .map
+  1976                                  
+  1977                                  
+  1978                                  
+  1979 00000681 5B                      pop rbx
+  1980 00000682 5F                      pop rdi
+  1981 00000683 5E                      pop rsi
+  1982                                  
+  1983 00000684 C3                      ret
+  1984                                  
+  1985                                  
