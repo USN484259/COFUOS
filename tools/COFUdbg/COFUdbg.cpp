@@ -35,8 +35,13 @@ class Debugger{
 	string last_command;
 
 	qword rip;
-	qword step_rec;
 	enum {SOURCE,ASSEMBLY} mode;
+	struct{
+		enum {
+			IDLE = 0,STEP,PASS
+		} mode;
+		qword line_base;
+	} step_rec;
 public:
 	Debugger(const char*,const char*);
 	void run(void);
@@ -56,8 +61,8 @@ private:
 
 	//true -> packet sent, wait
 	bool cmd_go(qword addr);
-	bool cmd_pass(char);
-	bool cmd_step(char);
+	bool cmd_pass(char = 0);
+	bool cmd_step(char = 0);
 	bool cmd_stack(unsigned level);
 	bool cmd_bp(qword addr);
 	bool cmd_del(unsigned index);
@@ -70,7 +75,14 @@ private:
 
 const char* Debugger::hexchar = "0123456789ABCDEF";
 
-Debugger::Debugger(const char* pipe_name,const char* symbol_name) : pipe(pipe_name),symbol(symbol_name),disasm(symbol_name),mode(SOURCE){}
+Debugger::Debugger(const char* pipe_name,const char* symbol_name) : 
+	pipe(pipe_name),
+	symbol(symbol_name),
+	disasm(symbol_name),
+	mode(SOURCE)
+{
+	step_rec.mode = step_rec.IDLE;
+}
 
 void Debugger::run(void){
 	do{
@@ -314,54 +326,80 @@ qword Debugger::resolve(const string& str){
 
 //true -> handled, continue
 bool Debugger::step_check(void){
-	if (step_rec && symbol.line_base(rip) == step_rec){
-		pipe.write("S");
-		return true;
+	switch(step_rec.mode){
+		case step_rec.PASS:
+		{
+			string str;
+			auto len = disasm.get(rip,str);
+			if (len && str.substr(0,4) == "call"){
+				str.assign("B=");
+				qword target = rip + len;
+				str.append((const char*)&target,sizeof(qword));
+				pipe.write(str);
+				return true;
+			}
+		}
+		case step_rec.STEP:
+			if (step_rec.line_base == symbol.get_line(rip)){
+				pipe.write("S");
+				return true;
+			}
 	}
 	return false;
 }
 
 void Debugger::show_source(qword addr,unsigned count,bool show_asm){
 	string sym_name;
-	qword base = symbol.get(addr,sym_name);
-	qword cur = symbol.line_base(addr);
-	if (!cur)
-		cur = addr;
+	qword sym_base = symbol.get_symbol(addr,sym_name);
+	qword line_base = symbol.get_line(addr);
+	//if (!cur)
+	//	cur = addr;
 
-	if (base)
-		cout << sym_name << " +0x" << hex << (cur - base) << endl;
+	if (sym_base)
+		cout << sym_name << " +0x" << hex << ((line_base ? line_base : addr) - sym_base) << endl;
 	
 	if (mode == ASSEMBLY)
 		show_asm = true;
 	
+	string source_file;
 	while (count--){
-		string str;
-		auto line = symbol.line(cur,str);
-		qword next = symbol.next(cur);
-		if (line){
-			cout << dec << line;
-			if (!show_asm && cur == rip)
+		qword next_line = 0;
+		if (line_base){
+			auto& cur_file = symbol.line_file();
+			if (cur_file != source_file){
+				source_file = cur_file;
+				auto pos = cur_file.find_last_of('\\');
+				cout << "@ " << (pos == string::npos ? cur_file : cur_file.substr(pos + 1)) << endl;
+			}
+			cout << symbol.line_number();
+			if (!show_asm && line_base == rip)
 				cout << "==>\t\t";
 			else
 				cout << ":\t\t";
-			cout << str << endl;
+			cout << symbol.line_content() << endl;
+			
+			next_line = symbol.next_line();
 			if (!show_asm){
-				cur = next;
+				line_base = next_line;
 				continue;
 			}
 		}
+
+		qword cur = line_base ? line_base : addr;
 		do{
-			if (!base)
+			
+			if (!sym_base)
 				cout << hex << setw(16) << cur << '\t';
 			else{
 				if (cur > rip)
-					cout << "+0x" << hex << (cur - addr) << '\t';
+					cout << "+0x" << hex << (cur - rip) << '\t';
 				else if (rip > cur)
-					cout << "-0x" << hex << (addr - cur) << '\t';
+					cout << "-0x" << hex << (rip - cur) << '\t';
 				else
 					cout << "==>\t";
 				
 			}
+			string str;
 			auto len = disasm.get(cur,str);
 			if (!len){
 				cout << "(no assembly)" << endl;
@@ -369,7 +407,7 @@ void Debugger::show_source(qword addr,unsigned count,bool show_asm){
 			}
 			cout << str << endl;
 			cur += len;
-		}while(cur < next);
+		}while(cur < next_line);
 	}
 
 }
@@ -379,7 +417,7 @@ bool Debugger::on_break(byte type,qword errcode){
 	if (type == 1 && step_check())
 		return false;	//handled, continue
 
-	step_rec = 0;
+	step_rec.mode = step_rec.IDLE;
 
 	cout << endl;
 	if (type == 0xFF)
@@ -404,7 +442,7 @@ void Debugger::on_stack_trace(const vector<qword>& stk){
 	for (auto data : stk){
 		cout << hex << data;
 		string sym_name;
-		qword sym_base = symbol.get(data,sym_name);
+		qword sym_base = symbol.get_symbol(data,sym_name);
 		if (sym_base){
 			cout << '\t' << sym_name << "+0x" << hex << (data - sym_base);
 		}
@@ -464,7 +502,7 @@ void Debugger::on_show_dr(const DR_STATE& dr){
 		if (dr.dr7 & mask) {
 			cout << dec << i << "\tat\t" << hex << setw(16) << dr.dr[i];
 			string sym_name;
-			qword sym_base = symbol.get(dr.dr[i],sym_name);
+			qword sym_base = symbol.get_symbol(dr.dr[i],sym_name);
 			if (sym_base)
 				cout << '\t' << sym_name << "+0x" << hex << (dr.dr[i] - sym_base);
 
@@ -496,7 +534,8 @@ bool Debugger::cmd_pass(char m){
 	}
 	qword addr = 0;
 	if (mode == SOURCE){
-		addr = symbol.next(rip);
+		step_rec.mode = step_rec.PASS;
+		return cmd_step();
 	}
 	else{	//ASSEMBLY
 		string str;
@@ -505,7 +544,7 @@ bool Debugger::cmd_pass(char m){
 				addr = rip + len;
 	}
 	if (!addr)
-		return cmd_step(m);
+		return cmd_step();
 	string str("B=");
 	str.append((const char*)&addr,sizeof(qword));
 	pipe.write(str);
@@ -521,8 +560,11 @@ bool Debugger::cmd_step(char m){
 			mode = SOURCE;
 			break;
 	}
-	if (mode == SOURCE)
-		step_rec = symbol.line_base(rip);
+	if (mode == SOURCE){
+		if (step_rec.mode != step_rec.PASS)
+			step_rec.mode = step_rec.STEP;
+		step_rec.line_base = symbol.get_line(rip);
+	}
 	pipe.write("S");
 	return true;
 }
@@ -532,7 +574,7 @@ bool Debugger::cmd_stack(unsigned level){
 		cout << "Stack trace no more than 255 levels" << endl;
 		return false;
 	}
-	string str("T\0");
+	string str("T\0",2);
 	str.at(1) = (byte)level;
 	pipe.write(str);
 	return true;

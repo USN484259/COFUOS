@@ -15,7 +15,9 @@ class Symbol{
 
     std::unordered_map<std::string,std::vector<std::string> > source;
 
-    bool get_source(std::string&);
+    decltype(source)::const_iterator it_file;
+
+    bool get_source(void);
 
     static BOOL on_enum_symbol(SYMBOL_INFO*,ULONG,void*);
 
@@ -24,9 +26,10 @@ public:
     ~Symbol(void);
     void match(const std::string&,std::map<qword,std::string>&);
 
-    qword get(qword,std::string&);
-    qword line_base(qword);
-    unsigned line(qword,std::string&);
-    qword next(qword);
-
+    qword get_symbol(qword,std::string&);
+    qword get_line(qword);
+    qword next_line(void);
+    unsigned line_number(void) const;
+    const std::string& line_file(void) const;
+    const std::string& line_content(void) const;
 };

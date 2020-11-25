@@ -38,7 +38,7 @@ BOOL Symbol::on_enum_symbol(SYMBOL_INFO* info,ULONG,void* p){
     return TRUE;
 }
 
-qword Symbol::get(qword addr,string& name){
+qword Symbol::get_symbol(qword addr,string& name){
     byte buffer[0x400] = {0};
     SYMBOL_INFO* info = (SYMBOL_INFO*)buffer;
     info->SizeOfStruct = sizeof(SYMBOL_INFO);
@@ -51,65 +51,66 @@ qword Symbol::get(qword addr,string& name){
     return info->Address;
 }
 
-qword Symbol::line_base(qword addr){
-    //if (addr != line_info.Address){
-        DWORD displacement;
-        if (!SymGetLineFromAddr64(id,addr,&displacement,&line_info))
-            return 0;
-    //}
+qword Symbol::get_line(qword addr){
+    DWORD displacement;
+    if (!SymGetLineFromAddr64(id,addr,&displacement,&line_info))
+        return 0;
+    if (!get_source())
+        return 0;
+    return line_info.Address;  
+}
+
+qword Symbol::next_line(void){
+    if (!SymGetLineNext64(id,&line_info))
+        return 0;
+    if (!get_source())
+        return 0;
     return line_info.Address;
 }
 
-bool Symbol::get_source(string& str){
+unsigned Symbol::line_number(void) const{
+    return line_info.LineNumber;
+}
+
+const string& Symbol::line_file(void) const{
+    if (it_file == source.cend())
+        throw runtime_error("Invalid source file");
+    return it_file->first;
+}
+
+const string& Symbol::line_content(void) const{
+    if (it_file == source.cend())
+        throw runtime_error("Invalid source file");
+    auto line = line_number();
+    const auto& lines = it_file->second;
+    if (line && line <= lines.size())
+        return lines.at(line - 1);
+    throw runtime_error("Invalid source line");
+}
+
+bool Symbol::get_source(void){
     // line_info.FileName could be :
     // D:\COFUOS\tools\COFUdbg\d:\cofuos\kernel\memory\pm.cpp
     string filename(line_info.FileName);
-
-    auto pos = filename.find_last_of(':');
-    if (pos && pos != string::npos){
-        filename = filename.substr(pos - 1);
+    {
+        auto pos = filename.find_last_of(':');
+        if (pos && pos != string::npos){
+            filename = filename.substr(pos - 1);
+        }
     }
-
-    auto it = source.find(filename);
-    if (it == source.cend()){
+    it_file = source.find(filename);
+    if (it_file == source.cend()){
         vector<string> lines;
         ifstream file(filename);
         while(file.good()){
             string line;
             getline(file,line);
-            lines.push_back(move(line));
+            auto pos = line.find_first_not_of('\t');
+            lines.push_back(move( pos == string::npos ? line : line.substr(pos) ));
         }
         if (lines.empty())
             return false;
-        it = source.emplace(move(filename),move(lines)).first;
+        it_file = source.emplace(move(filename),move(lines)).first;
     }
-    const auto& lines = it->second;
-    auto line = line_info.LineNumber;
-    if (!line || line > lines.size())
-        return false;
-    str.assign(lines.at(line - 1));
     return true;
-}
-
-unsigned Symbol::line(qword addr,string& str){
-    //if (addr != line_info.Address){
-        DWORD displacement;
-        if (!SymGetLineFromAddr64(id,addr,&displacement,&line_info))
-            return 0;
-    //}
-    if (get_source(str))
-        return line_info.LineNumber;
-
-    return 0;
-}
-
-qword Symbol::next(qword addr){
-    //if (addr != line_info.Address){
-        DWORD displacement;
-        if (!SymGetLineFromAddr64(id,addr,&displacement,&line_info))
-            return 0;   
-    //}
-    if (!SymGetLineNext64(id,&line_info))
-        return 0;
-    return line_info.Address;
 }
