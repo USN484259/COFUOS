@@ -12,96 +12,74 @@ TSS_BASE equ 0x0900
 TSS_LIM equ 0x80
 
 SYSINFO_BASE equ 0x0A00
-MPCTRL_BASE equ 0x1000
-
-PMMSCAN_BASE equ 0x1000
+SYSINFO_LEN equ (0x1000-SYSINFO_BASE)
 
 PAGE_SIZE equ 0x1000
 SECTOR_SIZE equ 0x200
 
-ISR_STK equ 0x03000
-
-ISR_MP equ 0x9000
+ISR_STK equ 0x02000
 
 PL4T equ 0x03000
-
 PDPT0 equ 0x4000
 PDPT8 equ 0x5000
-
 PDT0 equ 0x06000
-
 PT0	equ 0x07000
+PT_KRNL equ 0x8000
+PT_MAP equ 0x9000
 
-PT_BASE equ 0x3000
+PT_BASE equ PL4T
+PT_LEN equ (0xA000-PT_BASE)
 
-;PT_PMM equ 0x8000
-
-PT_LEN equ (0x8000-PT_BASE)
-
-PMMQMP_PBASE equ 0x8000
-;PMMQMP_PBASE equ 0x100000
+PMMSCAN_BASE equ 0xA000
+PMMSCAN_LEN equ 0x1000
 
 ;	physical Memory layout
 
 
 
 ;	000000		001000		RW	TSS & GDT & IDT & sysinfo
-;	001000		002000		RW	PMMSCAN & MP sync area
-;	002000		003000		RWX	loader & ISR stack
+;	001000		002000		RW	MP data & ISR stack
+;	002000		003000		RWX	loader & MP entry
 ;	003000		004000		RW	PL4T
 ;	004000		005000		RW	PDPT low	
 ;	005000		006000		RW	PDPT high
 ;	006000		007000		RW	PDT
-;	007000		008000		RW	PT
-;	008000		009000		RW	PMMQMP within 2M
-;------------------------	008000		009000		RW	PT for PMM
-;	009000		010000		RW	MP ISR
+;	007000		008000		RW	PT0
+;	008000		009000		RW	krnl PT
+;	009000		00A000		RW	mapper PT
+;	00A000		00B000		RW	PMMSCAN & VBE_scan
+;	00B000		010000		RW	avl
 ;-------------direct map---------------------
-
+;	010000		?			?	kernel pages
 
 
 
 
 struc sysinfo
 .sig			resq 1
-.PMM_avl_top	resq 1
+				resq 1
 
-.PMM_qmp_vbase	resq 1
-.PMM_qmp_page	resd 1
+.PMM_avl_top	resq 1
+.kernel_page	resd 1
 .cpu			resd 1
 
 .bus			resw 1
 .port			resw 7
 
-.VBE_bpp		resw 1
 .VBE_mode		resw 1
+.VBE_scanline	resw 1
 .VBE_width		resw 1
 .VBE_height		resw 1
+.VBE_bpp		resw 1
+				resw 1
 .VBE_addr		resd 1
-.VBE_lim		resd 1
 
 .FAT_header		resd 1
 .FAT_table		resd 1
 .FAT_data		resd 1
 .FAT_cluster	resd 1
 
-.PE_filekrnl:
-.krnlbase		resq 1
-.AP_entry		resd 1
-.MP_cnt			resw 1
-				resw 1
-.MP_id:
 endstruc
-
-
-struc mpctrl
-.guard		resw 1
-.owner		resw 1
-.command	resw 1
-.count		resw 1
-endstruc
-
-
 
 
 section code vstart=0x2000
@@ -121,39 +99,7 @@ mov es,cx
 
 ;	ds	->	cur code segment
 ;	es	->	flat address
-cmp WORD [es:bx+0x200-2],0xAA55
-jz near BSP_entry
-
-xor dx,dx
-mov bx,MPCTRL_BASE+mpctrl.guard
-inc dx
-
-AP_entry:
-;acquire lock
-
-xor ax,ax
-pause
-lock cmpxchg [es:bx],dx
-jnz AP_entry
-
-;inc WORD [es:bx+2]	;MP_cnt
-
-mov ss,cx
-mov sp,ISR_STK
-
-mov di,SYSINFO_BASE+sysinfo.MP_cnt
-
-cmp WORD [es:di],8
-jb near AP_PE	;currently support less than 8 processors
-
-xor ax,ax
-lock mov [es:bx],ax
-
-cli
-.reset:
-hlt
-jmp .reset
-
+jmp near BSP_entry
 
 align 4
 
@@ -243,13 +189,13 @@ dq HIGHADDR+ISR_STK
 dq 0
 dq 0
 dq 0
-dq HIGHADDR+ISR_MP+PAGE_SIZE*1
-dq HIGHADDR+ISR_MP+PAGE_SIZE*2
-dq HIGHADDR+ISR_MP+PAGE_SIZE*3
-dq HIGHADDR+ISR_MP+PAGE_SIZE*4
-dq HIGHADDR+ISR_MP+PAGE_SIZE*5
-dq HIGHADDR+ISR_MP+PAGE_SIZE*6
-dq HIGHADDR+ISR_MP+PAGE_SIZE*7
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
+dq 0
 dq 0
 dd 0
 
@@ -339,7 +285,7 @@ ret
 
 BSP_entry:
 mov ss,cx
-mov sp,bx	;0x7C00
+mov sp,ISR_STK
 
 ;	ds	->	cur code segment
 ;	es	->	flat address
@@ -352,7 +298,7 @@ call print16
 ;sysinfo setup
 xor ax,ax
 mov di,SYSINFO_BASE
-mov cx,0x800/2
+mov cx,SYSINFO_LEN/2
 rep stosw
 
 mov di,SYSINFO_BASE+sysinfo.sig
@@ -362,13 +308,9 @@ stosd
 mov eax,'NFO'
 stosd
 
-mov di,SYSINFO_BASE+sysinfo.bus
-mov ax,0x2024
-stosw
+mov WORD [es:SYSINFO_BASE+sysinfo.bus],0x2024
+mov WORD [es:SYSINFO_BASE+sysinfo.VBE_bpp],24
 
-mov di,SYSINFO_BASE+sysinfo.VBE_bpp
-mov ax,24
-stosw
 
 
 mov si,0x7C00+0x200-0x10	;FAT_INFO from boot
@@ -411,9 +353,7 @@ lodsw	;next mode
 mov cx,ax
 mov bx,ax
 inc ax
-jz .end
-
-
+jz NEAR .end
 
 mov di,PMMSCAN_BASE
 
@@ -439,9 +379,6 @@ mov dx,[es:PMMSCAN_BASE+0x14]
 cmp dx,600
 jb video_loop
 
-
-
-
 cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_width]
 jb video_loop
 cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
@@ -451,44 +388,27 @@ movzx ax,BYTE [es:PMMSCAN_BASE+0x19]
 cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
 jb video_loop
 
-
 ;save current video mode
 
-mov di,SYSINFO_BASE+sysinfo.VBE_bpp
+mov di,SYSINFO_BASE+sysinfo.VBE_mode
+mov [es:di],bx
+mov [es:di + 4],cx
+mov [es:di + 6],dx
+mov [es:di + 8],ax
 
+mov dx,[es:PMMSCAN_BASE+0x10]
+mov cx,[es:PMMSCAN_BASE+0x200+0x04]
+sub cx,0x0300
+js .nvbe3
+mov dx,[es:PMMSCAN_BASE+0x32]
+.nvbe3:
+mov [es:di + 2],dx
+
+mov ax,[es:PMMSCAN_BASE+0x28]
+add di,0x0C
 stosw
-
-xchg ax,bx
+mov ax,[es:PMMSCAN_BASE+0x2A]
 stosw
-
-mov ax,cx
-stosw
-
-mov ax,dx
-stosw
-
-mul cx
-
-shl edx,16
-shr bx,3
-mov dx,ax
-
-
-
-
-;mov [es:VBE_width],ax
-;mov [es:VBE_height],dx
-;mov [es:VBE_bpp],bx
-
-mov eax,[es:PMMSCAN_BASE+0x28]
-stosd
-
-movzx eax,bx
-mul edx
-
-;mov eax,[es:PMMSCAN_BASE+0x2C]
-stosd
-
 
 jmp video_loop
 
@@ -508,14 +428,11 @@ int 0x10
 cmp ax,0x4F
 jnz abort16
 
-
-
 xor ebx,ebx
-
 
 xor ax,ax
 mov di,PMMSCAN_BASE
-mov cx,0x800
+mov cx,PMMSCAN_LEN / 2
 rep stosw		;clear memscan area
 
 mov si,SYSINFO_BASE+sysinfo.PMM_avl_top
@@ -536,7 +453,7 @@ mov eax,0xE820
 int 0x15			;BIOS memory detection
 jc .end
 
-;get PMM_avl_top here
+;si == PMM_avl_top
 
 mov edx,eax
 
@@ -549,11 +466,6 @@ test ebx,ebx
 jnz memscan_loop
 
 .end:
-
-;align PMM_avl_top to 4K
-
-and WORD [es:si],0xF000	;4K align
-
 
 ;notify BIOS of long mode
 mov ax,0xEC00
@@ -629,13 +541,6 @@ mov ebp,esp		;stack frame
 
 push 10_0000_0000_0000_0000_0010_b
 popfd
-
-mov ecx,IA32_APIC_BASE
-rdmsr
-
-bt eax,8	;BSP
-jnc near AP_LM
-
 
 ;save ports
 mov esi,0x0400
@@ -756,6 +661,7 @@ mov edi,PT_BASE
 mov ecx,PT_LEN
 call zeromemory
 
+;build PT structure
 mov edi,PL4T
 xor ecx,ecx
 mov ebx,PDPT0
@@ -768,40 +674,32 @@ mov ebx,PDPT8
 inc ecx
 call map_page
 
-
 mov edi,PDPT0
 mov ebx,PDT0
 inc ecx
 call map_page
-
 
 mov edi,PDPT8
 mov ebx,PDT0
 inc ecx
 call map_page
 
-
 mov edi,PDT0
 mov ebx,PT0
 inc ecx
 call map_page
 
+mov edi,PDT0 + 0x08	;PDT[1] -> PT_MAP
+mov ebx,PT_MAP
+inc ecx
+call map_page
 
-
-
-
-
+;direct map boot area
 mov edi,PT0
 xor ebx,ebx
 mov edx,0x80000103
-inc ecx
+mov cl,2
 call map_page
-
-mov ebx,0x1000
-mov edx,0x8000011B	;CD WT
-inc ecx
-call map_page
-
 
 mov ebx,0x2000
 mov edx,0x103		;RWX
@@ -814,156 +712,12 @@ mov edx,0x8000011B	;CD WT
 mov cl,PT_LEN>>12
 call map_page
 
-
 ; up to 0x10000
 mov ebx,PT_BASE+PT_LEN
 mov edx,0x80000103
 mov cl,0x10-((PT_BASE+PT_LEN)>>12)
 call map_page
 
-
-
-PMMQMP_init:
-
-;init PDT here
-;map PMMQMP to 0xFFFF8000_00200000
-
-;mov edi,PDT0+8
-;mov ebx,PT_PMM
-;mov edx,0x80000003
-;inc ecx
-;call map_page
-
-mov eax,[SYSINFO_BASE+sysinfo.PMM_avl_top]
-mov ecx,[SYSINFO_BASE+sysinfo.PMM_avl_top+4]
-test eax,0x001FFFFF
-;test ecx,0x007FFFFF
-
-jz .nalign
-
-add eax,0x00200000
-;add eax,0x00800000
-adc ecx,0
-.nalign:
-
-shrd eax,ecx,21		; / 0x200 * 0x1000
-;shrd ecx,eax,23		;/0x800*0x1000
-
-;ecx PMM page
-mov [SYSINFO_BASE+sysinfo.PMM_qmp_page],eax
-
-
-mov edi,PT0+0x800
-test ecx,ecx
-mov ebx,PMMQMP_PBASE
-mov edx,0x8000011B
-jz .page_set
-
-call BugCheck
-int3
-
-.page_set:
-inc ecx
-call map_page
-
-
-mov edi,PMMQMP_PBASE
-mov ecx,PAGE_SIZE
-call zeromemory
-
-mov esi,PMMSCAN_BASE
-xor ebx,ebx		;addr
-
-
-; PMMSCAN* block;
-; qword* cur;
-; qword* limit;
-
-; for(;block && cur<limit;++cur){
-	; qword addr=get_addr(cur)
-	; if (addr < block->base)
-		; continue
-	
-	; if (addr+PAGE_SIZE-1 > block->base + block->len){
-		; ++block;
-		; continue
-	; }
-	; if (!block->avl)
-		; continue
-
-	; *cur = avl
-
-; }
-
-
-.scan:
-cmp edi,PMMQMP_PBASE+PAGE_SIZE
-jae .end
-
-xor edx,edx
-mov eax,[esi]	;base
-cmp edx,[esi+4]
-
-jnz .big
-
-cmp ebx,eax
-jb .next
-
-cmp edx,[esi+0x0C]
-mov edx,ebx
-jnz .big
-add eax,[esi+8]	;len
-jc .big
-add edx,PAGE_SIZE-1
-cmp edx,eax
-jbe .range
-
-.big:
-add esi,24
-
-.next:
-add edi,8
-add ebx,PAGE_SIZE
-jmp .scan
-
-.range:
-
-mov edx,[esi+0x10]	;status
-dec edx		;status
-jz .avl
-jns .next	;.rev
-jmp .end
-
-.avl:
-add edi,4
-mov eax,0x80000000
-add ebx,PAGE_SIZE
-stosd
-jmp .scan
-
-
-.end:
-
-
-;set current state of PMM
-
-mov ecx,0x10
-xor edx,edx
-mov edi,PMMQMP_PBASE
-
-.cur_state:
-mov eax,edx
-inc edx
-stosd
-mov eax,8
-stosd
-loop .cur_state
-
-
-
-
-
-AP_LM:
 
 mov eax,cr4
 bts eax,5	;PAE
@@ -1034,30 +788,26 @@ ret
 
 [bits 64]
 
-PMMQMP_VBASE equ HIGHADDR+0x00100000
-KRNL_VBASE equ HIGHADDR+0x02000000
-
-TMP_PT_VBASE equ HIGHADDR+0x10000
-CMN_BUF_VBASE equ HIGHADDR+0x11000
-PT_MAP_PT equ PT0+8*0x10
-BUF_MAP_PT equ PT0+8*0x11
-
-KRNL_STK_GUARD equ KRNL_VBASE-0x1000
-KRNL_STK_TOP equ KRNL_STK_GUARD
-
-
-
+GAP_VBASE equ HIGHADDR+0x00010000
+PMMWMP_VBASE equ HIGHADDR+0x00400000
+PT_MAP_VBASE equ HIGHADDR+0x00200000
+;TMP_PT_VBASE equ HIGHADDR+0x10000
+CMN_BUF_VBASE equ HIGHADDR+0xE000
+PT_MAP_TABLE equ HIGHADDR+PT_MAP
+;BUF_MAP_PT equ PT0+8*0x11
+FAT_KRNL_CLUSTER equ HIGHADDR+0xC000
+KRNL_STK_TOP equ HIGHADDR+0x00020000
 
 ;	virtual address of HIGHADDR
-;	00000000	00010000	lowPMM
-;	00010000	0001C000	VMG info
-;	00010000	00011000	TMP_PT
-;	00011000	?			CMN_BUF
-;	00100000	?			PMMQMP
-;	?			02000000	krnlstk for all MPs
-;	02000000	?			KERNEL
-;-------------------------------	20000000	40000000	PDTmap
+;	00000000	0000C000	boot_area
+;	0000C000	0000E000	KRNL_FAT_cluster
+;	0000E000	00010000	common buffer
+;	00010000	?			GAP
+;	?			00020000	KRNL_STK			
+;	00020000	00040000	PT_MAP
+;	00040000	?			PMMWMP
 
+;	02000000?	?			KERNEL
 
 
 struc peinfo
@@ -1103,13 +853,6 @@ push rax
 
 call qword [rsp]
 
-
-; mov rax,.cs_reload
-; push rcx
-; push rax
-; db 0x48
-; retf
-
 .cs_reload:
 
 mov rdx,LM_high
@@ -1133,22 +876,16 @@ strkrnl db 'COFUOS',0x20,0x20,'SYS',0
 align 8
 
 LM_high:
+mov r12,HIGHADDR+SYSINFO_BASE
 
 mov rdx,TR_selector
 ltr [rdx]
-
-
-;unmap lowaddr
-;mov rdi,HIGHADDR+PDPT0
-;xor rax,rax
-;stosq
 
 ;ebable PGE SMEP disable WRGSBASE
 
 ;mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.cpu
 mov eax,[r12+sysinfo.cpu]
 mov rdx,cr4
-;lodsd
 bt eax,7
 jnc .nosmep
 bts rdx,20	;SMEP
@@ -1163,65 +900,25 @@ mov cr4,rdx
 ;mov rdx,cr3
 ;mov cr3,rdx
 
-mov r12,HIGHADDR+SYSINFO_BASE
-
-
-mov ecx,IA32_APIC_BASE
-rdmsr
-
-bt eax,8	;BSP
-jc .BSP
-
-
-
-
-mov ecx,[r12+sysinfo.AP_entry]
-mov rdx,[r12+sysinfo.krnlbase]
-mov rbp,rsp
-add rdx,rcx
-sub rsp,0x20
-movzx rcx,WORD [r12+sysinfo.MP_cnt]
-call rdx
-
-jmp BugCheck
-
-
-.BSP:
-
-
-
-;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.PMM_qmp_vbase
-mov rax,PMMQMP_VBASE
-mov [r12+sysinfo.PMM_qmp_vbase],rax
-
-;mov rcx,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov ax,[r12+sysinfo.FAT_cluster]
 cmp ax,8
-jbe .unmap_low
-
+jbe .cluster_fine
 call BugCheck
 int3
-.unmap_low:
 
-
-
-
-
+.cluster_fine:
 mov rbp,rsp
 sub rsp,0x20
 
-mov rsi,CMN_BUF_VBASE
-mov rcx,rsi		;VA		;re-mapped to module_base
 call PmmAlloc
 mov rdx,rax
-mov rcx,rsi
+mov rcx,GAP_VBASE
 mov r8,0x80000000_00000003
-;mov r12,rax		;r12 PMM
 mov [rsp+peinfo.headerpmm],rax
 call MapPage
 
 find_krnl:
-;xor rdx,rdx
+mov rsi,CMN_BUF_VBASE
 xor r8,r8
 mov rcx,rsi
 mov edx,[r12+sysinfo.FAT_data]
@@ -1231,7 +928,6 @@ call ReadSector
 mov rbx,SECTOR_SIZE
 xor rcx,rcx
 add rbx,rsi
-;xor rax,rax
 
 jmp .findfile
 
@@ -1271,33 +967,32 @@ lodsw
 shl eax,16
 add rsi,4
 lodsw
+mov edx,[rsi]
+;eax firstcluster
+;edx filesize
 
-;rax firstcluster
+cmp edx,0x70000
+ja .fail	; over 448k, possilby overwrite BIOS
 
-test rax,rax
+test eax,eax
 jz .fail
 
 cmp eax,0x0FFFFFF8
 jae .fail
 
-lea rdi,[r12+sysinfo.PE_filekrnl]
-;mov rdi,HIGHADDR+SYSINFO_BASE+sysinfo.PE_filekrnl
+mov rdi,FAT_KRNL_CLUSTER
 mov rsi,CMN_BUF_VBASE
 
 .load_cluster:
-
-xor rdx,rdx
-mov ecx,128
-stosd
 xor r8,r8
-div ecx
-;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_table
-mov rbx,rdx		;remainder
-mov rcx,rsi
-mov rdx,rax
+mov ebx,eax
+stosd	;save cluster number
+mov edx,[r12+sysinfo.FAT_table]
+and ebx,0x7F	; % 128
+shr eax,7		; / 128
+mov rcx,rsi		;CMN_BUF_VBASE
+add edx,eax
 inc r8
-add edx,[r12+sysinfo.FAT_table]
-
 call ReadSector
 
 mov eax,[rsi+4*rbx]
@@ -1308,7 +1003,7 @@ jz .fail
 cmp eax,0x0FFFFFF8
 jb .load_cluster
 
-
+mov rsi,GAP_VBASE
 
 mov rcx,rsi
 xor rdx,rdx
@@ -1348,14 +1043,9 @@ lodsw	;Characteristics
 bt ax,1		;executable
 jnc .fail
 
-;SYSTEM flag may be deprecated
-
-;bt ax,12	;SYSTEM
-;nc near .fail
-
 lodsd
 add rsi,0x0C
-cmp ax,0x20B
+cmp ax,0x20B	;Magic for 64-bit executable
 jnz .fail
 
 lodsd	;entrypoint RVA
@@ -1369,20 +1059,18 @@ lodsd	;section alignment
 add rsi,0x18
 test eax,(PAGE_SIZE-1)
 jnz .fail
-;lodsd	;file alignment
-;add rsi,0x14
-;mov [rsp+peinfo.filealign],ax	;needed ?
-
-;xor rbx,rbx
 
 lodsd	;header size
-;xor r8,r8
 cmp rsi,rdi
 jae .fail
 
-sub eax,SECTOR_SIZE
-;mov rdx,r8
+cmp eax,SECTOR_SIZE
 jbe .smallheader
+
+dec eax
+and ax,(~0x1FF)		;eax -> header_size_sector_aligned - SECTOR_SIZE
+cmp eax,(PAGE_SIZE-SECTOR_SIZE)
+ja .fail
 
 mov rcx,rdi
 mov edx,SECTOR_SIZE
@@ -1399,33 +1087,28 @@ bt eax,24	;DEP
 jnc .fail
 
 
-;map vbase and stack
-;rbx cluster size
+;allocate stack
 
-lodsd	;stkrev
+lodsd	;stk_reserved.low
 
-cmp eax,0x100000	;1M
+cmp eax,0x10000	;64k
 mov edx,eax
 ja .fail
 
-lodsd	;stkrev high
+lodsd	;stk_reserved.high
 test eax,eax
 jnz .fail
 
-lodsd	;stkcmt
+lodsd	;stk_commit.low
 cmp eax,edx
 mov rdi,KRNL_STK_TOP
 ja .fail
-mov ebx,eax
+mov ebx,eax	;rbx commit page count
 
-lodsd	;stkcmt high
-
-shr ebx,12	;rbx commit page count
+lodsd	;stk_commit.high
+shr ebx,12	;rbx commit size
 test eax,eax
 jnz .fail
-
-cmp ebx,0x10	;16 pages
-ja .fail
 
 
 ;no heap support
@@ -1445,12 +1128,9 @@ add rsi,rax		;skip datadir
 mov rbp,rdi
 
 .makestk:
-
-
 sub rdi,PAGE_SIZE
-mov rcx,rdi
 call PmmAlloc
-mov r8,0x80000000_00000003
+mov r8,0x80000000_00000103
 mov rdx,rax
 mov rcx,rdi
 call MapPage
@@ -1460,38 +1140,37 @@ jnz .makestk
 
 ;change rsp just before jmp to krnl
 
+;build PT for kernel
+mov rbx,[rsp+peinfo.vbase]
+mov rax,HIGHADDR+0x000C0000		;PMMWMP could map 16GB
+mov rdi,HIGHADDR+PDT0
+cmp rbx,rax
+mov ecx,ebx
+jb .fail
+mov eax,0x00000003
+shr ecx,21-3	;2MB, qword
+or ax,PT_KRNL
+cmp ecx,PAGE_SIZE
+jae .fail
+add rdi,rcx
+stosq
 
-;map header to vbase and refresh QMP's record
+;map header to vbase
 
-mov rcx,[rsp+peinfo.vbase]
+mov rcx,rbx		;[rsp+peinfo.vbase]
 mov rdx,[rsp+peinfo.headerpmm]
-
-mov rax,0x000F_FFFF_FFFF
-mov r9,rcx
-mov r10,rdx
-shr r9,12	;VA index
-mov r8,[r12+sysinfo.PMM_qmp_vbase]
-and rax,r9
-shr r10,12	;PMM index
-xchg [r8+8*r10],rax
-bt rax,35
-jnc .fail
-
-mov r8,0x80000000_00000001
+mov r8,0x80000000_00000101	;R
 call MapPage
 
 
-
-
 ;process sections
-
+;rsi -> section[0]
 .section:
 
 lodsq	;name
 lodsd	;originsize
 ;xor rax,rax
 mov rdi,[rsp+peinfo.vbase]
-mov [rsp+peinfo.sec_size],eax
 mov ecx,eax		;originsize
 
 lodsd	;RVA
@@ -1524,52 +1203,59 @@ bt eax,9	;discard
 jc .section_discard
 mov [rsp+peinfo.sec_attrib],ax
 
-mov r8,0x80000000_00000003
+
 shr ebx,12		;page count
-mov rcx,rdi		;vbase
-mov rdx,rbx
-call VirtualAlloc
+push rdi		;section base
+push rbx
 
+.virtual_alloc:
+call PmmAlloc
+mov rcx,rdi
+mov r8,0x80000000_00000103
+mov rdx,rax
+call MapPage
+add rdi,PAGE_SIZE
+dec rbx
+jnz .virtual_alloc
 
+pop rbx
+pop rdi
 
 mov r8d,[rsp+peinfo.sec_size]	;size
 mov edx,[rsp+peinfo.sec_off]	;offset
 test r8d,r8d
-mov rcx,rdi		;dst
+mov rcx,rdi		;section base
 jz .nofile
 call ReadFile
 
 .nofile:
 
-mov [rsp+peinfo.sec_size],ebx	;pagecount
-mov dx,WORD [rsp+peinfo.sec_attrib]
-xor rbx,rbx
+;mov [rsp+peinfo.sec_size],ebx	;pagecount
+mov ax,WORD [rsp+peinfo.sec_attrib]
+xor r8,r8
 
-bt dx,13	;X
+bt ax,13	;X
 jc .attrib_X
-bts rbx,63
+bts r8,63
 
 .attrib_X:
 
-bt dx,15	;W
+bt ax,15	;W
 
 jnc .attrib_W
-bts rbx,1
+bts r8,1
 
 .attrib_W:
 
-inc rbx
+inc r8
+bts r8,8
 
 .section_attrib:
 mov rcx,rdi
-xor rdx,rdx
-mov r8,rbx
-call MapPage
+mov edx,ebx
+;r8 -> attrib
+call VirtualProtect
 
-
-add rdi,PAGE_SIZE
-dec DWORD [rsp+peinfo.sec_size]
-jnz .section_attrib
 
 .section_discard:
 
@@ -1578,12 +1264,11 @@ jnz .section
 
 
 ;unmap CMN_BUF
-mov rcx,CMN_BUF_VBASE
+mov rcx,GAP_VBASE
 xor rdx,rdx
 xor r8,r8
 call MapPage
 
-;xor rdx,rdx
 mov rcx,[rsp+peinfo.vbase]
 mov edx,[rsp+peinfo.entry]
 mov rsp,rbp
@@ -1699,12 +1384,13 @@ mov rbx,r8		;size in sector
 
 .read:
 xor rdx,rdx
-;mov r9,HIGHADDR+SYSINFO_BASE+sysinfo.FAT_cluster
 mov rax,rsi
 div DWORD [r12+sysinfo.FAT_cluster]
 
 mov rcx,rdx	;remainder
-mov eax,[r12+sysinfo.PE_filekrnl+4*rax]
+
+mov rdx,FAT_KRNL_CLUSTER
+mov eax,[rdx+4*rax]
 
 sub eax,2
 
@@ -1741,211 +1427,109 @@ call BugCheck
 int3
 
 
-; ==	0		->		reserved
-; >	0		->		used
-; ==	8-00000000		->		maps to nowhere
-; >=	80000000-00000000		->		avl(linked)
-; >	80000000-00000000		->		used,multiple-mapping
-
-
-PmmAlloc:	;rcx VA
-
-push rsi
-push rdi
-push rbx
-
-mov rsi,[r12+sysinfo.PMM_qmp_vbase]
-mov rdi,PAGE_SIZE
-mov rbx,rsi
-add rdi,rsi
-
-.find:
-
-lodsq
-bt rax,63
-jc .found
-
-cmp rsi,rdi
-
-jb .find
-
-call BugCheck
-int3
-
-.found:
-mov rax,0xF_FFFFFFFF
-shr rcx,12
-sub rsi,8
-and rcx,rax
-mov rax,rsi
-mov [rsi],rcx
-sub rax,rbx
-
-
-pop rbx
-pop rdi
-pop rsi
-
-shl rax,12-3
-
-ret
-
-
-
-;MapAddress VirtualAddr,PhysicalAddr,attrib
-;PMM==0	change attrib
-;attrib==0 unmap
-MapPage:
-
-
-
-mov eax,0x40000000		;1G
-
-cmp ecx,eax
+PmmAlloc:
+mov ecx,[r12+sysinfo.kernel_page]
+mov eax,ecx
+cmp ecx,0x70
 jae .fail
-
-bt rcx,47
-jnc .fail
-
-push rbx
-push rsi
-push rdi
-
-mov rbx,rdx		;PMM
-;xor rsi,rsi
-
-test r8,r8
-cmovz rbx,r8
-
-mov esi,ecx		;VA within 1G
-
-
-mov rdi,HIGHADDR+PDT0
-mov rax,rsi
-;xor dil,dil
-shr rax,21
-
-lea rdi,[rdi+rax*8]
-
-bt QWORD [rdi],0
-jnc .newPT
-
-mov rax,[rdi]
-mov rdi,HIGHADDR+PT_MAP_PT
-stosq
-
-mov rdi,TMP_PT_VBASE
-invlpg [rdi]
-
-jmp .next
+shl eax,12
+inc ecx
+add eax,0x10000
+mov [r12+sysinfo.kernel_page],ecx
+ret
 
 .fail:
 call BugCheck
+int3
 
 
-.newPT:
+;rcx VA
+;returns VA of PT
+get_PT:
+mov rax,HIGHADDR+0x10000
+cmp rcx,rax
+jb .fail
+cmp ecx,0x40000000		;1G
+jae .fail
 
-test rbx,rbx
-jz .fail
+mov edx,ecx		;VA within 1G
+mov rax,HIGHADDR+PDT0
+shr edx,21-3	;PDT offset
+mov rcx,[rax+rdx]
+bt cx,0
+mov rdx,0x7FFFFFFF_FFFFF000
+jnc .fail
+;get PA of PT
+and rcx,rdx
+mov rax,HIGHADDR
+cmp rcx,0x10000		;direct map
+jae .fail
+add rax,rcx
+ret
 
-test r8,r8
-jz .end
+.fail:
+call BugCheck
+int3
 
-push r8
+;MapAddress VirtualAddr,PhysicalAddr,attrib
+;PMM==0 && attrib==0	unmap
+MapPage:
+push rbx
 
-;alloc new PT
-mov rcx,0x8_00000000	;map to nowhere
-call PmmAlloc
-mov al,3
-stosq
+push rdx	;PA
+push r8		;attrib
+mov rbx,rcx	;VA
 
-mov rdi,HIGHADDR+PT_MAP_PT
-stosq
+call get_PT	;rcx VA
 
-mov rdi,TMP_PT_VBASE
-xor rax,rax
-invlpg [rdi]
-;mov rcx,PAGE_SIZE/8
-stosq
+mov edx,ebx	;VA within 1G
 
-mov rdi,TMP_PT_VBASE
-pop r8
+shr edx,12-3
+and edx,(PAGE_SIZE-1)
+add rdx,rax
 
-.next:
-shr rsi,12
-movzx rax,si
-and ax,0x01FF
-
-lea rdi,[rdi+rax*8]
-
-test rbx,rbx
-jnz .set
-
-mov rbx,[rdi]
-
-btr rbx,63
-and bx,0xF000
-
-test r8,r8
+pop r8		;attrib
+pop rax		;PA
+or rax,r8
+mov [rdx],rax
 
 invlpg [rbx]
 
-jnz .set
-
-xor rax,rax
-stosq
-;PmmFree(rbx)
-
-jmp .end
-
-.set:
-
-;ASSERT(rbx is valid PMM)
-;ASSERT(r8 is valid attrib)
-or rbx,r8
-xchg [rdi],rbx
-
-;PmmFree(rbx)
-
-
-.end:
-
-pop rdi
-pop rsi
 pop rbx
-
 ret
 
-;VirtualAlloc vbase,pagecount,attrib
-VirtualAlloc:
 
-push rsi
-push rdi
+;VA count attrib
+VirtualProtect:
 push rbx
 
-mov rsi,r8		;attrib
-mov rdi,rcx		;vbase
-mov rbx,rdx		;pagecount
+push rdx	;count
+push r8		;attrib
+mov rbx,rcx	;VA
 
-.map:
-mov rcx,rdi		;vaddr
-call PmmAlloc
-mov r8,rsi		;attrib
-mov rcx,rdi		;vaddr
-mov rdx,rax		;paddr
-call MapPage
+.next:
+mov rcx,rbx
+call get_PT
+mov edx,ebx	;VA within 1G
 
-add rdi,PAGE_SIZE
+shr edx,12-3
+and edx,(PAGE_SIZE-1)
+add rdx,rax
+mov rcx,[rdx]
+mov rax,0x7FFFFFFF_FFFFF000
 
-dec rbx
-jnz .map
+and rcx,rax
+mov rax,[rsp+8]
+or rcx,[rsp]	;attrib
+dec rax
+mov [rdx],rcx
+mov [rsp+8],rax
 
+add rbx,PAGE_SIZE
+test rax,rax
+jnz .next
 
+add rsp,0x10
 
 pop rbx
-pop rdi
-pop rsi
-
 ret
-
-
