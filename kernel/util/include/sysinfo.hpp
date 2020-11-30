@@ -4,37 +4,27 @@
 namespace UOS{
 	struct SYSINFO{
 		qword sig;
+		qword reserved_1;
+
 		qword PMM_avl_top;
-		
-		qword PMM_qmp_vbase;
-		dword PMM_qmp_page;
+		dword kernel_page;
 		dword cpuinfo;
 		
 		word addrwidth;
 		word ports[7];
 		
-		word VBE_bpp;
 		word VBE_mode;
+		word VBE_scanline;
 		word VBE_width;
 		word VBE_height;
+		word VBE_bpp;
+		word reserved_2;
 		dword VBE_addr;
-		dword VBE_lim;
 		
 		dword FAT_header;
 		dword FAT_table;
 		dword FAT_data;
 		dword FAT_cluster;
-		
-		qword krnlbase;
-		dword AP_entry;
-		word MP_cnt;
-		word reserved;
-		
-		//byte[] MP_id
-	
 	};
-	
-	extern volatile SYSINFO* const sysinfo;
-
-
+#define sysinfo ((SYSINFO*)SYSINFO_BASE)
 }

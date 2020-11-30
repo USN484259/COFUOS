@@ -4,14 +4,7 @@
 
 #ifndef _TEST
 
-#include "..\..\sync\include\spin_lock.hpp"
-
-void* operator new(size_t);
-void* operator new(size_t,void*);
-void operator delete(void*,size_t);
-
-void* operator new[](size_t);
-void operator delete[](void*);
+#include "../../sync/include/spin_lock.hpp"
 
 #else
 #include <mutex>
@@ -39,7 +32,7 @@ namespace UOS{
 		
 		node* pool[16];
 		size_t cap_size;
-		spin_lock m;
+		spin_lock lock;
 		
 	protected:
 	
@@ -65,7 +58,7 @@ namespace UOS{
 	
 	};
 	
-	extern UOS::heap_base* uos_heap;
+	extern paired_heap heap;
 	
 	
 }

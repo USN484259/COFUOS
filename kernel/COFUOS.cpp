@@ -25,39 +25,16 @@ void AP_entry(word);
 //VMG* vmg=(VMG*)HIGHADDR(0x5000);
 
 
-
-
-namespace UOS{
-	extern alignas(0x100) void* exit_callback[0x20];
-}
-
-extern "C"
-int atexit(void (*func )(void)){
-	
-	for (unsigned i=0;i<0x20;i++){
-		if (nullptr == exit_callback[i]){
-			exit_callback[i]=(void*)func;
-			return 0;
-		}
-	}
-	return -1;
-}
-
-
-
 [[ noreturn ]]
 void krnlentry(void* module_base){
-	
-	//__writecr3(__readcr3());
-	
-	
-	buildIDT(0);
-	
+	buildIDT();
+
 #ifdef ENABLE_DEBUGGER
-	void kdb_init(word);
+		void kdb_init(word);
 	kdb_init(sysinfo->ports[0]);
 #endif
-	
+
+
 	PE64 pe(module_base);
 	
 	{
@@ -80,7 +57,7 @@ void krnlentry(void* module_base){
 			(*globalConstructor++)();
 		
 	}
-	
+	/*
 	VM::VMG::construct(pe);	//returns CRT base			//pe.section(strCRT);//(fun*)peGetSection(module_base,strCRT);
 
 	
@@ -95,10 +72,10 @@ void krnlentry(void* module_base){
 	
 	//WARNING : PM::construct needs operator new
 	PM::construct((const void*)PMMSCAN_BASE);
+	*/
 
-
-//	apic = new((byte*)APIC_PBASE) APIC;
-//	*(byte*)(sysinfo+1)=apic->id();
+	//	apic = new((byte*)APIC_PBASE) APIC;
+	//	*(byte*)(sysinfo+1)=apic->id();
 	
 	//MP setup
 	/*

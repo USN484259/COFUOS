@@ -30,15 +30,15 @@ PT_MAP equ 0x9000
 PT_BASE equ PL4T
 PT_LEN equ (0xA000-PT_BASE)
 
-PMMSCAN_BASE equ 0xA000
-PMMSCAN_LEN equ 0x1000
+PMMSCAN_BASE equ 0x1000
+PMMSCAN_LEN equ 0x0F00
 
 ;	physical Memory layout
 
 
 
 ;	000000		001000		RW	TSS & GDT & IDT & sysinfo
-;	001000		002000		RW	MP data & ISR stack
+;	001000		002000		RW	PMMSCAN & VBE_scan & ISR stack
 ;	002000		003000		RWX	loader & MP entry
 ;	003000		004000		RW	PL4T
 ;	004000		005000		RW	PDPT low	
@@ -47,8 +47,7 @@ PMMSCAN_LEN equ 0x1000
 ;	007000		008000		RW	PT0
 ;	008000		009000		RW	krnl PT
 ;	009000		00A000		RW	mapper PT
-;	00A000		00B000		RW	PMMSCAN & VBE_scan
-;	00B000		010000		RW	avl
+;	00A000		010000		RW	avl
 ;-------------direct map---------------------
 ;	010000		?			?	kernel pages
 
@@ -789,7 +788,7 @@ ret
 [bits 64]
 
 GAP_VBASE equ HIGHADDR+0x00010000
-PMMWMP_VBASE equ HIGHADDR+0x00400000
+PMMBMP_VBASE equ HIGHADDR+0x00400000
 PT_MAP_VBASE equ HIGHADDR+0x00200000
 ;TMP_PT_VBASE equ HIGHADDR+0x10000
 CMN_BUF_VBASE equ HIGHADDR+0xE000
@@ -804,8 +803,8 @@ KRNL_STK_TOP equ HIGHADDR+0x00020000
 ;	0000E000	00010000	common buffer
 ;	00010000	?			GAP
 ;	?			00020000	KRNL_STK			
-;	00020000	00040000	PT_MAP
-;	00040000	?			PMMWMP
+;	00200000	00400000	MAP_VIEW
+;	00400000	?			PMMBMP
 
 ;	02000000?	?			KERNEL
 
@@ -1525,6 +1524,7 @@ dec rax
 mov [rdx],rcx
 mov [rsp+8],rax
 
+invlpg [rbx]
 add rbx,PAGE_SIZE
 test rax,rax
 jnz .next

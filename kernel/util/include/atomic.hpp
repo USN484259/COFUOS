@@ -1,5 +1,5 @@
 #pragma once
-#include "..\..\cpu\include\hal.hpp"
+#include "../../cpu/include/hal.hpp"
 
 
 namespace UOS{

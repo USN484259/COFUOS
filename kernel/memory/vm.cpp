@@ -12,12 +12,55 @@
 
 using namespace UOS;
 
-
-
-inline void UOS::invlpg(volatile void* p){
+void invlpg(volatile void* p){
 	__invlpg((void*)p);
 }
 
+VM::map_view::map_view(qword pa){
+	assert(0 == (pa & PAGE_MASK));
+
+	auto table = (volatile qword*)MAP_TABLE_BASE;
+	for (unsigned index = 0; index < 0x200; ++index)
+	{
+		qword origin_value = table[index];
+		if (origin_value & 0x01)
+			continue;
+		
+		qword new_value = 0x8000000000000103 | pa;
+
+		if (origin_value == cmpxchg(table + index, new_value, origin_value)){
+			//gain this slot, set VA
+			ptr = (void*)(MAP_VIEW_BASE + PAGE_SIZE * index);
+			return;
+		}
+	}
+	BugCheck(bad_alloc,table);
+}
+
+VM::map_view::~map_view(void){
+	qword addr = (qword)ptr;
+	assert(0 == (addr & PAGE_MASK));
+	if (addr < MAP_VIEW_BASE)
+		BugCheck(out_of_range,ptr);
+	unsigned index = (addr - MAP_VIEW_BASE) >> 12;
+	if (index >= 0x200)
+		BugCheck(out_of_range,ptr);
+
+	auto table = (volatile qword *)MAP_TABLE_BASE;
+	qword origin_value = table[index];
+	if (origin_value & 0x01)
+		BugCheck(corrupted, origin_value);
+	if (origin_value != cmpxchg(table + index, (qword)0, origin_value))
+		BugCheck(corrupted, origin_value);
+	invlpg(ptr);
+}
+
+VM::map_view::operator byte*(void){
+	return (byte*)ptr;
+}
+VM::map_view::operator const byte*(void) const{
+	return (const byte*)ptr;
+}
 
 bool VM::spy(void* dst,qword base,size_t len){
 	//TODO
@@ -92,7 +135,7 @@ void VM::VMG::unlock(void)volatile{
 	//expected=_cmpxchgb(lck,expected,expected & ~0x20);
 	expected = cmpxchg<byte>(lck,expected & (byte)~0x20,expected);
 	
-	assert(0 != expected & 0x20);
+	assert(0 != (expected & 0x20));
 	assert(0 == sync);
 
 }
@@ -169,10 +212,10 @@ void VM::VMG::construct(const PE64& pe){
 
 	for (size_t i=0;i<8;i++){
 		
-		void* p=pmm.allocate( sys->bitmap()+i*PAGE_SIZE, PM::must_succeed);
+		void* p=(void*)pm.allocate();
 		pt[0x1B]=(qword)p | PAGE_PRESENT | PAGE_WRITE | PAGE_NX ;	//map physical page to PTn page
 		invlpg(mapped_addr);
-		zeromemory(mapped_addr,PAGE_SIZE);
+		zeromemory((void*)mapped_addr,PAGE_SIZE);
 		
 		if (0==i){
 			*(volatile dword*)mapped_addr = 0x0FFFFFFF;	//mask out used pages in bitmap (28 pages)

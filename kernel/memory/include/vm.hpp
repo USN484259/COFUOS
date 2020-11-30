@@ -1,7 +1,7 @@
 #pragma once
 #include "types.hpp"
 #include "lock_guard.hpp"
-#include "..\..\image\include\pe.hpp"
+#include "../../image/include/pe.hpp"
 //#include "queue.hpp"
 #include "constant.hpp"
 
@@ -22,10 +22,20 @@
 
 namespace UOS{
 
-	void invlpg(volatile void*);
+
 
 	namespace VM{
-		
+		class map_view{
+			void* ptr;
+		public:
+			map_view(qword);
+			map_view(const map_view&) = delete;
+			~map_view(void);
+
+			operator byte*(void);
+			operator const byte*(void) const;
+		};
+
 		//enum attribute : qword {page_write=0x02,page_user=0x04,page_writethrough=0x08,page_cachedisable=0x10,page_global=0x100,page_noexecute=0x8000000000000000};
 		bool spy(void* dst,qword base,size_t len);
 		

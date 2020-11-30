@@ -1,12 +1,12 @@
 #include "types.hpp"
 #include "kdb.hpp"
-#include "..\cpu\include\hal.hpp"
-#include "..\cpu\include\pio.hpp"
-#include "..\cpu\include\IF_guard.hpp"
+#include "../cpu/include/hal.hpp"
+#include "../cpu/include/PIO.hpp"
+#include "../cpu/include/IF_guard.hpp"
 #include "sysinfo.hpp"
 #include "lock_guard.hpp"
-#include "..\memory\include\pm.hpp"
-#include "..\memory\include\vm.hpp"
+#include "../memory/include/pm.hpp"
+#include "../memory/include/vm.hpp"
 #include "util.hpp"
 
 using namespace UOS;
@@ -180,60 +180,63 @@ void UOS::kdb_break(byte id,exception_context* context){
 			break;
 
 		case 'T':	//stack
-			buf[0] = 'C';
-			len = 1;
-			do{
-				if (len < 2) {
-					dbgprint("bad packet");
-					break;
-				}
-				if (!VM::spy(buf + 2, context->rsp, buf[1] * (size_t)8)) {
-					dbgprint("memory gap");
-					buf[0] = 'C';
-					break;
-				}
-				len = (size_t)2 + 8 * buf[1];
-			}while(false);
+			if (len < 2) {
+				dbgprint("bad packet");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			if (!VM::spy(buf + 2, context->rsp, buf[1] * (size_t)8)) {
+				dbgprint("memory gap");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			len = (size_t)2 + 8 * buf[1];
 			break;
 		case 'V':	//vm
-			buf[0] = 'C';
-			len = 1;
-			do{
-				if (len < 11) {
-					dbgprint("bad packet");
-					break;
-				}
-				if ((len = *(word*)(buf + 9)) > 0x7C0) {
-					dbgprint("too large");
-					break;
-				}
-				if (!VM::spy(buf + 11, *(qword*)(buf + 1), len)) {
-					dbgprint("memory gap");
-					break;
-				}
-				buf[0] = 'M';
-				len += 11;
-			}while(false);
+			if (len < 11) {
+				dbgprint("bad packet");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			if ((len = *(word*)(buf + 9)) > 0x7C0) {
+				dbgprint("too large");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			if (!VM::spy(buf + 11, *(qword*)(buf + 1), len)) {
+				dbgprint("memory gap");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			buf[0] = 'M';
+			len += 11;
 			break;
 		case 'M':	//pm
-			buf[0] = 'C';
-			len = 1;
-			do{
-				if (len < 11) {
-					dbgprint("bad packet");
-					break;
-				}
-				if ((len = *(word*)(buf + 9)) > 0x7C0) {
-					dbgprint("too large");
-					break;
-				}
-				if (!PM::spy(buf + 11, *(qword*)(buf + 1), len)) {
-					dbgprint("bad memory");
-					break;
-				}
-				buf[0] = 'M';
-				len += 11;
-			}while(false);
+			if (len < 11) {
+				dbgprint("bad packet");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			if ((len = *(word*)(buf + 9)) > 0x7C0) {
+				dbgprint("too large");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			if (!PM::peek(buf + 11, *(qword*)(buf + 1), len)) {
+				dbgprint("bad memory");
+				buf[0] = 'C';
+				len = 1;
+				break;
+			}
+			buf[0] = 'M';
+			len += 11;
 			break;
 		default:
 			dbgprint("unknown command");

@@ -12,12 +12,6 @@ using namespace UOS;
 
 
 extern "C"
-int _purecall(void){
-	BugCheck(assert_failed);
-}
-
-
-extern "C"
 void dispatch_exception(byte id,exception_context* context){
 
 //special errcode indicates BugCheck call

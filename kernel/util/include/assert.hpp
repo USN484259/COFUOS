@@ -6,7 +6,7 @@
 
 
 #ifdef _DEBUG
-#include "..\..\cpu\include\hal.hpp"
+#include "../../cpu/include/hal.hpp"
 
 // #define assert(a,b) ( ((a)==(b))?0:BugCheck(bad_assert,(a),(b) ) )
 // #define assertinv(a,b) ( ((a)!=(b))?0:BugCheck(bad_assert,(a),(b) ) )

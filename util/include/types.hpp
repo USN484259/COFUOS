@@ -10,6 +10,10 @@ typedef struct{
 	qword high;
 }oword;
 
+#ifndef size_t
+#define size_t qword
+#endif
+
 #pragma warning(disable: 4464 4626 4514 4710 4711 4820 5027)
 
 static_assert(sizeof(byte) == 1, "size_byte_assert_failed");

@@ -5,7 +5,8 @@ HIGHADDR equ 0xFFFF8000_00000000
 ;WARNING: according to x64 calling convention 0x20 space on stack needed before calling C functions
 
 extern dispatch_exception
-
+extern imp_memcpy
+extern imp_memset
 
 global buildIDT
 global DR_match
@@ -13,9 +14,8 @@ global DR_get
 global DR_set
 
 global memset
-global zeromemory
+;global zeromemory
 global memcpy
-;global atexit
 
 global serial_peek
 global serial_get
@@ -24,7 +24,6 @@ global serial_put
 global BugCheck
 ;global __C_specific_handler
 global __chkstk
-global _purecall
 
 ;global handler_push
 ;global handler_pop
@@ -195,21 +194,18 @@ IDT_BASE equ 0x0400
 IDT_LIM equ 0x400	;64 entries
 
 
-;TODO	rcx as MP id
 buildIDT:
-movzx r8w,cl	;MP id
 push rsi
 push rdi
 mov rcx,20
 mov rdi,HIGHADDR+IDT_BASE
 mov rsi,ISR_exception
-or r8w,1000_1110_0000_0000_b
 push rdi
 mov rdx,HIGHADDR>>32
 .exception:
 
 mov eax,esi
-mov ax,r8w	;1000_1110_0000_0000_b
+mov ax,1000_1110_0000_0000_b
 shl rax,32
 mov ax,si
 bts rax,19	;8<<16
@@ -289,78 +285,11 @@ mov dr7,rax
 pop rsi
 ret
 
-;void* memset(void*,int,size_t)
 memset:
+jmp imp_memset
 
-test rdx,rdx
-jnz memset_nonzero
-mov rdx,r8
-
-zeromemory:
-push rdi
-mov rdi,rcx
-mov rcx,rdx
-xor rax,rax
-shr rcx,3
-
-rep stosq
-
-and dl,7
-jnz .badalign
-
-pop rdi
-ret
-
-.badalign:
-movzx rcx,dl
-rep stosb
-pop rdi
-ret
-
-memset_nonzero:
-push rcx
-push rdi
-mov rdi,rcx
-mov rax,rdx
-mov rcx,r8
-rep stosb
-
-pop rdi
-pop rax
-ret
-
-
-;void* memcpy(void*,const void*,size_t);
 memcpy:
-
-push rdi
-push rsi
-
-mov rdi,rcx
-mov rsi,rdx
-mov rcx,r8
-mov rax,rdi
-shr rcx,3
-rep movsq
-
-and r8b,7
-jnz .misaligned
-
-pop rsi
-pop rdi
-ret
-
-.misaligned:
-movzx rcx,r8b
-rep movsb
-pop rsi
-pop rdi
-ret
-
-;atexit:
-;xor rax,rax
-;ret
-
+jmp imp_memcpy
 
 ;byte serial_peek(word);
 serial_peek:

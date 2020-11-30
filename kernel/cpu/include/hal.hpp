@@ -4,11 +4,11 @@
 
 extern "C"{
 #ifndef _TEST
-	void* memset(volatile void*,int,size_t);
-	void* zeromemory(volatile void*,size_t);
-	void* memcpy(volatile void*,const void*,size_t);
-	
-	void buildIDT(qword);
+	void* memset(void*,int,size_t);
+	void zeromemory(void*,size_t);
+	void* memcpy(void*,const void*,size_t);
+
+	void buildIDT(void);
 	qword DR_match(void);
 	void DR_get(void*);
 	void DR_set(const void*);

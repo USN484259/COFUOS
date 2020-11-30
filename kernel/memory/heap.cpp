@@ -6,43 +6,7 @@
 
 using namespace UOS;
 
-heap_base* UOS::uos_heap = nullptr;
 
-#ifndef _TEST
-
-void* operator new(size_t len){
-	if (!len)
-		return nullptr;
-	return uos_heap->allocate(len);
-
-}
-
-void* operator new(size_t,void* pos){
-	return pos;
-}
-
-
-void operator delete(void* p,size_t len){
-	if (!p)
-		return;
-	uos_heap->release(p,len);
-}
-
-void* operator new[](size_t len){
-	qword* p=(qword*)operator new(len+sizeof(qword));
-	*p=(qword)len;	//place size in the first qword of block
-	return p+1;	//return the rest of block
-}
-
-void operator delete[](void* p){
-	if (!p)
-		return;
-	qword* b=(qword*)p;
-	--b;	//point back to the block head
-	operator delete(b,*b);	//block size at head
-}
-
-#endif
 
 //const heap::BLOCK heap::bitoff=5;
 //const heap::BLOCK heap::nomem=16;
@@ -115,7 +79,7 @@ void* paired_heap::get(BLOCK index){
 	if (pool[index]){
 		cur=pool[index];
 		assert(nullptr == cur->prev);
-		assert(0 == (reinterpret_cast<qword>(cur)) & align_mask(index));
+		assert(0 == (reinterpret_cast<qword>(cur) & align_mask(index)));
 
 		//pick the head node
 		pool[index]=cur->next;
@@ -151,7 +115,7 @@ void* paired_heap::get(BLOCK index){
 }
 
 void paired_heap::put(void* base,BLOCK index){
-	assert(0 == (reinterpret_cast<qword>(base)) & align_mask(index));
+	assert(0 == (reinterpret_cast<qword>(base) & align_mask(index)));
 	
 	node* block = static_cast<node*>(base);
 	node* cur = pool[index];
@@ -225,7 +189,7 @@ bool paired_heap::expand(void* base,size_t len) {
 	if (reinterpret_cast<qword>(base) & align_mask(0))	//not b32 aligned
 		return false;
 
-	lock_guard<spin_lock> lck(m);
+	lock_guard<spin_lock> guard(lock);
 	//assume page alignment
 	
 	//assert(0,reinterpret_cast<size_t>(base) & align_mask(15));	//m1
@@ -239,13 +203,13 @@ bool paired_heap::expand(void* base,size_t len) {
 		assert(level < nomem);
 		auto size = align_size(level);
 		assert(size <= len);
-		assert(0 == (reinterpret_cast<qword>(cur)) & align_mask(level));
+		assert(0 == (reinterpret_cast<qword>(cur) & align_mask(level)));
 		put(cur, level);
 		cur += size;
 		len -= size;
 		cap_size += size;
 	}
-#pragma message("FIXME: add memory block of any alignment or size")
+//TODO add memory block of any alignment or size
 
 	/*
 	while(len>=align_size(0)){	//b32
@@ -285,7 +249,7 @@ void* paired_heap::allocate(size_t req) {
 	BLOCK level = category(req);
 	assert(level < nomem);
 
-	lock_guard<spin_lock> lck(m);
+	lock_guard<spin_lock> guard(lock);
 
 	return get(level);
 	
@@ -298,7 +262,7 @@ void paired_heap::release(void* base,size_t req) {
 	BLOCK level = category(req);
 	assert(level < nomem);
 
-	lock_guard<spin_lock> lck(m);
+	lock_guard<spin_lock> guard(lock);
 	//assert(0,reinterpret_cast<size_t>(base) & align_mask(cur));
 	put(base, level);
 
