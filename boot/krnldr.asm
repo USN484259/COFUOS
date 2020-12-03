@@ -810,13 +810,16 @@ KRNL_STK_TOP equ HIGHADDR+0x00020000
 
 
 struc peinfo
-.headerpmm	resq 1
-.vbase		resq 1
-.entry		resd 1
-.section	resw 1
-.sec_attrib	resw 1
-.sec_size	resd 1
-.sec_off	resd 1
+.headerpmm		resq 1
+.vbase			resq 1
+.entry			resd 1
+.section		resw 1
+.sec_attrib		resw 1
+.sec_vbase		resq 1
+.sec_mem_size	resd 1
+.sec_page_count	resd 1
+.sec_file_size	resd 1
+.sec_file_off	resd 1
 endstruc
 
 
@@ -907,7 +910,7 @@ int3
 
 .cluster_fine:
 mov rbp,rsp
-sub rsp,0x20
+sub rsp,0x40
 
 call PmmAlloc
 mov rdx,rax
@@ -1170,43 +1173,39 @@ lodsq	;name
 lodsd	;originsize
 ;xor rax,rax
 mov rdi,[rsp+peinfo.vbase]
-mov ecx,eax		;originsize
+mov ebx,eax
+mov [rsp+peinfo.sec_mem_size],eax	;size in memory
 
 lodsd	;RVA
 add rdi,rax		;section vbase
 
 lodsd	;size
-test eax,eax
-mov [rsp+peinfo.sec_size],eax	;size in file
-cmovnz ecx,eax
-
-
-
-
-test cx,(PAGE_SIZE-1)
-jz .section_aligned
-
-add ecx,PAGE_SIZE
-
-.section_aligned:
-mov ebx,ecx		;size in memory
+mov [rsp+peinfo.sec_vbase],rdi
+mov [rsp+peinfo.sec_file_size],eax	;size in file
 
 lodsd	;offset
 add rsi,0x0C
-;or ebx,eax		;rbx	( size<<32 ) | offset
-mov [rsp+peinfo.sec_off],eax
+mov [rsp+peinfo.sec_file_off],eax
 
 lodsd	;attrib
 shr eax,16
 bt eax,9	;discard
-jc .section_discard
+jc near .section_discard
+
 mov [rsp+peinfo.sec_attrib],ax
 
+;ebx -> size in memory
+test bx,(PAGE_SIZE-1)
+jz .section_aligned
 
+add ebx,PAGE_SIZE
+
+.section_aligned:
 shr ebx,12		;page count
-push rdi		;section base
-push rbx
+mov [rsp+peinfo.sec_page_count],ebx
 
+;rdi -> section vbase
+;ebx -> page count
 .virtual_alloc:
 call PmmAlloc
 mov rcx,rdi
@@ -1214,18 +1213,32 @@ mov r8,0x80000000_00000103
 mov rdx,rax
 call MapPage
 add rdi,PAGE_SIZE
-dec rbx
+dec ebx
 jnz .virtual_alloc
 
-pop rbx
-pop rdi
-
-mov r8d,[rsp+peinfo.sec_size]	;size
-mov edx,[rsp+peinfo.sec_off]	;offset
+mov r8d,[rsp+peinfo.sec_file_size]	;size in file
+mov rdi,[rsp+peinfo.sec_vbase]	;section vbase
+mov ebx,[rsp+peinfo.sec_mem_size]	;size in memory
 test r8d,r8d
-mov rcx,rdi		;section base
+mov rcx,rdi
 jz .nofile
+xor eax,eax
+add rdi,r8
+sub ebx,r8d
+mov edx,[rsp+peinfo.sec_file_off]	;offset
+cmovs ebx,eax	;eax == 0
 call ReadFile
+
+xor eax,eax
+test ebx,ebx
+mov ecx,ebx		;remaining size
+jz .nofile
+shr ecx,3
+rep stosq		;zeroing remaining area
+and bl,7
+movzx ecx,bl
+jz .nofile
+rep stosb
 
 .nofile:
 
@@ -1250,8 +1263,8 @@ inc r8
 bts r8,8
 
 .section_attrib:
-mov rcx,rdi
-mov edx,ebx
+mov rcx,[rsp+peinfo.sec_vbase]
+mov edx,[rsp+peinfo.sec_page_count]
 ;r8 -> attrib
 call VirtualProtect
 

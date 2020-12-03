@@ -1,4 +1,4 @@
-#include "types.hpp"
+#include "lang.hpp"
 #include "util.hpp"
 #include "../cpu/include/hal.hpp"
 #include "../memory/include/heap.hpp"
@@ -64,16 +64,32 @@ inline void copy_memory<byte>(byte* dst,const byte* sor,size_t count){
         *dst++ = *sor++;
 }
 
-
+void UOS::zeromemory(void* dst,size_t count){
+    auto ptr = (byte*)dst;
+    auto aligned_ptr = (qword*)align_up((qword)dst,8);
+    if (count >= (byte*)aligned_ptr - ptr){
+        count -= ( (byte*)aligned_ptr - ptr );
+        auto aligned_count = count >> 3;
+        count &= 7;
+        while(ptr != (byte*)aligned_ptr)
+            *ptr++ = 0;
+        while(aligned_count--){
+            *aligned_ptr++ = 0;
+        }
+        ptr = (byte*)aligned_ptr;
+    }
+    while(count--)
+        *ptr++ = 0;
+}
 
 extern "C" {
     //__chkstk in hal.asm
 
-    inline int atexit(void (*)(void)){
+    int atexit(void (*)(void)){
         return 0;
     }
 
-    inline int _purecall(void){
+    int _purecall(void){
         BugCheck(assert_failed);
     }
 
@@ -105,22 +121,5 @@ extern "C" {
             break;
         }
         return dst;
-    }
-    inline void zeromemory(void* dst,size_t count){
-        auto ptr = (byte*)dst;
-        auto aligned_ptr = (qword*)align_up((qword)dst,8);
-        if (count >= (byte*)aligned_ptr - ptr){
-            count -= ( (byte*)aligned_ptr - ptr );
-            auto aligned_count = count >> 3;
-            count &= 7;
-            while(ptr != (byte*)aligned_ptr)
-                *ptr++ = 0;
-            while(aligned_count--){
-                *aligned_ptr++ = 0;
-            }
-            ptr = (byte*)aligned_ptr;
-        }
-        while(count--)
-            *ptr++ = 0;
     }
 }

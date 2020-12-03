@@ -4,10 +4,6 @@
 
 extern "C"{
 #ifndef _TEST
-	void* memset(void*,int,size_t);
-	void zeromemory(void*,size_t);
-	void* memcpy(void*,const void*,size_t);
-
 	void buildIDT(void);
 	qword DR_match(void);
 	void DR_get(void*);
@@ -16,8 +12,6 @@ extern "C"{
 	byte serial_get(word);
 	void serial_put(word,byte);
 	byte serial_peek(word);
-
-	void dbgprint(const char*);	
 #endif
 	[[ noreturn ]]
 	void BugCheck(UOS::stopcode,...);
@@ -69,6 +63,7 @@ extern "C"{
 	void _disable(void);
 	void _enable(void);
 	
+	qword __rdtsc(void);
 	void _WriteBarrier(void);
 	
 	void __nop(void);
@@ -96,9 +91,9 @@ extern "C"{
 	
 	void _mm_pause(void);
 	void __debugbreak(void);
-	
-	 int _rdseed64_step(unsigned __int64 *);
-	 int _rdrand64_step(unsigned __int64 *);
+
+	int _rdseed64_step(unsigned __int64 *);
+	int _rdrand64_step(unsigned __int64 *);
 //#pragma warning(default:4391)
 	
 }

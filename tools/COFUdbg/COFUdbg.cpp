@@ -51,8 +51,9 @@ private:
 	
 	qword resolve(const string&);
 	bool step_check(void);	//true -> handled, continue
-	void show_source(qword addr,unsigned count,bool force_asm = false);
-
+	void show_addr_symbol(qword addr);
+	void show_source(qword addr);
+	void show_asm(qword start,qword end = (-1),size_t max_line = 2*default_len);
 	bool on_break(byte type,qword errcode);
 	void on_stack_trace(const vector<qword>&);
 	void on_memory_dump(qword base,const vector<byte>& buffer);
@@ -94,14 +95,13 @@ void Debugger::run(void){
 bool Debugger::stub_get(void){
 	string str;
 	pipe.read(str);
-	
+	/*
 	cout << "Packet data : ";
 	for (auto c : str){
 		cout << hexchar[(c >> 4) & 0x0F] << hexchar[c & 0x0F] << ' ';
 	}
 	cout << endl;
-
-
+	*/
 	istringstream ss(str);
 	switch(ss.get()){
 		case 'C':
@@ -348,68 +348,72 @@ bool Debugger::step_check(void){
 	return false;
 }
 
-void Debugger::show_source(qword addr,unsigned count,bool show_asm){
+void Debugger::show_addr_symbol(qword addr){
 	string sym_name;
 	qword sym_base = symbol.get_symbol(addr,sym_name);
-	qword line_base = symbol.get_line(addr);
-	//if (!cur)
-	//	cur = addr;
-
 	if (sym_base)
-		cout << sym_name << " +0x" << hex << ((line_base ? line_base : addr) - sym_base) << endl;
-	
-	if (mode == ASSEMBLY)
-		show_asm = true;
-	
+		cout << sym_name << " +0x" << hex << (addr - sym_base) << '\t';
+	cout << "@ 0x" << hex << addr << endl;
+}
+
+void Debugger::show_source(qword addr){
+	qword line_base = symbol.get_line(addr);
+
+	unsigned line_count = default_len;
 	string source_file;
-	while (count--){
-		qword next_line = 0;
-		if (line_base){
+	while(line_base && line_count){
+		{
 			auto& cur_file = symbol.line_file();
 			if (cur_file != source_file){
-				source_file = cur_file;
-				auto pos = cur_file.find_last_of('\\');
-				cout << "@ " << (pos == string::npos ? cur_file : cur_file.substr(pos + 1)) << endl;
-			}
-			cout << symbol.line_number();
-			if (!show_asm && line_base == rip)
-				cout << "==>\t\t";
-			else
-				cout << ":\t\t";
-			cout << symbol.line_content() << endl;
-			
-			next_line = symbol.next_line();
-			if (!show_asm){
-				line_base = next_line;
-				continue;
+				source_file = move(cur_file);
+				auto pos = source_file.find_last_of('\\');
+				cout << "in " << (pos == string::npos ? source_file : source_file.substr(pos + 1)) << endl;
 			}
 		}
-
-		qword cur = line_base ? line_base : addr;
-		do{
-			
-			if (!sym_base)
-				cout << hex << setw(16) << cur << '\t';
-			else{
-				if (cur > rip)
-					cout << "+0x" << hex << (cur - rip) << '\t';
-				else if (rip > cur)
-					cout << "-0x" << hex << (rip - cur) << '\t';
-				else
-					cout << "==>\t";
-				
-			}
-			string str;
-			auto len = disasm.get(cur,str);
-			if (!len){
-				cout << "(no assembly)" << endl;
-				return;
-			}
-			cout << str << endl;
-			cur += len;
-		}while(cur < next_line);
+		auto line_number = symbol.line_number();
+		auto& line_content = symbol.line_content();
+		auto next_line = symbol.next_line();
+		cout << "line " << dec << line_number;
+		if (mode == SOURCE && rip >= line_base && (!next_line || rip < next_line))
+			cout << "==>\t\t";
+		else
+			cout << ":\t\t";
+		cout << line_content << endl;
+		if (mode == ASSEMBLY)
+			show_asm(line_base,next_line ? next_line : (-1));
+		line_base = next_line;
+		--line_count;
+	}
+	if (line_count){
+		if (mode == SOURCE)
+			cout << "(no source)" << endl;
+		else if (line_count == default_len)
+			show_asm(addr);
 	}
 
+}
+
+void Debugger::show_asm(qword addr,qword end,size_t line_count){
+	auto fill = cout.fill('0');
+	while(addr < end && line_count--){
+		cout << hex << setw(16) << addr;
+
+		if (addr > rip)
+			cout << " (+0x" << hex << setw(4) << (addr - rip) << ")\t";
+		else if (rip > addr)
+			cout << " (-0x" << hex << setw(4) << (rip - addr) << ")\t";
+		else
+			cout << " ( 0  ==>)\t";
+		string str;
+		auto len = disasm.get(addr,str);
+		if (!len){
+			cout << "(no assembly)" << endl;
+			return;
+		}
+		cout << str << endl;
+		addr += len;
+	}
+	cout.fill(fill);
 }
 
 bool Debugger::on_break(byte type,qword errcode){
@@ -434,7 +438,8 @@ bool Debugger::on_break(byte type,qword errcode){
 	}
 
 	cout << endl;
-	show_source(rip,default_len);
+	show_addr_symbol(rip);
+	show_source(rip);
 	return true;
 }
 
@@ -570,7 +575,7 @@ bool Debugger::cmd_step(char m){
 }
 
 bool Debugger::cmd_stack(unsigned level){
-	if (!level || level >= 0x100){
+	if (!level || level > 0xFF){
 		cout << "Stack trace no more than 255 levels" << endl;
 		return false;
 	}
@@ -619,8 +624,8 @@ bool Debugger::cmd_mem(char cmd,qword addr,unsigned len){
 		cout << "Unresolved symbol" << endl;
 		return false;
 	}
-	if (!len || len > 0x200){
-		cout << "Mem dump no more than 512 bytes" << endl;
+	if (!len || len > 0xFFFF){
+		cout << "Mem dump too large" << endl;
 		return false;
 	}
 	word tmp = (word)len;
@@ -647,7 +652,8 @@ void Debugger::cmd_symbol(const string& str){
 void Debugger::cmd_disasm(qword addr,unsigned count){
 	if (!addr)
 		addr = rip;
-	show_source(addr,count,true);
+	show_addr_symbol(addr);
+	show_asm(addr,(-1),count);
 }
 
 int main(int argc,char** argv){

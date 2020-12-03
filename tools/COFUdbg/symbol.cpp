@@ -1,12 +1,11 @@
 #include "symbol.h"
-#include <cmath>
 #include <fstream>
 
 using namespace std;
 
 #pragma comment(lib,"dbghelp.lib")
 
-Symbol::Symbol(const char* name) : id((HANDLE)(rand() + 1)), base(0), line_info{sizeof(IMAGEHLP_LINE64)}{
+Symbol::Symbol(const char* name) : id((HANDLE)0xFF), base(0), line_info{sizeof(IMAGEHLP_LINE64)}{
     do{
         if (!SymInitialize(id, NULL, FALSE))
             break;
@@ -21,8 +20,9 @@ Symbol::Symbol(const char* name) : id((HANDLE)(rand() + 1)), base(0), line_info{
 }
 
 Symbol::~Symbol(void){
-    if (id)
-        SymCleanup(id);
+    //weird crash on wine 5.0.3
+    //if (id)
+    //    SymCleanup(id);
 }
 
 
@@ -55,6 +55,8 @@ qword Symbol::get_line(qword addr){
     DWORD displacement;
     if (!SymGetLineFromAddr64(id,addr,&displacement,&line_info))
         return 0;
+    if (0 == line_info.LineNumber)
+        return 0;
     if (!get_source())
         return 0;
     return line_info.Address;  
@@ -62,6 +64,8 @@ qword Symbol::get_line(qword addr){
 
 qword Symbol::next_line(void){
     if (!SymGetLineNext64(id,&line_info))
+        return 0;
+    if (0 == line_info.LineNumber)
         return 0;
     if (!get_source())
         return 0;

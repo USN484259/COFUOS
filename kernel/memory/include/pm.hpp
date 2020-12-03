@@ -11,11 +11,17 @@ namespace UOS{
 		qword used;
 		qword next;
 
-		PM(void);
-		
+#ifdef PM_TEST
+		void check_integration(void);
+#endif
+
 	public:
+		PM(void);
 		qword allocate(byte tag = 0);
 		void release(qword);
+		
+		qword capacity(void) const;
+		qword available(void) const;
 
 		static bool peek(void* dest,qword paddr,size_t count);
 	};

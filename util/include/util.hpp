@@ -166,5 +166,66 @@ namespace UOS{
 		return align_down((T)(value + align - 1),align);
 	}
 	
-	
+	template<typename T>
+	class optional{		//simple and *buggy* implementation of C++17 std::optional
+		alignas(T) byte buffer[sizeof(T)];
+		bool valid;
+	public:
+		optional(void) : valid(false);
+		optional(T&& other) {
+			construct(move(other));
+		}
+		optional(const optional&) = delete;
+		optional(optional&& other) : valid(other.valid){
+			if (other.valid){
+				construct(*other);
+				other.destruct();
+			}
+		}
+		~optional(void){
+			if (valid)
+				destruct();
+		}
+		operator bool(void) const{
+			return valid;
+		}
+
+		void assign(T&& other){
+			construct(move(other));
+		}
+		template<typename ... Arg>
+		void emplace(Arg&& ... args){
+			if (!valid){
+				new(buffer) T(forward<Arg>(args));
+				valid = true;
+			}
+		}
+
+		operator T*(void){
+			return valid ? static_cast<T*>(buffer) : nullptr;
+		}
+		operator const T*(void) const{
+			return valid ? static_cast<const T*>(buffer) : nullptr;
+		}
+		T* operator->(void){
+			return operator T *();
+		}
+		const T* operator->(void) const{
+			return operator const T *();
+		}
+		
+	private:
+		void construct(T&& other){
+			if (!valid){
+				new(buffer) T(move(other));
+				valid = true;
+			}
+		}
+		void destruct(void){
+			if (valid){
+				static_cast<T*>(buffer)->~T();
+				valid = false;
+			}
+		}
+	};
 };

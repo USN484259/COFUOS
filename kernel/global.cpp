@@ -11,6 +11,7 @@
 namespace UOS{
 	
 	PM pm;
+	VM::kernel_vspace vm;
 	paired_heap heap;
 
 }

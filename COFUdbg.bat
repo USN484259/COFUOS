@@ -1,4 +1,4 @@
-
+taskkill /f /im bochs.exe
 
 del *.lock
 

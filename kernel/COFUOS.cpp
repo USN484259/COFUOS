@@ -6,31 +6,23 @@
 #include "image/include/pe.hpp"
 #include "memory/include/vm.hpp"
 #include "memory/include/pm.hpp"
-//#include "list.hpp"
 #include "memory/include/heap.hpp"
-//#include "apic.hpp"
-//#include "mp.hpp"
 #include "exception/include/kdb.hpp"
-
+#include "lang.hpp"
 
 using namespace UOS;
 
 
-[[ noreturn ]]
-void AP_entry(word);
+//[[ noreturn ]]
+//void AP_entry(word);
 
-
-//qword apic_vbase=0xFFFF800000010000;
-
-//VMG* vmg=(VMG*)HIGHADDR(0x5000);
-
+byte unitest_buffer[PAGE_SIZE];
 
 [[ noreturn ]]
 void krnlentry(void* module_base){
 	buildIDT();
 
 #ifdef ENABLE_DEBUGGER
-		void kdb_init(word);
 	kdb_init(sysinfo->ports[0]);
 #endif
 
@@ -57,50 +49,53 @@ void krnlentry(void* module_base){
 			(*globalConstructor++)();
 		
 	}
-	/*
-	VM::VMG::construct(pe);	//returns CRT base			//pe.section(strCRT);//(fun*)peGetSection(module_base,strCRT);
 
+	//TEST pm
+	zeromemory(unitest_buffer,PAGE_SIZE);
+	__debugbreak();
 	
-	//give sysheap a block
-	{
-		void* p = VM::sys->reserve(nullptr,0x20);	//get 32K VM area
-		assert(nullptr != p);
-		VM::sys->commit(p,0x20,PAGE_WRITE | PAGE_NX);	//have somewhere mapped
-		bool res=uos_heap->expand(p,0x20*PAGE_SIZE);		//give it to sys heap
-		assert(res);
+	size_t page_count = 0;
+	do{
+		qword addr = pm.allocate(0x0F);
+		dbgprint("allocated %p, %d/%d",addr,pm.available(),pm.capacity());
+		if (0 == addr)
+			break;
+		addr >>= 12;
+		unitest_buffer[addr >> 3] |= (1 << (addr & 7));
+		++page_count;
+	}while(true);
+	__debugbreak();
+
+	static const qword table[] = {0x316,0x315};
+	for (auto index : table){
+		dbgprint("releasing page %x, %d remaining",index,--page_count);
+		unitest_buffer[index >> 3] &= ~(1 << (index & 7));
+		pm.release(index << 12);
 	}
-	
-	//WARNING : PM::construct needs operator new
-	PM::construct((const void*)PMMSCAN_BASE);
-	*/
+	__debugbreak();
+	while(page_count){
+		qword tsc = __rdtsc();
+		dbgprint("random from TSC : %x",tsc);
+		tsc &= ((1 << 15) - 1);
+		auto index = tsc;
+		do{
+			if (unitest_buffer[index >> 3] & (1 << (index & 7)))
+				break;
+			if (++index == (1 << 15))
+				index = 0;
+			if (index == tsc){
+				dbgprint("page not found");
+				BugCheck(corrupted,tsc);
+			}
+		}while(true);
+		dbgprint("releasing page %x, %d remaining",index,--page_count);
+		unitest_buffer[index >> 3] &= ~(1 << (index & 7));
+		pm.release(index << 12);
 
-	//	apic = new((byte*)APIC_PBASE) APIC;
-	//	*(byte*)(sysinfo+1)=apic->id();
-	
-	//MP setup
-	/*
-	sysinfo->krnlbase=(qword)module_base;
-	sysinfo->AP_entry=(dword)( (qword)AP_entry-(qword)module_base );
-	sysinfo->MP_cnt=1;
-	
-	mp=new((byte*)MPAREA_BASE) MP();
-	*/
+
+	}
+	__debugbreak();
 
 	BugCheck(not_implemented,0);
 }
 
-/*
-__declspec(noreturn)
-void AP_entry(word pid){
-	
-	
-	buildIDT(pid);
-	apic=new((byte*)APIC_PBASE) APIC;
-	
-	*((byte*)(sysinfo+1)+pid) = apic->id();
-	assert(pid,sysinfo->MP_cnt);
-	sysinfo->MP_cnt++;
-	
-	BugCheck(not_implemented,0);
-}
-*/

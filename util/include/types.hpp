@@ -10,9 +10,7 @@ typedef struct{
 	qword high;
 }oword;
 
-#ifndef size_t
-#define size_t qword
-#endif
+typedef qword size_t;
 
 #pragma warning(disable: 4464 4626 4514 4710 4711 4820 5027)
 

@@ -29,5 +29,10 @@
 #define PMMBMP_BASE HIGHADDR(0x00400000)
 #define PMMBMP_PT_PBASE (0xA000)
 
-
-
+#define PAGE_NX ((qword)1 << 63)
+#define PAGE_GLOBAL ((qword)0x100)
+#define PAGE_CD ((qword)0x10)
+#define PAGE_WT ((qword)0x08)
+#define PAGE_USER ((qword)0x04)
+#define PAGE_WRITE ((qword)0x02)
+#define PAGE_PRESENT ((qword)0x01)

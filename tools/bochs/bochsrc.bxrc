@@ -2,7 +2,7 @@
 plugin_ctrl: unmapped=1, biosdev=1, speaker=1, extfpuirq=1, parallel=1, serial=1, gameport=1
 config_interface: win32config
 display_library: win32
-memory: host=64, guest=64
+memory: host=4, guest=4
 romimage: file=".\BIOS-bochs-latest", address=0x0, options=none
 vgaromimage: file=".\VGABIOS-lgpl-latest"
 boot: disk
@@ -50,7 +50,7 @@ keyboard: type=mf, serial_delay=250, paste_delay=100000, user_shortcut=none
 mouse: type=ps2, enabled=0, toggle=ctrl+mbutton
 sound: waveoutdrv=win, waveout=none, waveindrv=win, wavein=none, midioutdrv=win, midiout=none
 speaker: enabled=1, mode=sound
-parport1: enabled=1, file=none
+parport1: enabled=0
 parport2: enabled=0
 com1: enabled=1, mode=pipe-server, dev="\\.\pipe\com_1"
 com2: enabled=0
