@@ -12,18 +12,6 @@
 using namespace std;
 using namespace UOS;
 
-/*
-void get_uint(istream& ss,unsigned& out){
-	string str;
-	ss >> str;
-	if (!str.empty){
-		size_t len = 0;
-		unsigned res = stoul(str,&len,0);
-		if (len)
-			out = res;
-	}
-}
-*/
 
 class Debugger{
 	static const unsigned default_len = 4;

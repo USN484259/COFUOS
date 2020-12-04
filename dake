@@ -1,0 +1,20 @@
+#!/bin/sh
+
+export WINEPATH="D:\\VC\\bin\\amd64\\;D:\\bin\\"
+
+if [ $1 = "run" -o $1 = "debug" ]
+then
+	cd tools/bochs
+	wine cmd /c "${1}.bat"
+else
+	export DEFINES=
+	. ./defines
+	make $@
+fi
+
+if [ $? -ne 0 ]
+then
+	echo Failed
+else
+	echo Success
+fi
