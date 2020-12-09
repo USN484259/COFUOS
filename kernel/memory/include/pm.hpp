@@ -16,8 +16,10 @@ namespace UOS{
 #endif
 
 	public:
+		static const byte default_tag = 0x10;
+
 		PM(void);
-		qword allocate(byte tag = 0);
+		qword allocate(byte tag = default_tag);
 		void release(qword);
 		
 		qword capacity(void) const;

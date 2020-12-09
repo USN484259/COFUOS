@@ -58,7 +58,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 	if (0 == bmp_pbase)
 		BugCheck(bad_alloc,bmp_size);
 	
-	//maps everything, unmap PT
+	//maps everything
 	auto pdt0 = (volatile qword*)HIGHADDR(PDT0_PBASE);
 	qword i;
 	for (i = 0;i < pt_count;++i){
@@ -76,12 +76,6 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 		assert(i < 6*PAGE_SIZE/sizeof(qword));
 		bmp_pt[i] = 0;
 		++i;
-	}
-	auto pt0 = (volatile qword*)HIGHADDR(PT0_PBASE);
-	for (i = 0x0A;i < 0x10;++i){
-		assert(pt0[i] & 0x01);
-		pt0[i] = 0;
-		__invlpg((void*)HIGHADDR(i*PAGE_SIZE));
 	}
 
 	auto pmm_bmp = (BLOCK*)PMMBMP_BASE;
@@ -162,8 +156,9 @@ qword PM::allocate(byte tag){
 		}
 	}while (true);
 	next = page;
+#ifdef PM_TEST
 	dbgprint("page_count = %x, selected page = %x",page_count,page);
-
+#endif
 	qword head = 0,tail = PAGE_SIZE;
 	while (head + 1 < tail){
 		auto mid = (head + tail)/2;
@@ -180,7 +175,9 @@ qword PM::allocate(byte tag){
 	if (0 == pmm_bmp[page*PAGE_SIZE + head].solid)
 		++head;
 	assert(head < PAGE_SIZE);
+#ifdef PM_TEST
 	dbgprint("selected %x",head);
+#endif
 	qword res_page = page*PAGE_SIZE + head;
 	assert(res_page < bmp_size);
 
@@ -246,15 +243,15 @@ qword PM::available(void) const{
 bool PM::peek(void* dest,qword paddr,size_t count){
 	qword off = paddr & PAGE_MASK;
 	qword page = paddr - off;
+	VM::map_view view;
 	while(count){
-		auto view = (byte*)VM::map_view(page);
+		view.map(page);
 		qword len = min(PAGE_SIZE - off, count);
-		memcpy(dest, view + off, len);
+		memcpy(dest, (byte*)view + off, len);
 		count -= len;
 		dest = (byte*)dest + len;
 		off = 0;
 		page += PAGE_SIZE;
-		VM::unmap_view(view);
 	}
 	return true;
 }
@@ -264,9 +261,9 @@ void PM::check_integration(void){
 	auto pmm_bmp = (BLOCK*)PMMBMP_BASE;
 	auto page_count = align_up(bmp_size,PAGE_SIZE) >> 12;
 	auto discovered_free_page = 0;
-	for (auto page = 0;page < page_count;++page){
+	for (unsigned page = 0;page < page_count;++page){
 		auto pierce = 1;
-		for (auto i = 0;i < PAGE_SIZE;++i){
+		for (unsigned i = 0;i < PAGE_SIZE;++i){
 			auto& cur = pmm_bmp[page*PAGE_SIZE + i];
 			if (pierce){
 				if (cur.solid){

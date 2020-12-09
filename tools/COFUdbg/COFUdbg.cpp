@@ -162,12 +162,11 @@ bool Debugger::stub_command(void){
 		else
 			last_command = str;
 		
+		istringstream ss(str);
+		ss >> str >> ws;
 		if (str.empty())
 			continue;
 		
-		istringstream ss(str);
-		ss >> str >> ws;
-
 		switch(~0x20 & str.at(0)){
 			case 'Q':
 				pipe.write("Q");
@@ -413,9 +412,9 @@ bool Debugger::on_break(byte type,qword errcode){
 
 	cout << endl;
 	if (type == 0xFF)
-		cout << "BugCheck : " << dec << errcode;
+		cout << "BugCheck @ " << hex << rip << " : " << dec << errcode;
 	else
-		cout << "Break\t" << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type;
+		cout << "Break @ " << hex << rip << "\t" << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type;
 	switch(type){
 		case 10:
 		case 11:
@@ -591,7 +590,7 @@ bool Debugger::cmd_del(unsigned index){
 		cout << "Index out of range" << endl;
 		return false;
 	}
-	string str("B-\0");
+	string str("B-\0",3);
 	str.at(2) = (byte)index;
 	pipe.write(str);
 	return true;

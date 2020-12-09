@@ -200,6 +200,16 @@ namespace UOS{
 				valid = true;
 			}
 		}
+		operator T&(void){
+			if (valid)
+				return *static_cast<T*>(buffer);
+			BugCheck(null_deref,this);
+		}
+		operator const T&(void) const{
+			if (valid)
+				return *static_cast<const T*>(buffer);
+			BugCheck(null_deref,this);
+		}
 
 		operator T*(void){
 			return valid ? static_cast<T*>(buffer) : nullptr;

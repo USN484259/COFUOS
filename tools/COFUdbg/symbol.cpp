@@ -5,7 +5,7 @@ using namespace std;
 
 #pragma comment(lib,"dbghelp.lib")
 
-Symbol::Symbol(const char* name) : id((HANDLE)0xFF), base(0), line_info{sizeof(IMAGEHLP_LINE64)}{
+Symbol::Symbol(const char* name) : id(GetCurrentProcess()), base(0), line_info{sizeof(IMAGEHLP_LINE64)}{
     do{
         if (!SymInitialize(id, NULL, FALSE))
             break;

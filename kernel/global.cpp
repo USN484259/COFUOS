@@ -9,7 +9,7 @@
 #include "constant.hpp"
 
 namespace UOS{
-	
+	PE64 const* pe_kernel;
 	PM pm;
 	VM::kernel_vspace vm;
 	paired_heap heap;

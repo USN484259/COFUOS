@@ -795,14 +795,14 @@ CMN_BUF_VBASE equ HIGHADDR+0xE000
 PT_MAP_TABLE equ HIGHADDR+PT_MAP
 ;BUF_MAP_PT equ PT0+8*0x11
 FAT_KRNL_CLUSTER equ HIGHADDR+0xC000
-KRNL_STK_TOP equ HIGHADDR+0x00020000
+KRNL_STK_TOP equ HIGHADDR+0x00200000
 
 ;	virtual address of HIGHADDR
 ;	00000000	0000C000	boot_area
 ;	0000C000	0000E000	KRNL_FAT_cluster
 ;	0000E000	00010000	common buffer
 ;	00010000	?			GAP
-;	?			00020000	KRNL_STK			
+;	?			00200000	KRNL_STK			
 ;	00200000	00400000	MAP_VIEW
 ;	00400000	?			PMMBMP
 
@@ -1093,7 +1093,7 @@ jnc .fail
 
 lodsd	;stk_reserved.low
 
-cmp eax,0x10000	;64k
+cmp eax,0x100000	;1M
 mov edx,eax
 ja .fail
 
@@ -1144,17 +1144,17 @@ jnz .makestk
 
 ;build PT for kernel
 mov rbx,[rsp+peinfo.vbase]
-mov rax,HIGHADDR+0x000C0000		;PMMWMP could map 16GB
-mov rdi,HIGHADDR+PDT0
+mov rax,HIGHADDR+0x00C00000		;PMMWMP could map 16GB
+mov rdx,HIGHADDR+PDT0
 cmp rbx,rax
 mov ecx,ebx
 jb .fail
 mov eax,0x00000003
-shr ecx,21-3	;2MB, qword
+shr ecx,21	;2MB, qword
 or ax,PT_KRNL
 cmp ecx,PAGE_SIZE
+lea rdi,[rdx + 8*rcx]
 jae .fail
-add rdi,rcx
 stosq
 
 ;map header to vbase
@@ -1466,8 +1466,8 @@ jae .fail
 
 mov edx,ecx		;VA within 1G
 mov rax,HIGHADDR+PDT0
-shr edx,21-3	;PDT offset
-mov rcx,[rax+rdx]
+shr edx,21	;PDT index
+mov rcx,[rax+8*rdx]
 bt cx,0
 mov rdx,0x7FFFFFFF_FFFFF000
 jnc .fail

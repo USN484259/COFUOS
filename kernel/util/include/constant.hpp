@@ -1,14 +1,16 @@
 #pragma once
 
-#define ENABLE_DEBUGGER
+//#define ENABLE_DEBUGGER
 
 
 
 #define IA32_APIC_BASE 0x1B
 #define APIC_PBASE ((qword)0xFEE00000)
 
-#define HIGHADDR(x) ( 0xFFFF800000000000 | (qword)(x) )
-#define LOWADDR(x) ( 0x00007FFFFFFFFFFF & (qword)(x) )
+#define HIGHADDR(x) ( (qword)0xFFFF800000000000 | (qword)(x) )
+#define LOWADDR(x) ( (qword)0x00007FFFFFFFFFFF & (qword)(x) )
+
+#define IS_HIGHADDR(x) ( ((qword)(x) & HIGHADDR(0)) == HIGHADDR(0) )
 
 #define PAGE_SIZE ((qword)0x1000)
 #define PAGE_MASK ((qword)0x0FFF)
@@ -29,7 +31,7 @@
 #define PMMBMP_BASE HIGHADDR(0x00400000)
 #define PMMBMP_PT_PBASE (0xA000)
 
-#define PAGE_NX ((qword)1 << 63)
+#define PAGE_XD ((qword)1 << 63)
 #define PAGE_GLOBAL ((qword)0x100)
 #define PAGE_CD ((qword)0x10)
 #define PAGE_WT ((qword)0x08)

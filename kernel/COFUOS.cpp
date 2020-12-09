@@ -16,41 +16,11 @@ using namespace UOS;
 //[[ noreturn ]]
 //void AP_entry(word);
 
-byte unitest_buffer[PAGE_SIZE];
-
-[[ noreturn ]]
-void krnlentry(void* module_base){
-	buildIDT();
-
-#ifdef ENABLE_DEBUGGER
-	kdb_init(sysinfo->ports[0]);
-#endif
 
 
-	PE64 pe(module_base);
-	
-	{
-		auto it=pe.section();
-		procedure* globalConstructor=nullptr;
-		const char strCRT[8]={'.','C','R','T',0};
-
-		do{
-			if (8==match( strCRT,it.name(),8 ) ){
-				globalConstructor=(procedure*)it.base();
-				break;
-			}
-			
-		}while(it.next());
-		
-		assert(nullptr != globalConstructor);
-		
-		//globals construct
-		while(*globalConstructor)
-			(*globalConstructor++)();
-		
-	}
-
-	//TEST pm
+#ifdef PM_TEST
+void pm_test(void){
+	static byte unitest_buffer[PAGE_SIZE];
 	zeromemory(unitest_buffer,PAGE_SIZE);
 	__debugbreak();
 	
@@ -95,7 +65,153 @@ void krnlentry(void* module_base){
 
 	}
 	__debugbreak();
+}
+#endif
 
+#ifdef VM_TEST
+void vm_test(void){
+	__debugbreak();
+	static const qword fixed_addr = HIGHADDR(0x3FDFE000);
+	size_t fixed_size = 4*pm.capacity();
+	qword fixed_offset = PAGE_SIZE*(fixed_size/0x10);
+	dbgprint("Reserving 0x%x pages @ %p",fixed_size,fixed_addr);
+	qword addr = vm.reserve(fixed_addr,fixed_size);
+	assert(addr == fixed_addr);
+
+	addr = vm.reserve(fixed_addr - fixed_size/2, fixed_size);	//reserve overlap area
+	assert(0 == addr);
+
+	addr = vm.reserve(HIGHADDR(0xB000),1);	//PT bypass
+	assert(0 == addr);
+
+	addr = vm.reserve(pe_kernel->imgbase,0x10);		//PDT bypass
+	assert(0 == addr);
+
+	addr = vm.reserve(HIGHADDR(0x007FFFFF0000),0x20);	//over 512G
+	assert(0 == addr);
+
+	addr = vm.reserve(0x10000000,0x10);	//LOWADDR
+	assert(0 == addr);
+
+	addr = vm.reserve(0,0x400);	//over reserve
+	assert(0 == addr);
+
+	addr = vm.reserve(0,0x200);	//valid reserve_any
+	assert(addr);
+	dbgprint("Reserved 0x200 pages @ %p",addr);
+
+	bool res;
+
+	res = vm.commit(fixed_addr,fixed_size);	//over commit
+	assert(!res);
+	
+	res = vm.commit(fixed_addr - fixed_offset,0x10);	//commit to free page
+	assert(!res);
+
+	res = vm.commit(pe_kernel->imgbase + PAGE_SIZE*0x100,0x10);	//PDT bypass
+	assert(!res);
+
+	res = vm.commit(HIGHADDR(0xB000),1);	//PT bypass
+	assert(!res);
+
+	auto committed = pm.available() - 1;
+	dbgprint("Committing 0x%x pages @ %p",committed,fixed_addr + fixed_offset);
+	res = vm.commit(fixed_addr + fixed_offset,committed);	//normal commit
+	assert(res);
+	__debugbreak();
+	for (qword i = 0;i < committed;++i){
+		//probe every committed page
+		auto ptr = (qword*)(fixed_addr + fixed_offset + PAGE_SIZE*i);
+		dbgprint("Probing %p",ptr);
+		*ptr = i;
+	}
+	__debugbreak();
+	res = vm.protect(fixed_addr + fixed_offset,committed/2,PAGE_USER);	//invalid attrib
+	assert(!res);
+
+	res = vm.protect(fixed_addr,0x10,PAGE_WRITE);	//change attrib on non-commit page
+	assert(!res);
+
+	res = vm.protect(fixed_addr + fixed_offset,committed/2,0);	//valid attrib
+	assert(res);
+
+	for (qword i = 0;i < committed;++i){
+		//probe every committed page
+		auto ptr = (qword*)(fixed_addr + fixed_offset + PAGE_SIZE*i);
+		dbgprint("Checking %p",ptr);
+		assert(*ptr == i);
+	}
+
+	res = vm.release(HIGHADDR(0xB000),1);	//PT bypass
+	assert(!res);
+
+	res = vm.release(pe_kernel->imgbase,0x10);	//PDT bypass
+	assert(!res);
+
+	res = vm.release(fixed_addr - fixed_offset,0x10);	//release free page
+	assert(!res);
+
+	res = vm.release(fixed_addr + fixed_offset/2,fixed_offset);	//comb of reserved & free pages
+	assert(!res);
+
+	res = vm.release(fixed_addr,fixed_size);		//comb of reserved & committed pages
+	assert(res);
+
+	res = vm.release(addr,0x10);	//release in multiple steps
+	assert(res);
+	res = vm.release(addr + PAGE_SIZE*0x10,0x1F0);
+	assert(res);
+
+	__debugbreak();
+}
+#endif
+
+[[ noreturn ]]
+void krnlentry(void* module_base){
+	buildIDT();
+	kdb_init(sysinfo->ports[0]);
+
+	pe_kernel = PE64::construct(module_base);
+	assert(pe_kernel->imgbase == (qword)module_base);
+	{
+		procedure* global_constructor = nullptr;
+		for (unsigned i = 0;i < pe_kernel->section_count;++i){
+			const auto section = pe_kernel->get_section(i);
+			assert(section);
+			const char strCRT[8]={'.','C','R','T',0};
+			if (8 == match(strCRT,section->name,8)){
+				global_constructor = (procedure*)(pe_kernel->imgbase + section->offset);
+				break;
+			}
+		}
+		assert(global_constructor);
+		while(*global_constructor){
+			(*global_constructor++)();
+		}
+	}
+	
+	{
+		__debugbreak();
+		//give heap a block
+		bool res = false;
+		auto initial_heap = vm.reserve(0,0x10);
+		if (initial_heap){
+			res = vm.commit(initial_heap,0x10);
+			if (res){
+				res = heap.expand((void*)initial_heap,PAGE_SIZE*0x10);
+			}
+		}
+		if (!res)
+			BugCheck(bad_alloc,initial_heap);
+	}
+
+#ifdef PM_TEST
+	pm_test();
+#endif
+
+#ifdef VM_TEST
+	vm_test();
+#endif
+	__debugbreak();
 	BugCheck(not_implemented,0);
 }
-
