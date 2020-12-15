@@ -1,10 +1,9 @@
 #include "types.hpp"
 #include "kdb.hpp"
 #include "../cpu/include/hal.hpp"
-#include "../cpu/include/PIO.hpp"
-#include "../cpu/include/IF_guard.hpp"
+#include "../cpu/include/port_io.hpp"
+#include "../cpu/include/cpu.hpp"
 #include "sysinfo.hpp"
-#include "lock_guard.hpp"
 #include "../memory/include/pm.hpp"
 #include "../memory/include/vm.hpp"
 #include "util.hpp"
@@ -21,13 +20,13 @@ bool UOS::kdb_enable = false;
 #pragma warning(push)
 #pragma warning(disable: 4365)
 void UOS::kdb_init(word port) {
-	io_write<byte>(port + 1, 0);
-	io_write<byte>(port + 3, 0x80);
-	io_write<byte>(port + 0, 2);
-	io_write<byte>(port + 1, 0);
-	io_write<byte>(port + 3, 0x03);
-	io_write<byte>(port + 2, 0xC7);
-	io_write<byte>(port + 4, 0x0B);	//?????
+	port_write(port + 1, (byte)0);
+	port_write(port + 3, (byte)0x80);
+	port_write(port + 0, (byte)2);
+	port_write(port + 1, (byte)0);
+	port_write(port + 3, (byte)0x03);
+	port_write(port + 2, (byte)0xC7);
+	port_write(port + 4, (byte)0x0B);	//?????
 
 	//__writedr(7,0x700);
 	kdb_enable = true;
@@ -113,7 +112,7 @@ void UOS::kdb_break(byte id,exception_context* context){
 				break;
 			case 'B':	//breakpoint
 			{
-				IF_guard ig;
+				interrupt_guard ig;
 				DR_STATE dr;
 				qword mask;
 				DR_get(&dr);

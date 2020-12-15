@@ -1,6 +1,6 @@
 #include "heap.hpp"
 #include "util.hpp"
-#include "lock_guard.hpp"
+#include "cpu.hpp"
 #include "assert.hpp"
 
 
@@ -12,15 +12,7 @@ using namespace UOS;
 //const heap::BLOCK heap::nomem=16;
 
 
-paired_heap::paired_heap(void) : pool{nullptr}, cap_size(0) {}
-paired_heap::paired_heap(void* base,size_t len) : pool{nullptr}, cap_size(0) {
-	expand(base,len);
-}
-
-[[ noreturn ]]
-paired_heap::~paired_heap(void) {
-	BugCheck(not_implemented,this);
-}
+paired_heap::paired_heap(EXPANDER xp) : callback(xp) {}
 
 inline size_t paired_heap::align_mask(BLOCK index){
 	return ((size_t)1<<(index+bitoff))-1;
@@ -181,18 +173,14 @@ void paired_heap::put(void* base,BLOCK index){
 
 
 bool paired_heap::expand(void* base,size_t len) {
-	if (base && len)
-		;
-	else
+	if (!base && !len)
 		return false;
-	
+
 	if (reinterpret_cast<qword>(base) & align_mask(0))	//not b32 aligned
 		return false;
 
+	interrupt_guard ig;
 	lock_guard<spin_lock> guard(lock);
-	//assume page alignment
-	
-	//assert(0,reinterpret_cast<size_t>(base) & align_mask(15));	//m1
 	
 	byte* cur = static_cast<byte*>(base);
 	while (len >= align_size(0)) {
@@ -209,20 +197,6 @@ bool paired_heap::expand(void* base,size_t len) {
 		len -= size;
 		cap_size += size;
 	}
-//TODO add memory block of any alignment or size
-
-	/*
-	while(len>=align_size(0)){	//b32
-		BLOCK cur=category(len);
-		if (cur==nomem)
-			cur--;
-		
-		put(base,cur);
-		len-=align_size(cur);
-		base=((byte*)base)+align_size(cur);
-		
-	}
-	*/
 
 	return true;	
 }
@@ -249,10 +223,21 @@ void* paired_heap::allocate(size_t req) {
 	BLOCK level = category(req);
 	assert(level < nomem);
 
-	lock_guard<spin_lock> guard(lock);
+	void* res = nullptr;
+	{
+		interrupt_guard ig;
+		lock_guard<spin_lock> guard(lock);
+		res = get(level);
+	}
+	if (res || callback == nullptr)
+		return res;
+	size_t new_size = max<size_t>(cap_size,initial_cap);
+	void* block = callback(new_size);
+	if (block == nullptr || !expand(block,new_size)){
+		return nullptr;
+	}
+	return allocate(req);
 
-	return get(level);
-	
 }
 
 void paired_heap::release(void* base,size_t req) {
@@ -262,6 +247,7 @@ void paired_heap::release(void* base,size_t req) {
 	BLOCK level = category(req);
 	assert(level < nomem);
 
+	interrupt_guard ig;
 	lock_guard<spin_lock> guard(lock);
 	//assert(0,reinterpret_cast<size_t>(base) & align_mask(cur));
 	put(base, level);

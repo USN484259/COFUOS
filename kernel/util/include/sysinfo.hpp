@@ -1,10 +1,11 @@
 #pragma once
 #include "types.hpp"
+#include "constant.hpp"
 
 namespace UOS{
 	struct SYSINFO{
 		qword sig;
-		qword reserved_1;
+		qword ACPI_RSDT;
 
 		qword PMM_avl_top;
 		dword kernel_page;
@@ -26,5 +27,5 @@ namespace UOS{
 		dword FAT_data;
 		dword FAT_cluster;
 	};
-#define sysinfo ((SYSINFO*)SYSINFO_BASE)
+#define sysinfo ((SYSINFO const*)SYSINFO_BASE)
 }

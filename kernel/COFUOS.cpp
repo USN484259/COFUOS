@@ -93,8 +93,11 @@ void vm_test(void){
 	addr = vm.reserve(0x10000000,0x10);	//LOWADDR
 	assert(0 == addr);
 
-	addr = vm.reserve(0,0x400);	//over reserve
+	addr = vm.reserve(0,2*0x200*0x200);	//too big
 	assert(0 == addr);
+
+	qword big_addr = vm.reserve(0,0x2020);	//valid reserve_big
+	assert(big_addr);
 
 	addr = vm.reserve(0,0x200);	//valid reserve_any
 	assert(addr);
@@ -159,6 +162,8 @@ void vm_test(void){
 
 	res = vm.release(addr,0x10);	//release in multiple steps
 	assert(res);
+	res = vm.release(big_addr,0x2020);	//release big pages
+	assert(res);
 	res = vm.release(addr + PAGE_SIZE*0x10,0x1F0);
 	assert(res);
 
@@ -188,21 +193,6 @@ void krnlentry(void* module_base){
 		while(*global_constructor){
 			(*global_constructor++)();
 		}
-	}
-	
-	{
-		__debugbreak();
-		//give heap a block
-		bool res = false;
-		auto initial_heap = vm.reserve(0,0x10);
-		if (initial_heap){
-			res = vm.commit(initial_heap,0x10);
-			if (res){
-				res = heap.expand((void*)initial_heap,PAGE_SIZE*0x10);
-			}
-		}
-		if (!res)
-			BugCheck(bad_alloc,initial_heap);
 	}
 
 #ifdef PM_TEST

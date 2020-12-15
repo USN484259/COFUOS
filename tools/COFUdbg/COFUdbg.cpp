@@ -1,13 +1,15 @@
 #include "types.hpp"
-#include "context.hpp"
+//#include "kdb.hpp"
 #include <iostream>
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <deque>
 #include <string>
 #include "pipe.h"
 #include "symbol.h"
 #include "disasm.h"
+#include "exception_context.hpp"
 
 using namespace std;
 using namespace UOS;
@@ -30,6 +32,12 @@ class Debugger{
 		} mode;
 		qword line_base;
 	} step_rec;
+
+	bool virtual_terminal;
+	enum COLOR : word {BLACK = 0,RED,GREEN,YELLOW,BLUE,MAGENTA,CYAN,WHITE};
+	void color_set(COLOR);
+	void color_reset(void);
+
 public:
 	Debugger(const char*,const char*);
 	void run(void);
@@ -41,7 +49,9 @@ private:
 	bool step_check(void);	//true -> handled, continue
 	void show_addr_symbol(qword addr);
 	void show_source(qword addr);
-	void show_asm(qword start,qword end = (-1),size_t max_line = 2*default_len);
+	//void show_asm(qword start,qword end = (-1),size_t max_line = 2*default_len);
+	void windowed_asm(qword line_base,qword next_line);
+	void show_asm(qword addr,size_t line_count);
 	bool on_break(byte type,qword errcode);
 	void on_stack_trace(const vector<qword>&);
 	void on_memory_dump(qword base,const vector<byte>& buffer);
@@ -68,9 +78,21 @@ Debugger::Debugger(const char* pipe_name,const char* symbol_name) :
 	pipe(pipe_name),
 	symbol(symbol_name),
 	disasm(symbol_name),
-	mode(SOURCE)
+	mode(SOURCE),
+	virtual_terminal(false)
 {
 	step_rec.mode = step_rec.IDLE;
+	do{
+		HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+		if (out == INVALID_HANDLE_VALUE)
+			break;
+		dword mode;
+		if (!GetConsoleMode(out, &mode))
+			break;
+		if (!SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+			break;
+		virtual_terminal = true;
+	}while(false);
 }
 
 void Debugger::run(void){
@@ -79,6 +101,15 @@ void Debugger::run(void){
 	}while(stub_command());
 }
 
+void Debugger::color_set(COLOR color){
+	if (virtual_terminal)
+		cout << "\x1B[" << dec << (30 + color) << 'm';
+}
+
+void Debugger::color_reset(void){
+	if (virtual_terminal)
+		cout << "\x1B[0m";
+}
 
 bool Debugger::stub_get(void){
 	string str;
@@ -154,7 +185,9 @@ bool Debugger::stub_command(void){
 	bool res;
 	do{
 		res = false;
+		color_set(YELLOW);
 		cout << "COFU > ";
+		color_reset();
 		string str;
 		getline(cin,str);
 		if (str.empty())
@@ -239,7 +272,7 @@ bool Debugger::stub_command(void){
 				break;
 			case 'U':
 			{
-				unsigned len = default_len;
+				unsigned len = default_len*2;
 				ss >> str;
 				ss >> setbase(0) >> len;
 				qword addr = resolve(str);
@@ -302,7 +335,7 @@ qword Debugger::resolve(const string& str){
 		else{
 			auto i = 1;
 			for (auto im : table){
-				cout << dec << i << '\t' << im.second << endl;
+				cout << dec << i++ << '\t' << im.second << endl;
 			}
 		}
 	}
@@ -338,9 +371,12 @@ bool Debugger::step_check(void){
 void Debugger::show_addr_symbol(qword addr){
 	string sym_name;
 	qword sym_base = symbol.get_symbol(addr,sym_name);
-	if (sym_base)
-		cout << sym_name << " +0x" << hex << (addr - sym_base) << '\t';
-	cout << "@ 0x" << hex << addr << endl;
+	if (sym_base){
+		color_set(GREEN);
+		cout << sym_name << " +0x" << hex << (addr - sym_base);
+		color_reset();
+		cout << endl;
+	}
 }
 
 void Debugger::show_source(qword addr){
@@ -360,14 +396,21 @@ void Debugger::show_source(qword addr){
 		auto line_number = symbol.line_number();
 		auto& line_content = symbol.line_content();
 		auto next_line = symbol.next_line();
+		bool this_line = (mode == SOURCE && rip >= line_base && (!next_line || rip < next_line));
+		if (this_line)
+			color_set(BLUE);
 		cout << "line " << dec << line_number;
-		if (mode == SOURCE && rip >= line_base && (!next_line || rip < next_line))
+		if (this_line)
 			cout << "==>\t\t";
 		else
 			cout << ":\t\t";
-		cout << line_content << endl;
-		if (mode == ASSEMBLY)
-			show_asm(line_base,next_line ? next_line : (-1));
+		color_set(CYAN);
+		cout << line_content;
+		color_reset();
+		cout << endl;
+		if (mode == ASSEMBLY){
+			windowed_asm(line_base,next_line);
+		}
 		line_base = next_line;
 		--line_count;
 	}
@@ -375,14 +418,51 @@ void Debugger::show_source(qword addr){
 		if (mode == SOURCE)
 			cout << "(no source)" << endl;
 		else if (line_count == default_len)
-			show_asm(addr);
+			windowed_asm(addr,0);
 	}
 
 }
+void Debugger::windowed_asm(qword line_base,qword next_line){
+	deque<qword> lines;
+	qword cur = line_base;
+	unsigned pinned = 0;
+	do{
+		auto len = disasm.get(cur);
+		if (len == 0)
+			break;
+		while (lines.size() >= 2*default_len){
+			lines.pop_front();
+		}
+		lines.push_back(cur);
+		if (pinned){
+			if (0 == --pinned)
+				break;
+		}
+		else{
+			if (cur >= rip)
+				pinned = default_len;
+		}
+		cur += len;
 
-void Debugger::show_asm(qword addr,qword end,size_t line_count){
+		if (next_line && cur >= next_line){
+			break;
+		}
+	}while(true);
+	if (lines.empty()){
+		cout << "(no assembly)" << endl;
+	}
+	else{
+		if (lines.front() != line_base)
+			cout << "\t..." << endl;
+		show_asm(lines.front(),lines.size());
+	}
+}
+
+void Debugger::show_asm(qword addr,size_t line_count){
 	auto fill = cout.fill('0');
-	while(addr < end && line_count--){
+	while(line_count--){
+		if (addr == rip)
+			color_set(BLUE);
 		cout << hex << setw(16) << addr;
 
 		if (addr > rip)
@@ -391,9 +471,10 @@ void Debugger::show_asm(qword addr,qword end,size_t line_count){
 			cout << " (-0x" << hex << setw(4) << (rip - addr) << ")\t";
 		else
 			cout << " ( 0  ==>)\t";
+		color_reset();
 		string str;
 		auto len = disasm.get(addr,str);
-		if (!len){
+		if (len == 0){
 			cout << "(no assembly)" << endl;
 			return;
 		}
@@ -411,19 +492,23 @@ bool Debugger::on_break(byte type,qword errcode){
 	step_rec.mode = step_rec.IDLE;
 
 	cout << endl;
-	if (type == 0xFF)
+	if (type == 0xFF){
+		color_set(RED);
 		cout << "BugCheck @ " << hex << rip << " : " << dec << errcode;
-	else
-		cout << "Break @ " << hex << rip << "\t" << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type;
-	switch(type){
-		case 10:
-		case 11:
-		case 12:
-		case 13:
-		case 14:
-			cout <<"\terrcode = " << hex << errcode;
 	}
-
+	else{
+		color_set(YELLOW);
+		cout << (type < 19 ? breakname[type] : "??") << " : " << dec << (dword)type << " @ " << hex << rip;
+		switch(type){
+			case 10:
+			case 11:
+			case 12:
+			case 13:
+			case 14:
+				cout <<"\terrcode = " << hex << errcode;
+		}
+	}
+	color_reset();
 	cout << endl;
 	show_addr_symbol(rip);
 	show_source(rip);
@@ -640,7 +725,7 @@ void Debugger::cmd_disasm(qword addr,unsigned count){
 	if (!addr)
 		addr = rip;
 	show_addr_symbol(addr);
-	show_asm(addr,(-1),count);
+	show_asm(addr,count);
 }
 
 int main(int argc,char** argv){

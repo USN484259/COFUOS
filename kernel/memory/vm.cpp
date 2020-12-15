@@ -19,7 +19,7 @@ void VM::map_view::map(qword pa,qword attrib){
 	assert(0 == (pa & PAGE_MASK));
 	assert(0 == (attrib & 0x7FFFFFFFFFFFF004));	//not user, attributes only
 	unmap();
-	auto table = (volatile qword*)MAP_TABLE_BASE;
+	constexpr auto table = (volatile qword*)MAP_TABLE_BASE;
 	for (unsigned index = 0; index < 0x200; ++index)
 	{
 		qword origin_value = table[index];
@@ -48,7 +48,7 @@ void VM::map_view::unmap(void){
 	if (index >= 0x200)
 		BugCheck(out_of_range,view);
 
-	auto table = (volatile qword *)MAP_TABLE_BASE;
+	constexpr auto table = (volatile qword *)MAP_TABLE_BASE;
 	qword origin_value = table[index];
 	if (0 == (origin_value & 0x01))
 		BugCheck(corrupted, origin_value);
@@ -309,7 +309,7 @@ void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block,word hint){
 	}while(prev_block.next_valid);
 	assert(prev_block.size);
 	if (prev_block.next_valid){	//next_block valid
-		assert(next_block.prev = prev_block.self);
+		assert(next_block.prev == prev_block.self);
 		next_block.prev = block.self;
 		next_block.prev_valid = 1;
 		block.next = next_block.self;
@@ -331,7 +331,7 @@ void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block,word hint){
 	block.put(table + block.self);
 }
 
-#ifdef VM_TEST
+#ifdef _DEBUG
 void VM::virtual_space::check_integration(PDT& pdt,PT* table){
 	bool free_map[0x200] = {0};
 	unsigned free_count = 0;
@@ -397,7 +397,6 @@ qword VM::virtual_space::imp_reserve_any(VM::PDT& pdt,PT* table,qword base_addr,
 		return 0;
 	auto cur = pdt.head;
 	BLOCK block;
-	qword result = 0;
 	do{
 		block.get(table + cur);
 		assert(block.self == cur);
@@ -410,7 +409,7 @@ qword VM::virtual_space::imp_reserve_any(VM::PDT& pdt,PT* table,qword base_addr,
 			}
 			block.size -= count;
 			shift_left(pdt,table,block);
-#ifdef VM_TEST
+#ifdef _DEBUG
 	check_integration(pdt,table);
 #endif
 			return base_addr + (allocated_block << 12);
@@ -449,7 +448,7 @@ bool VM::virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word cou
 	shift_left(pdt,table,blocks[0]);
 	insert(pdt,table,blocks[1],blocks[0].self);
 
-#ifdef VM_TEST
+#ifdef _DEBUG
 	check_integration(pdt,table);
 #endif
 
@@ -514,7 +513,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 		block.size = count;
 		insert(pdt,table,block,pdt.head);
 	}
-#ifdef VM_TEST
+#ifdef _DEBUG
 	check_integration(pdt,table);
 #endif
 }

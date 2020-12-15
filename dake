@@ -2,7 +2,13 @@
 
 export WINEPATH="D:\\VC\\bin\\amd64\\;D:\\bin\\"
 
-if [ $1 = "run" -o $1 = "debug" ]
+cmd="all"
+if [ $# -ne 0 ]
+then
+	cmd=$1
+fi
+
+if [ $cmd = "run" -o $cmd = "debug" ]
 then
 	cd tools/bochs
 	wine cmd /c "${1}.bat"

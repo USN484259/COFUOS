@@ -11,12 +11,29 @@ namespace UOS{
 	template< typename T > struct remove_reference<T&&> {typedef T type;};
 	
 	template< typename T >
-	typename remove_reference<T>::type&& move( T&& t ){
+	constexpr typename remove_reference<T>::type&& move( T&& t ){
 		return static_cast<typename remove_reference<T>::type&&>(t);
 	}
-	
+		
+
+	template<typename T> struct is_lvalue_reference { static constexpr bool value = false; };
+	template<typename T> struct is_lvalue_reference<T&> { static constexpr bool value = true; };
+
+	template<typename T>
+	constexpr T&& forward(typename remove_reference<T>::type & arg)
+	{
+		return static_cast<T&&>(arg);
+	}
+
+	template<typename T>
+	constexpr T&& forward(typename remove_reference<T>::type && arg)
+	{
+		static_assert(!is_lvalue_reference<T>::value, "invalid rvalue to lvalue conversion");
+		return static_cast<T&&>(arg);
+	}
+
 	template< class T >
-	T* addressof(T& arg) 
+	constexpr T* addressof(T& arg) 
 	{
 		return reinterpret_cast<T*>(
 				   &const_cast<char&>(
@@ -97,7 +114,7 @@ namespace UOS{
 	//}
 	
 	template<typename T>
-	inline const T& min(const T& a,const T& b){
+	inline constexpr const T& min(const T& a,const T& b){
 		return (a<b) ? a : b;
 	}
 	
@@ -107,7 +124,7 @@ namespace UOS{
 	//}
 	
 	template<typename T>
-	inline const T& max(const T& a,const T& b){
+	inline constexpr const T& max(const T& a,const T& b){
 		return (a>b) ? a : b;
 	}
 	
@@ -157,15 +174,27 @@ namespace UOS{
 
 	
 	template<typename T>
-	T align_down(T value,size_t align){
+	constexpr T align_down(T value,size_t align){
 		return value & (T)~(align-1);
 	}
 	
 	template<typename T>
-	T align_up(T value,size_t align){
+	constexpr T align_up(T value,size_t align){
 		return align_down((T)(value + align - 1),align);
 	}
 	
+    template<typename M>
+    class lock_guard{
+        M& mutex;
+    public:
+        lock_guard(M& m) : mutex(m) {
+            m.lock();
+        }
+        ~lock_guard(void) {
+            mutex.unlock();
+        }
+    };
+
 	template<typename T>
 	class optional{		//simple and *buggy* implementation of C++17 std::optional
 		alignas(T) byte buffer[sizeof(T)];

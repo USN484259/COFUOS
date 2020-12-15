@@ -2,14 +2,17 @@
 #include "util.hpp"
 #include "../cpu/include/hal.hpp"
 #include "../memory/include/heap.hpp"
+#include "assert.hpp"
 
 using namespace UOS;
 
 void* operator new(size_t len){
 	if (!len)
 		return nullptr;
-	return heap.allocate(len);
-
+	auto res = heap.allocate(len);
+    if (!res)
+        BugCheck(bad_alloc,len);
+    return res;
 }
 
 void* operator new(size_t,void* pos){
@@ -40,8 +43,10 @@ void operator delete[](void* p){
 template<typename T>
 inline void copy_memory(byte* dst,const byte* sor,size_t count){
     auto aligned_dst = (T*)align_up((qword)dst,sizeof(T));
-    if (count >= (byte*)aligned_dst - dst){
-        count -= ( (byte*)aligned_dst - dst );
+    assert((byte*)aligned_dst >= dst);
+    auto off = (size_t)((byte*)aligned_dst - dst);
+    if (count >= off){
+        count -= off;
         auto aligned_count = count / sizeof(T);
         count &= sizeof(T) - 1;
         while (dst != (byte*)aligned_dst)
@@ -67,8 +72,10 @@ inline void copy_memory<byte>(byte* dst,const byte* sor,size_t count){
 void UOS::zeromemory(void* dst,size_t count){
     auto ptr = (byte*)dst;
     auto aligned_ptr = (qword*)align_up((qword)dst,8);
-    if (count >= (byte*)aligned_ptr - ptr){
-        count -= ( (byte*)aligned_ptr - ptr );
+    assert((byte*)aligned_ptr >= ptr);
+    auto off = (size_t)((byte*)aligned_ptr - ptr);
+    if (count >= off){
+        count -= off;
         auto aligned_count = count >> 3;
         count &= 7;
         while(ptr != (byte*)aligned_ptr)

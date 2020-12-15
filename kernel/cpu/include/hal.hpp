@@ -1,6 +1,6 @@
 #pragma once
 #include "types.hpp"
-#include "stopcode.hpp"
+#include "bugcheck.hpp"
 
 extern "C"{
 #ifndef _TEST
@@ -13,8 +13,6 @@ extern "C"{
 	void serial_put(word,byte);
 	byte serial_peek(word);
 #endif
-	[[ noreturn ]]
-	void BugCheck(UOS::stopcode,...);
 
 	//void handler_push(exception_handler,void*);
 	//void handler_pop(void);

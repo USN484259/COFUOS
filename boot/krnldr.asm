@@ -3,9 +3,6 @@ IA32_APIC_BASE equ 0x1B
 
 HIGHADDR equ 0xFFFF_8000_0000_0000
 
-IDT_BASE equ 0x0400
-IDT_LIM equ 0x400	;64 entries
-
 GDT_BASE equ 0x0800
 GDT_LIM equ 0x100	;16 entries
 TSS_BASE equ 0x0900
@@ -14,49 +11,49 @@ TSS_LIM equ 0x80
 SYSINFO_BASE equ 0x0A00
 SYSINFO_LEN equ (0x1000-SYSINFO_BASE)
 
+IDT_BASE equ 0x1000
+IDT_LIM equ 0x1000	;256 entries
+
 PAGE_SIZE equ 0x1000
 SECTOR_SIZE equ 0x200
 
-ISR_STK equ 0x02000
+ISR_STK equ 0x04000
 
-PL4T equ 0x03000
-PDPT0 equ 0x4000
-PDPT8 equ 0x5000
-PDT0 equ 0x06000
-PT0	equ 0x07000
-PT_KRNL equ 0x8000
-PT_MAP equ 0x9000
+PL4T equ 0x04000
+PDPT0 equ 0x5000
+PDPT8 equ 0x6000
+PDT0 equ 0x07000
+PT0	equ 0x08000
+PT_KRNL equ 0x9000
+PT_MAP equ 0xA000
 
 PT_BASE equ PL4T
-PT_LEN equ (0xA000-PT_BASE)
+PT_LEN equ (0xB000-PT_BASE)
 
-PMMSCAN_BASE equ 0x1000
+PMMSCAN_BASE equ 0x3000
 PMMSCAN_LEN equ 0x0F00
 
 ;	physical Memory layout
 
-
-
-;	000000		001000		RW	TSS & GDT & IDT & sysinfo
-;	001000		002000		RW	PMMSCAN & VBE_scan & ISR stack
+;	000000		001000		R	TSS & GDT & sysinfo
+;	001000		002000		RW	IDT
 ;	002000		003000		RWX	loader & MP entry
-;	003000		004000		RW	PL4T
-;	004000		005000		RW	PDPT low	
-;	005000		006000		RW	PDPT high
-;	006000		007000		RW	PDT
-;	007000		008000		RW	PT0
-;	008000		009000		RW	krnl PT
-;	009000		00A000		RW	mapper PT
-;	00A000		010000		RW	avl
+;	003000		004000		RW	PMMSCAN & VBE_scan & ISR stack
+;	004000		005000		RW	PL4T
+;	005000		006000		RW	PDPT low	
+;	006000		007000		RW	PDPT high
+;	007000		008000		RW	PDT
+;	008000		009000		RW	PT0
+;	009000		00A000		RW	krnl PT
+;	00A000		00B000		RW	mapper PT
+;	00B000		010000		RW	avl
 ;-------------direct map---------------------
 ;	010000		?			?	kernel pages
 
 
-
-
 struc sysinfo
 .sig			resq 1
-				resq 1
+.ACPI_RSDT		resq 1
 
 .PMM_avl_top	resq 1
 .kernel_page	resd 1
@@ -105,6 +102,10 @@ align 4
 strboot db 'COFUOS Loading ...',0
 align 4
 strvberr db 'No proper video mode',0
+align 4
+strnoacpi db 'ACPI not found',0
+align 4
+strnopci db 'PCI not found',0
 
 align 16
 
@@ -236,6 +237,8 @@ ret
 
 
 abort16:
+push cs
+pop ds
 call print16
 sti
 .hlt:
@@ -278,7 +281,62 @@ mov [es:si],eax
 mov [es:si+4],ecx
 
 .end:
+ret
 
+
+ACPI_get:
+lodsd
+cmp eax,0x20445352
+jnz .next
+
+lodsd
+cmp eax,0x20525450
+jnz .next
+
+;checksum
+mov cx,0x0C
+mov dl,0x1F
+.checksum_1:
+lodsb
+add dl,al
+loop .checksum_1
+test dl,dl
+jnz .next
+
+cmp [si-5],al	;al == 0
+jnz .v2
+;ACPI version 1.0
+mov eax,[si-4]
+mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT],eax
+stc
+ret
+
+.v2:
+xor dx,dx
+mov cx,0x10
+.checksum_2:
+lodsb
+add dl,al
+loop .checksum_2
+test dl,dl
+jnz .next
+;ACPI version >= 2.0
+;&XSDT should lower than (1 << 56)
+cmp [si-0x05],cl	;cx == 0
+jnz .next
+;get XSDT
+mov eax,[si-0x0C]
+mov edx,[si-0x08]
+mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT],eax
+mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT+4],edx
+
+dec cx	;cl == 0xFF, indicate XSDT
+mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT+7],cl
+stc
+ret
+
+.next:
+clc
 ret
 
 
@@ -317,8 +375,60 @@ mov di,SYSINFO_BASE+sysinfo.FAT_header
 mov cx,7
 es rep movsw
 
+PCI_scan:
+mov ax,0xB101
+int 0x1A
+jc .fail
+and al,1
+cmp edx,0x20494350
+jnz .fail
+cmp ax,1
+jz .end
+.fail:
+mov si,strnopci
+jmp abort16
 
+.end:
 
+ACPI_scan:
+
+;search RSDP in EBDA
+mov ax,[es:0x040E]
+xor di,di
+mov ds,ax
+.search_ebda:
+mov si,di
+call ACPI_get
+jc .end
+add di,0x10
+cmp di,0x400
+jb .search_ebda
+
+;search RDSP in BIOS ROM
+mov ax,0xE000
+xor di,di
+mov ds,ax
+.search_rom:
+mov si,di
+call ACPI_get
+jc .end
+add di,0x10
+jnc .search_rom
+; di overflow, check ds
+mov ax,ds
+add ax,0x1000
+jc .fail	;ds overflow, not found
+mov ds,ax
+jmp .search_rom
+
+.fail:
+mov si,strnoacpi
+jmp abort16
+
+.end:
+;NOTE DS not restored : vbe_scan changes DS again
+
+vbe_scan:
 ;detect VBE
 mov di,PMMSCAN_BASE+0x200
 mov ecx,'VBE2'
@@ -328,12 +438,6 @@ int 0x10
 cmp ax,0x4F
 mov si,strvberr
 jnz abort16
-
-
-xor cx,cx
-mov es,cx
-
-
 
 mov edx,'VESA'
 cmp [es:PMMSCAN_BASE+0x200],edx
@@ -347,7 +451,7 @@ mov cx,[es:PMMSCAN_BASE+0x200+0x10]	;video modes segment
 mov ds,cx
 
 
-video_loop:
+.video_loop:
 lodsw	;next mode
 mov cx,ax
 mov bx,ax
@@ -367,25 +471,25 @@ jnz .end
 
 
 test BYTE [es:PMMSCAN_BASE],0x80
-jz video_loop
+jz .video_loop
 
 
 mov cx,[es:PMMSCAN_BASE+0x12]
 cmp cx,800
-jb video_loop
+jb .video_loop
 
 mov dx,[es:PMMSCAN_BASE+0x14]
 cmp dx,600
-jb video_loop
+jb .video_loop
 
 cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_width]
-jb video_loop
+jb .video_loop
 cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
-jb video_loop
+jb .video_loop
 
 movzx ax,BYTE [es:PMMSCAN_BASE+0x19]
 cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
-jb video_loop
+jb .video_loop
 
 ;save current video mode
 
@@ -409,7 +513,7 @@ stosw
 mov ax,[es:PMMSCAN_BASE+0x2A]
 stosw
 
-jmp video_loop
+jmp .video_loop
 
 .end:
 
@@ -427,6 +531,8 @@ int 0x10
 cmp ax,0x4F
 jnz abort16
 
+
+mem_scan:
 xor ebx,ebx
 
 xor ax,ax
@@ -445,7 +551,7 @@ mov edx,0x534D4150	;'SMAP'
 ;	DWORD		type
 ;	BYTE[4]		alignment
 
-memscan_loop:
+.memscan_loop:
 ;mov edx,eax
 mov cx,20
 mov eax,0xE820
@@ -462,7 +568,7 @@ call set_PMM_top
 
 add di,24
 test ebx,ebx
-jnz memscan_loop
+jnz .memscan_loop
 
 .end:
 
@@ -647,15 +753,7 @@ mov ecx,tss64_len/4
 rep movsd
 
 
-;zeroing IDT
-mov edi,IDT_BASE
-mov ecx,IDT_LIM
-call zeromemory
-
-
 ;paging init
-
-
 mov edi,PT_BASE
 mov ecx,PT_LEN
 call zeromemory
@@ -702,6 +800,11 @@ call map_page
 
 mov ebx,0x2000
 mov edx,0x103		;RWX
+inc ecx
+call map_page
+
+mov ebx,0x3000
+mov edx,0x80000103
 inc ecx
 call map_page
 
@@ -790,23 +893,22 @@ ret
 GAP_VBASE equ HIGHADDR+0x00010000
 PMMBMP_VBASE equ HIGHADDR+0x00400000
 PT_MAP_VBASE equ HIGHADDR+0x00200000
-;TMP_PT_VBASE equ HIGHADDR+0x10000
 CMN_BUF_VBASE equ HIGHADDR+0xE000
 PT_MAP_TABLE equ HIGHADDR+PT_MAP
-;BUF_MAP_PT equ PT0+8*0x11
 FAT_KRNL_CLUSTER equ HIGHADDR+0xC000
-KRNL_STK_TOP equ HIGHADDR+0x00200000
+KRNL_STK_TOP equ HIGHADDR+0x001FF000
 
 ;	virtual address of HIGHADDR
 ;	00000000	0000C000	boot_area
 ;	0000C000	0000E000	KRNL_FAT_cluster
 ;	0000E000	00010000	common buffer
 ;	00010000	?			GAP
-;	?			00200000	KRNL_STK			
+;	?			001FF000	KRNL_STK
+;	001FF000	00200000	stack_guard
 ;	00200000	00400000	MAP_VIEW
-;	00400000	?			PMMBMP
-
-;	02000000?	?			KERNEL
+;	00400000	00E00000<	PMMBMP
+;	00E00000<	01000000	GAP
+;	01000000>	?			KERNEL
 
 
 struc peinfo
@@ -1144,7 +1246,7 @@ jnz .makestk
 
 ;build PT for kernel
 mov rbx,[rsp+peinfo.vbase]
-mov rax,HIGHADDR+0x00C00000		;PMMWMP could map 16GB
+mov rax,HIGHADDR+0x01000000
 mov rdx,HIGHADDR+PDT0
 cmp rbx,rax
 mov ecx,ebx
@@ -1281,6 +1383,14 @@ xor rdx,rdx
 xor r8,r8
 call MapPage
 
+;change page 0 to RO
+mov rdx,HIGHADDR+PT0
+mov rax,HIGHADDR
+mov rcx,[rdx]
+btr rcx,1
+mov [rdx],rcx
+invlpg [rax]
+
 mov rcx,[rsp+peinfo.vbase]
 mov edx,[rsp+peinfo.entry]
 mov rsp,rbp
@@ -1293,6 +1403,7 @@ call rdx	;rcx module base
 nop
 
 BugCheck:
+hlt
 mov dx,0x92
 in al,dx
 or al,1

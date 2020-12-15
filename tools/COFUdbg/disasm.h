@@ -16,6 +16,7 @@ public:
     Disasm(const char*);
     ~Disasm(void);
 
+    unsigned get(qword);
     unsigned get(qword,std::string&);
 
 };

@@ -1,7 +1,7 @@
 
 CL_OPTIONS=/nologo /Ox /MT /TP /W4 /EHsc /Fobin\\ /Febin\\COFUdbg.exe
 
-INCLUDE_PATH=/I D\:\\VC\\include\\ /I D\:\\win10_kits\\include\\ucrt\\ /I D\:\\win10_kits\\include\\shared\\ /I D\:\\win10_kits\\include\\um /I D\:\\COFUOS\\util\\include\\ /I D\:\\COFUOS\\kernel\\process\\include\\ /I D\:\\udis86-1.7.2\\ 
+INCLUDE_PATH=/I D\:\\VC\\include\\ /I D\:\\win10_kits\\include\\ucrt\\ /I D\:\\win10_kits\\include\\shared\\ /I D\:\\win10_kits\\include\\um /I D\:\\COFUOS\\util\\include\\ /I D\:\\COFUOS\\kernel\\exception\\include\\ /I D\:\\udis86-1.7.2\\ 
 
 SOURCE_FILES=$(wildcard *.cpp)
 

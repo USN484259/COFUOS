@@ -1,7 +1,6 @@
 #pragma once
 #include "types.hpp"
 #include "../../sync/include/spin_lock.hpp"
-#include "lock_guard.hpp"
 #include "../../image/include/pe.hpp"
 //#include "queue.hpp"
 #include "pm.hpp"
@@ -139,7 +138,7 @@ namespace UOS{
 			void shift_left(PDT& pdt,PT* table,BLOCK& block);
 			void shift_right(PDT& pdt,PT* table,BLOCK& block);
 			void insert(PDT& pdt,PT* table,BLOCK& block,word hint);
-#ifdef VM_TEST
+#ifdef _DEBUG
 			void check_integration(PDT& pdt,PT* table);
 #endif
 		};
@@ -153,12 +152,14 @@ namespace UOS{
 			bool protect(qword addr,size_t page_count,qword attrib) override;
 			bool release(qword addr,size_t page_count) override;
 			bool peek(void* dst,qword addr,size_t count) override;
+			bool assign(qword va,qword pa,size_t page_count);
 		private:
 			static bool common_check(qword addr,size_t page_count);
 			static void new_pdt(PDPT& pdpt,map_view& view);
 			static void new_pt(PDT& pdt,map_view& view);
 			bool reserve_fixed(qword addr,size_t page_count);
 			qword reserve_any(size_t page_count);
+			qword reserve_big(size_t page_count);
 			void locked_release(qword addr,size_t page_count);
 		};
 

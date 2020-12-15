@@ -11,7 +11,7 @@ namespace UOS{
 		qword used;
 		qword next;
 
-#ifdef PM_TEST
+#ifdef _DEBUG
 		void check_integration(void);
 #endif
 
@@ -26,6 +26,8 @@ namespace UOS{
 		qword available(void) const;
 
 		static bool peek(void* dest,qword paddr,size_t count);
+
+		qword bmp_page_count(void) const;
 	};
 	extern PM pm;
 }

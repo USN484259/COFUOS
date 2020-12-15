@@ -18,7 +18,7 @@ Disasm::~Disasm(void){
         delete[] code;
 }
 
-unsigned Disasm::get(qword addr,std::string& str){
+unsigned Disasm::get(qword addr){
     if (addr < base)
         return 0;
     auto off = addr - base;
@@ -29,7 +29,11 @@ unsigned Disasm::get(qword addr,std::string& str){
         ud_set_input_buffer(&ud,code + off,length - off);
         ud_set_pc(&ud,addr);
     }
-    auto len = ud_disassemble(&ud);
+    return ud_disassemble(&ud);
+}
+
+unsigned Disasm::get(qword addr,std::string& str){
+    auto len = get(addr);
     if (len){
         str.assign(ud_insn_asm(&ud));
         next = addr + len;

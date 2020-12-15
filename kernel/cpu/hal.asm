@@ -5,6 +5,8 @@ HIGHADDR equ 0xFFFF8000_00000000
 ;WARNING: according to x64 calling convention 0x20 space on stack needed before calling C functions
 
 extern dispatch_exception
+extern dispatch_irq
+
 extern imp_memcpy
 extern imp_memset
 
@@ -30,103 +32,27 @@ global __chkstk
 
 section .text
 
+; 0 ~ 7, 9, 15, 16, 18, 19 no errcode
+; 8, 10 ~ 14, 17 has errcode
+
+%macro ISR_STUB 1
+%if %1 == 8 || %1 == 17 || (%1 >= 10 && %1 <= 14)
+;
+%else
+push rax
+%endif
+call near exception_entry
+int3
+align 8
+%endmacro
+
 ISR_exception:
-
-.exp0:
-push rax
-call near exception_entry
-int3
-align 8
-.exp1:
-push rax
-call near exception_entry
-int3
-align 8
-.exp2:
-push rax
-call near exception_entry
-int3
-align 8
-.exp3:
-push rax
-call near exception_entry
-int3
-align 8
-.exp4:
-push rax
-call near exception_entry
-int3
-align 8
-.exp5:
-push rax
-call near exception_entry
-int3
-align 8
-.exp6:
-push rax
-call near exception_entry
-int3
-align 8
-.exp7:
-push rax
-call near exception_entry
-int3
-align 8
-.exp8:
-call near exception_entry
-int3
-align 8
-.exp9:
-push rax
-call near exception_entry
-int3
-align 8
-.exp10:
-call near exception_entry
-int3
-align 8
-.exp11:
-call near exception_entry
-int3
-align 8
-.exp12:
-call near exception_entry
-int3
-align 8
-.exp13:
-call near exception_entry
-int3
-align 8
-.exp14:
-call near exception_entry
-int3
-align 8
-.exp15:
-push rax
-call near exception_entry
-int3
-align 8
-.exp16:
-push rax
-call near exception_entry
-int3
-align 8
-.exp17:
-call near exception_entry
-int3
-align 8
-.exp18:
-push rax
-call near exception_entry
-int3
-align 8
-.exp19:
-push rax
-call near exception_entry
-int3
-
 align 16
-
+%assign i 0
+%rep 20
+ISR_STUB i
+%assign i i+1
+%endrep
 
 exception_entry:
 
@@ -190,18 +116,53 @@ add rsp,0x10	;exp# and errcode
 
 iretq
 
-IDT_BASE equ 0x0400
-IDT_LIM equ 0x400	;64 entries
+
+ISR_irq:
+align 16
+%rep 0x20
+call near irq_entry
+int3
+align 8
+%endrep
+
+irq_entry:
+xchg rcx,[rsp]
+push rax
+push rdx
+push r8
+push r9
+mov rax,ISR_irq
+push r10
+push r11
+sub rcx,rax
+sub rsp,0x20
+shr rcx,3
+call dispatch_irq
+add rsp,0x20
+
+pop r11
+pop r10
+pop r9
+pop r8
+pop rdx
+pop rax
+pop rcx
+iretq
+
+
+
+IDT_BASE equ 0x1000
+IDT_LIM equ 0x1000	;256 entries
 
 
 buildIDT:
-push rsi
-push rdi
+mov [rsp+0x20],rdi
+mov [rsp+0x18],rsi
 mov rcx,20
 mov rdi,HIGHADDR+IDT_BASE
 mov rsi,ISR_exception
-push rdi
 mov rdx,HIGHADDR>>32
+mov [rsp+0x10],rdi
 .exception:
 
 mov eax,esi
@@ -216,19 +177,16 @@ stosq
 
 loop .exception
 
-mov rcx,12*2
+mov dx,(IDT_LIM-1)
+mov ecx,IDT_LIM/0x10 - 20
 xor rax,rax
-rep stosq	;gap
+mov [rsp+6+8],dx
+rep stosq	;zeroing gap
 
+lidt [rsp+6+8]
 
-mov rax,(IDT_LIM-1) << 48
-push rax
-lidt [rsp+6]
-pop rax
-pop rax
-
-pop rdi
-pop rsi
+mov rdi,[rsp+0x20]
+mov rsi,[rsp+0x18]
 ret
 
 DR_match:
@@ -247,7 +205,7 @@ ret
 
 DR_get:
 
-push rdi
+mov [rsp+8],rdi
 mov rdi,rcx
 mov rax,dr0
 stosq
@@ -262,12 +220,12 @@ stosq
 mov rax,dr7
 stosq
 
-pop rdi
+mov rdi,[rsp+8]
 ret
 
 
 DR_set:
-push rsi
+mov [rsp+8],rsi
 mov rsi,rcx
 lodsq
 mov dr0,rax
@@ -282,7 +240,7 @@ mov dr6,rax
 lodsq
 mov dr7,rax
 
-pop rsi
+mov rsi,[rsp+8]
 ret
 
 memset:

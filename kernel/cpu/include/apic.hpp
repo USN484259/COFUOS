@@ -3,25 +3,31 @@
 #include "types.hpp"
 
 namespace UOS{
+    class APIC{
+	public:
+		typedef void (*CALLBACK)(byte, qword);
+		static constexpr size_t IRQ_MIN = 0x20;		//min handled IRQ
+		static constexpr size_t IRQ_MAX = 0x40;		//max handled IRQ
+		static constexpr byte IRQ_OFFSET = 0x24;	//offset for external IRQ
+		static constexpr byte IRQ_APIC_TIMER = 0x20;
+		static constexpr byte IRQ_SCI = 0x21;
+		static constexpr byte IRQ_KEYBOARD = IRQ_OFFSET + 1;
+		static constexpr byte IRQ_RTC = IRQ_OFFSET + 8;
+		static constexpr byte IRQ_SATA = IRQ_OFFSET + 0x0E;
+	private:
+		struct irq_handler{
+			CALLBACK callback;
+			qword data;
+		};
+		irq_handler table[IRQ_MAX - IRQ_MIN];
 
-	volatile class APIC{
-		//byte const* base;	//virtual base
-
-		
-		dword read(size_t)volatile;
-		
-		void write(size_t,dword)volatile;
-		
-		public:
+    public:
 		APIC(void);
-		//~APIC(void);
-		byte id(void)volatile;
-		void mp_break(void)volatile;
-		
-		
-	};
+		APIC(const APIC&) = delete;
+		byte id(void);
+		void dispatch(byte off_id);
 
-	extern volatile APIC* apic;
-
-
+		CALLBACK set(byte irq,CALLBACK callback,qword data);
+    };
+	extern APIC apic;
 }
