@@ -231,7 +231,7 @@ void* paired_heap::allocate(size_t req) {
 	}
 	if (res || callback == nullptr)
 		return res;
-	size_t new_size = max<size_t>(cap_size,initial_cap);
+	size_t new_size = max(req,max<size_t>(cap_size,initial_cap));
 	void* block = callback(new_size);
 	if (block == nullptr || !expand(block,new_size)){
 		return nullptr;

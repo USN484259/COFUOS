@@ -8,6 +8,8 @@
 #include "memory/include/pm.hpp"
 #include "memory/include/heap.hpp"
 #include "exception/include/kdb.hpp"
+#include "dev/include/rtc.hpp"
+#include "dev/include/display.hpp"
 #include "lang.hpp"
 
 using namespace UOS;
@@ -17,8 +19,21 @@ using namespace UOS;
 //void AP_entry(word);
 
 
+void print_sysinfo(void){
+	dbgprint("%s",&sysinfo->sig);
+	dbgprint("RSDT @ %p",0x00FFFFFFFFFFFFFF & sysinfo->ACPI_RSDT);
+	dbgprint("PMM_avl_top @ %p",sysinfo->PMM_avl_top);
+	dbgprint("kernel image %d pages",sysinfo->kernel_page);
+	dbgprint("cpuid (eax == 7) -> 0x%x",(qword)sysinfo->cpuinfo);
+	dbgprint("MAXPHYADDR %d",sysinfo->addrwidth & 0xFF);
+	dbgprint("Video %d*%d*%d line_size = %d @ %p",\
+		sysinfo->VBE_width,sysinfo->VBE_height,sysinfo->VBE_bpp,sysinfo->VBE_scanline,(qword)sysinfo->VBE_addr);
+	dbgprint("FAT32 header @ %d, table @ %d, data @ %d, cluster %d",\
+		sysinfo->FAT_header,sysinfo->FAT_table,sysinfo->FAT_data,sysinfo->FAT_cluster);
+}
 
-#ifdef PM_TEST
+
+
 void pm_test(void){
 	static byte unitest_buffer[PAGE_SIZE];
 	zeromemory(unitest_buffer,PAGE_SIZE);
@@ -36,7 +51,7 @@ void pm_test(void){
 	}while(true);
 	__debugbreak();
 
-	static const qword table[] = {0x316,0x315};
+	constexpr qword table[] = {0x316,0x315};
 	for (auto index : table){
 		dbgprint("releasing page %x, %d remaining",index,--page_count);
 		unitest_buffer[index >> 3] &= ~(1 << (index & 7));
@@ -66,12 +81,10 @@ void pm_test(void){
 	}
 	__debugbreak();
 }
-#endif
 
-#ifdef VM_TEST
 void vm_test(void){
 	__debugbreak();
-	static const qword fixed_addr = HIGHADDR(0x3FDFE000);
+	constexpr qword fixed_addr = HIGHADDR(0x3FDFE000);
 	size_t fixed_size = 4*pm.capacity();
 	qword fixed_offset = PAGE_SIZE*(fixed_size/0x10);
 	dbgprint("Reserving 0x%x pages @ %p",fixed_size,fixed_addr);
@@ -169,12 +182,14 @@ void vm_test(void){
 
 	__debugbreak();
 }
-#endif
+
 
 [[ noreturn ]]
 void krnlentry(void* module_base){
 	buildIDT();
 	kdb_init(sysinfo->ports[0]);
+
+	print_sysinfo();
 
 	pe_kernel = PE64::construct(module_base);
 	assert(pe_kernel->imgbase == (qword)module_base);
@@ -194,14 +209,36 @@ void krnlentry(void* module_base){
 			(*global_constructor++)();
 		}
 	}
+	//pm_test();
+	//vm_test();
 
-#ifdef PM_TEST
-	pm_test();
-#endif
+	_enable();
 
-#ifdef VM_TEST
-	vm_test();
-#endif
+	constexpr auto w = 400;
+	constexpr auto h = 300;
+	auto buffer = new dword[w*h];
+	assert(buffer);
+	volatile qword tm = 0;
+	rtc.set_handler([](qword tm,word ms,void* data){
+		if (tm && ms == 0)
+			*(qword*)data = tm;
+	},(void*)&tm);
+
+	while(true){
+		__halt();
+		if (tm){
+			dbgprint("drawing...");
+			srand(tm);
+			Rect rect{-w/2,-h/2,w/2,h/2};
+			for (unsigned i = 0;i < (w*h);++i){
+				buffer[i] = rand();
+			}
+			auto res = display.draw(rect,buffer,4*w*h);
+			assert(res);
+			tm = 0;
+		}
+	}
+
 	__debugbreak();
 	BugCheck(not_implemented,0);
 }

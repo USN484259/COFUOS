@@ -281,9 +281,9 @@ void UOS::dbgprint(const char* fmt,...){
 					c = '#';	//no enough space
 					break;
 				}
-				case 'D':	//print decimal value
+				case 'D':	//print decimal dword value
 				{
-					auto val = va_arg(args,qword);
+					auto val = va_arg(args,dword);
 					if (!val){
 						c = '0';
 						break;

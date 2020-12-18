@@ -85,7 +85,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 	zeromemory(pmm_bmp,page_count*PAGE_SIZE);
 	//scan & fill wmp
 	for (auto it = scan_base;it->type;++it){
-		dbgprint("%p ==> %p : %x",it->base,it->base+it->len,it->type);
+		dbgprint("%p ==> %p : %d",it->base,it->base+it->len,it->type);
 
 		if (it->type != 1 || it->len == 0)
 			continue;

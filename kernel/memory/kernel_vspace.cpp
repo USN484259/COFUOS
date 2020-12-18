@@ -439,7 +439,7 @@ bool VM::kernel_vspace::assign(qword base_addr,qword phy_addr,size_t page_count)
 	PTE_CALLBACK fun = [](PT& pt,qword addr,qword delta) -> bool{
 		assert(pt.preserve && !pt.present);
 		assert(addr >= delta);
-		pt.page_addr = addr - delta;
+		pt.page_addr = (addr - delta) >> 12;
 		pt.xd = 1;
 		pt.bypass = 1;
 		pt.global = 1;

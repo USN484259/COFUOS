@@ -2,6 +2,9 @@
 
 HIGHADDR equ 0xFFFF8000_00000000
 
+IDT_BASE equ 0x0800
+IDT_LIM equ 0x400	;64 entries
+
 ;WARNING: according to x64 calling convention 0x20 space on stack needed before calling C functions
 
 extern dispatch_exception
@@ -46,8 +49,8 @@ int3
 align 8
 %endmacro
 
-ISR_exception:
 align 16
+ISR_exception:
 %assign i 0
 %rep 20
 ISR_STUB i
@@ -116,10 +119,9 @@ add rsp,0x10	;exp# and errcode
 
 iretq
 
-
-ISR_irq:
 align 16
-%rep 0x20
+ISR_irq:
+%rep (IDT_LIM/0x10 - 0x20)
 call near irq_entry
 int3
 align 8
@@ -151,42 +153,50 @@ iretq
 
 
 
-IDT_BASE equ 0x1000
-IDT_LIM equ 0x1000	;256 entries
 
 
 buildIDT:
-mov [rsp+0x20],rdi
-mov [rsp+0x18],rsi
-mov rcx,20
+mov [rsp+0x10],rdi
+mov [rsp+0x08],rsi
+mov ecx,20
 mov rdi,HIGHADDR+IDT_BASE
 mov rsi,ISR_exception
 mov rdx,HIGHADDR>>32
-mov [rsp+0x10],rdi
-.exception:
 
+.exception:
 mov eax,esi
 mov ax,1000_1110_0000_0000_b
 shl rax,32
 mov ax,si
 bts rax,19	;8<<16
 stosq
-lodsq
 mov rax,rdx
+add rsi,8
 stosq
-
 loop .exception
 
-mov dx,(IDT_LIM-1)
-mov ecx,IDT_LIM/0x10 - 20
+mov ecx,12*2
 xor rax,rax
-mov [rsp+6+8],dx
-rep stosq	;zeroing gap
+rep stosq   ;gap
 
-lidt [rsp+6+8]
+mov rsi,ISR_irq
+;rdx == HIGHADDR>>32
+mov ecx,IDT_LIM/0x10 - 0x20
 
-mov rdi,[rsp+0x20]
-mov rsi,[rsp+0x18]
+.isr:
+mov eax,esi
+mov ax,1000_1110_0000_0000_b
+shl rax,32
+mov ax,si
+bts rax,19	;8<<16
+stosq
+mov rax,rdx
+add rsi,8
+stosq
+loop .isr
+
+mov rdi,[rsp+0x10]
+mov rsi,[rsp+0x08]
 ret
 
 DR_match:

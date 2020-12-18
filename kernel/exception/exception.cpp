@@ -2,13 +2,16 @@
 #include "kdb.hpp"
 #include "hal.hpp"
 #include "port_io.hpp"
+#include "cpu.hpp"
 
 using namespace UOS;
 
-void exception::push(byte id,CALLBACK callback,qword data){
+void exception::push(byte id,CALLBACK callback,void* data){
 	if (id >= 20){
 		BugCheck(out_of_range,id);
 	}
+	interrupt_guard ig;
+	lock_guard<spin_lock> guard(lock);
 	table[id].push(handler{callback,data});
 }
 
@@ -16,6 +19,8 @@ exception::CALLBACK exception::pop(byte id){
 	if (id >= 20){
 		BugCheck(out_of_range,id);
 	}
+	interrupt_guard ig;
+	lock_guard<spin_lock> guard(lock);
 	if (table[id].empty()){
 		BugCheck(corrupted,table[id]);
 	}
@@ -27,6 +32,8 @@ exception::CALLBACK exception::pop(byte id){
 bool exception::dispatch(byte id,exception_context* context){
 	if (id >= 20)
 		return false;
+	interrupt_guard ig;
+	lock_guard<spin_lock> guard(lock);
 	for (auto it : table[id]){
 		if (it.callback(context,it.data))
 			return true;

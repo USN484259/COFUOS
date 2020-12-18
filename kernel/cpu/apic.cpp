@@ -1,6 +1,7 @@
 #include "apic.hpp"
 #include "constant.hpp"
 #include "../memory/include/vm.hpp"
+#include "../exception/include/kdb.hpp"
 #include "cpu.hpp"
 #include "port_io.hpp"
 #include "../dev/include/acpi.hpp"
@@ -10,16 +11,20 @@ using namespace UOS;
 
 constexpr auto apic_base = (dword volatile* const)LOCAL_APIC_VBASE;
 constexpr auto io_apic_index = (dword volatile* const)IO_APIC_VBASE;
-constexpr auto io_apic_data = (qword volatile* const)(IO_APIC_VBASE + 0x10);
+constexpr auto io_apic_data = (dword volatile* const)(IO_APIC_VBASE + 0x10);
 
 void io_apic_write(word offset,qword value){
 	assert(0 == (offset & 1));
+	*io_apic_index = offset + 1;
+	*io_apic_data = (dword)(value >> 32);
+
 	*io_apic_index = offset;
-	*io_apic_data = value;
+	*io_apic_data = (dword)value;
 }
-byte io_apic_entries(void){
-	*io_apic_index = 1;
-	return (byte)(1 + (*(dword volatile*)io_apic_data >> 16));
+
+dword io_apic_read(word offset){
+	*io_apic_index = offset;
+	return *io_apic_data;
 }
 
 void apic_write(word offset,dword value){
@@ -66,11 +71,12 @@ APIC::APIC(void) : table{0}{
 	}
 	if (!res)
 		BugCheck(hardware_fault,apic_id);
+	dbgprint("CPU#%d APICid = %d %s",uid,apic_id,(stat & 0x100) ? "BSP" : "AP");
 	
 	//local APIC setup
 	
 	apic_write(0x2F0,0x00010000); //CMCI
-	apic_write(0x320,IRQ_APIC_TIMER);  //timer
+	apic_write(0x320,(dword)IRQ_APIC_TIMER);  //timer
 	apic_write(0x330,0x00010000);    //Thermal Monitor
 	apic_write(0x340,0x00010000);    //Perf Counter
 	apic_write(0x370,0x00010000);    //Error
@@ -79,7 +85,7 @@ APIC::APIC(void) : table{0}{
 	dword lint[2] = {0x00010000,0x00010000};
 
 	for (auto& p : madt.nmi_pins){
-		if (p.uid == uid){
+		if (p.uid == 0xFF || p.uid == uid){
 			//	15 : LEVEL
 			//	13 : LOW_ACTIVE
 			dword new_value = 0x2400;	//NMI EDGE
@@ -130,7 +136,8 @@ APIC::APIC(void) : table{0}{
 	vm.assign(IO_APIC_VBASE,madt.io_apic_pbase,1);
 
 	//Redirection table
-	auto entries = io_apic_entries();
+	auto entries = (byte)(1 + (io_apic_read(1) >> 16));
+	dbgprint("IO APIC entries = %d",entries);
 	vector<qword> rte(entries,(qword)0x00010000);
 	qword destination = (qword)apic_id << 56;
 
@@ -158,9 +165,14 @@ APIC::APIC(void) : table{0}{
 		qword new_value = destination | 0x2000;
 		if (redirect.irq == 2)	//NMI
 			new_value |= 0x400;
-		else
+		else{
 			new_value |= (IRQ_OFFSET + redirect.irq);
-
+			if (redirect.irq >= madt.gsi_base \
+				&& (rte[redirect.irq - madt.gsi_base] & 0xFF) == (IRQ_OFFSET + redirect.irq) )
+			{	//clear origin IRQ vector if exists
+				rte[redirect.irq - madt.gsi_base] = 0x00010000;
+			}
+		}
 		if (1 == (redirect.mode & 0x03))	//high active
 			new_value &= ~(qword)0x2000;
 		if (0x0C == (redirect.mode & 0x0C))	//level triggered
@@ -170,6 +182,7 @@ APIC::APIC(void) : table{0}{
 	}
 	//set IO APIC
 	for (unsigned i = 0;i < entries;++i){
+		dbgprint("Entry#%d = %x",i,rte[i]);
 		io_apic_write((word)(0x10 + 2*i),rte[i]);
 	}
 
@@ -180,16 +193,30 @@ byte APIC::id(void){
 }
 
 void APIC::dispatch(byte off_id){
+	IF_assert;
 	assert(off_id < IRQ_MAX - IRQ_MIN);
-	if (table[off_id].callback)
-		table[off_id].callback(IRQ_MIN + off_id,table[off_id].data);
+	irq_handler entry;
+	{
+		lock_guard<spin_lock> guard(lock);
+		entry.callback = table[off_id].callback;
+		entry.data = table[off_id].data;
+	}
+	if (entry.callback)
+		entry.callback(IRQ_MIN + off_id,entry.data);
 }
 
-APIC::CALLBACK APIC::set(byte irq,CALLBACK callback,qword data){
+APIC::CALLBACK APIC::get(byte irq) const{
 	if (irq >= IRQ_MIN && irq < IRQ_MAX){
-		auto ret = table[irq].callback;
-		table[irq] = {callback,data};
-		return ret;
+		return table[irq - IRQ_MIN].callback;
+	}
+}
+
+void APIC::set(byte irq,CALLBACK callback,void* data){
+	if (irq >= IRQ_MIN && irq < IRQ_MAX){
+		interrupt_guard ig;
+		lock_guard<spin_lock> guard(lock);
+		table[irq - IRQ_MIN] = {callback,data};
+		return;
 	}
 	BugCheck(out_of_range,irq);
 }

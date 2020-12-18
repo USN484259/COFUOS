@@ -15,7 +15,8 @@ void operator delete[](void*);
 
 namespace UOS{
     void zeromemory(void*,size_t);
-
+    qword rand(void);
+    void srand(qword);
     typedef qword* va_list;
 }
 

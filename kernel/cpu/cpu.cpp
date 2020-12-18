@@ -15,6 +15,7 @@ interrupt_guard::~interrupt_guard(void){
 		_enable();
 }
 
+
 dword pci_address(byte bus,byte device,byte function,byte offset){
 	assert(bus < 0x100 && device < 0x20 && function < 0x08 && 0 == (offset & 0x03));
 	return (dword)0x80000000 \

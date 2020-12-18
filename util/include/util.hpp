@@ -3,7 +3,7 @@
 
 #define BITMASK(i) ( ( (qword)1<<(qword)(i) ) - 1 )
 #define BIT(i) ( (qword)1 << ( (qword)(i)  ) )
-
+#define offsetof(T,M) ((size_t)&(((T const*)nullptr)->M))
 
 namespace UOS{
 	template< typename T > struct remove_reference      {typedef T type;};

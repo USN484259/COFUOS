@@ -9,6 +9,7 @@ namespace UOS{
         interrupt_guard(void);
         ~interrupt_guard(void);
     };
+
     dword inline pci_address(byte bus,byte device,byte function,byte offset);
 
     dword pci_read(dword address);

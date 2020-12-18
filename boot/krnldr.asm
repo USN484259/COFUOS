@@ -3,50 +3,49 @@ IA32_APIC_BASE equ 0x1B
 
 HIGHADDR equ 0xFFFF_8000_0000_0000
 
-GDT_BASE equ 0x0800
+GDT_BASE equ 0x0600
 GDT_LIM equ 0x100	;16 entries
-TSS_BASE equ 0x0900
+TSS_BASE equ 0x0700
 TSS_LIM equ 0x80
 
-SYSINFO_BASE equ 0x0A00
+SYSINFO_BASE equ 0x0C00
 SYSINFO_LEN equ (0x1000-SYSINFO_BASE)
 
-IDT_BASE equ 0x1000
-IDT_LIM equ 0x1000	;256 entries
+IDT_BASE equ 0x0800
+IDT_LIM equ 0x400	;64 entries
 
 PAGE_SIZE equ 0x1000
 SECTOR_SIZE equ 0x200
 
-ISR_STK equ 0x04000
+ISR_STK equ 0x02000
 
-PL4T equ 0x04000
-PDPT0 equ 0x5000
-PDPT8 equ 0x6000
-PDT0 equ 0x07000
-PT0	equ 0x08000
-PT_KRNL equ 0x9000
-PT_MAP equ 0xA000
+PL4T equ 0x03000
+PDPT0 equ 0x4000
+PDPT8 equ 0x5000
+PDT0 equ 0x06000
+PT0	equ 0x07000
+PT_KRNL equ 0x8000
+PT_MAP equ 0x9000
 
 PT_BASE equ PL4T
-PT_LEN equ (0xB000-PT_BASE)
+PT_LEN equ (0xA000-PT_BASE)
 
-PMMSCAN_BASE equ 0x3000
+PMMSCAN_BASE equ 0x1000
 PMMSCAN_LEN equ 0x0F00
 
 ;	physical Memory layout
 
-;	000000		001000		R	TSS & GDT & sysinfo
-;	001000		002000		RW	IDT
-;	002000		003000		RWX	loader & MP entry
-;	003000		004000		RW	PMMSCAN & VBE_scan & ISR stack
-;	004000		005000		RW	PL4T
-;	005000		006000		RW	PDPT low	
-;	006000		007000		RW	PDPT high
-;	007000		008000		RW	PDT
-;	008000		009000		RW	PT0
-;	009000		00A000		RW	krnl PT
-;	00A000		00B000		RW	mapper PT
-;	00B000		010000		RW	avl
+;	000000		001000		RW	TSS & GDT & IDT & sysinfo
+;	001000		002000		RW	PMMSCAN & VBE_scan & ISR stack
+;	002000		003000		RX	loader & MP entry
+;	003000		004000		RW	PL4T
+;	004000		005000		RW	PDPT low
+;	005000		006000		RW	PDPT high
+;	006000		007000		RW	PDT
+;	007000		008000		RW	PT0
+;	008000		009000		RW	krnl PT
+;	009000		00A000		RW	mapper PT
+;	00A000		010000		RW	avl
 ;-------------direct map---------------------
 ;	010000		?			?	kernel pages
 
@@ -752,7 +751,6 @@ mov esi,tss64_base
 mov ecx,tss64_len/4
 rep movsd
 
-
 ;paging init
 mov edi,PT_BASE
 mov ecx,PT_LEN
@@ -799,12 +797,7 @@ mov cl,2
 call map_page
 
 mov ebx,0x2000
-mov edx,0x103		;RWX
-inc ecx
-call map_page
-
-mov ebx,0x3000
-mov edx,0x80000103
+mov edx,0x101		;RX
 inc ecx
 call map_page
 
@@ -933,13 +926,9 @@ LM_entry:
 ;reload GDT to HIGHADDR
 mov rdx,HIGHADDR+GDT_BASE
 mov rcx,(GDT_LIM-1)<<(16+32)
-
 push rdx
 push rcx
-
 lgdt [rsp+6]
-
-
 
 mov ax,GDT_SYS_DS
 mov ds,ax
@@ -948,7 +937,6 @@ mov fs,ax
 mov gs,ax
 mov ss,ax
 mov rsp,HIGHADDR+ISR_STK
-;mov rbp,rsp
 
 mov ecx,8
 mov eax,.cs_reload
@@ -960,7 +948,6 @@ call qword [rsp]
 .cs_reload:
 
 mov rdx,LM_high
-mov rsp,HIGHADDR+ISR_STK
 jmp rdx
 
 align 4
@@ -982,8 +969,29 @@ align 8
 LM_high:
 mov r12,HIGHADDR+SYSINFO_BASE
 
+;load TR
 mov rdx,TR_selector
 ltr [rdx]
+
+;init IDT
+mov rdi,HIGHADDR+IDT_BASE
+xor rax,rax
+mov rdx,(IDT_LIM-1) << 48
+push rdi
+mov ecx,IDT_LIM/8
+push rdx
+rep stosq
+lidt [rsp+6]
+
+;unmap LOWADDR
+xor rax,rax
+mov rdi,HIGHADDR+PDPT0
+stosq
+mov ecx,0x10
+.flush_low:
+invlpg [rax]
+add rax,PAGE_SIZE
+loop .flush_low
 
 ;ebable PGE SMEP disable WRGSBASE
 
@@ -1011,7 +1019,6 @@ call BugCheck
 int3
 
 .cluster_fine:
-mov rbp,rsp
 sub rsp,0x40
 
 call PmmAlloc
@@ -1383,13 +1390,6 @@ xor rdx,rdx
 xor r8,r8
 call MapPage
 
-;change page 0 to RO
-mov rdx,HIGHADDR+PT0
-mov rax,HIGHADDR
-mov rcx,[rdx]
-btr rcx,1
-mov [rdx],rcx
-invlpg [rax]
 
 mov rcx,[rsp+peinfo.vbase]
 mov edx,[rsp+peinfo.entry]

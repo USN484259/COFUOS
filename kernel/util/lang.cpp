@@ -3,6 +3,7 @@
 #include "../cpu/include/hal.hpp"
 #include "../memory/include/heap.hpp"
 #include "assert.hpp"
+#include "fasthash.h"
 
 using namespace UOS;
 
@@ -129,4 +130,16 @@ extern "C" {
         }
         return dst;
     }
+}
+
+static qword seed = 0;
+
+qword UOS::rand(void){
+    qword tsc = __rdtsc();
+    seed = fasthash64(&tsc,8,seed);
+    return seed;
+}
+
+void UOS::srand(qword sd){
+    seed = sd;
 }

@@ -9,6 +9,8 @@
 #include "dev/include/acpi.hpp"
 #include "exception/include/exception.hpp"
 #include "cpu/include/apic.hpp"
+#include "dev/include/rtc.hpp"
+#include "dev/include/display.hpp"
 
 namespace UOS{
 	PE64 const* pe_kernel;
@@ -29,4 +31,6 @@ namespace UOS{
 	ACPI acpi;
 	exception eh;
 	APIC apic;
+	RTC rtc;
+	Display display;
 }
