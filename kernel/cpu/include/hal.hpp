@@ -69,23 +69,25 @@ extern "C"{
 	void __invlpg(void*);
 	void __debugbreak(void);
 	
-	char _InterlockedCompareExchange8(volatile char*,char,char);
-	short _InterlockedCompareExchange16(volatile short*,short,short);
-	long _InterlockedCompareExchange(volatile long*,long,long);
-	__int64 _InterlockedCompareExchange64(volatile __int64*,__int64,__int64);
+	char _InterlockedCompareExchange8(char volatile *,char,char);
+	short _InterlockedCompareExchange16(short volatile *,short,short);
+	long _InterlockedCompareExchange(long volatile *,long,long);
+	__int64 _InterlockedCompareExchange64(__int64 volatile *,__int64,__int64);
+	void* _InterlockedCompareExchangePointer(void* volatile *,void*,void*);
+
+	char _InterlockedExchange8(char volatile *,char);
+	short _InterlockedExchange16(short volatile *,short);
+	long _InterlockedExchange(long volatile *,long);
+	__int64 _InterlockedExchange64(__int64 volatile *,__int64);
+	void* _InterlockedExchangePointer(void* volatile *,void*);
 	
-	char _InterlockedExchange8(volatile char*,char);
-	short _InterlockedExchange16(volatile short*,short);
-	long _InterlockedExchange(volatile long*,long);
-	__int64 _InterlockedExchange64(volatile __int64*,__int64);
+	short _InterlockedIncrement16(short volatile *);
+	long _InterlockedIncrement(long volatile*);
+	__int64 _InterlockedIncrement64(__int64 volatile *);
 	
-	short _InterlockedIncrement16(volatile short*);
-	long _InterlockedIncrement(volatile long*);
-	__int64 _InterlockedIncrement64(volatile __int64*);
-	
-	short _InterlockedDecrement16(volatile short*);
-	long _InterlockedDecrement(volatile long*);
-	__int64 _InterlockedDecrement64(volatile __int64*);
+	short _InterlockedDecrement16(short volatile *);
+	long _InterlockedDecrement(long volatile *);
+	__int64 _InterlockedDecrement64(__int64 volatile *);
 	
 	void _mm_pause(void);
 	void __debugbreak(void);

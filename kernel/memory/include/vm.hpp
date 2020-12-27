@@ -1,7 +1,7 @@
 #pragma once
 #include "types.hpp"
-#include "../../sync/include/spin_lock.hpp"
-#include "../../image/include/pe.hpp"
+#include "sync/include/spin_lock.hpp"
+#include "image/include/pe.hpp"
 //#include "queue.hpp"
 #include "pm.hpp"
 #include "constant.hpp"
@@ -139,7 +139,7 @@ namespace UOS{
 			void shift_right(PDT& pdt,PT* table,BLOCK& block);
 			void insert(PDT& pdt,PT* table,BLOCK& block,word hint);
 #ifdef _DEBUG
-			void check_integration(PDT& pdt,PT* table);
+			void check_integrity(PDT& pdt,PT* table);
 #endif
 		};
 

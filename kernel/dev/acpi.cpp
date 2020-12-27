@@ -1,10 +1,10 @@
 #include "acpi.hpp"
 #include "util.hpp"
 #include "lang.hpp"
-#include "../exception/include/kdb.hpp"
+#include "exception/include/kdb.hpp"
 #include "bugcheck.hpp"
 #include "assert.hpp"
-#include "../memory/include/vm.hpp"
+#include "memory/include/vm.hpp"
 
 using namespace UOS;
 
@@ -28,12 +28,12 @@ bool ACPI::validate(const void* base_addr,size_t limit){
 ACPI::ACPI(void) {
 	struct RSDP{
 		qword addr : 56;
-		qword type : 8;
+		qword version : 8;
 	};
 	static_assert(sizeof(RSDP) == 8,"RSDP size mismatch");
 	auto rsdp = (RSDP const*)&sysinfo->ACPI_RSDT;
 	do{
-		if (!rsdp)
+		if (!rsdp->addr)
 			break;
 		dbgprint("Going through ACPI");
 		auto aligned_addr = align_down(rsdp->addr,PAGE_SIZE);
@@ -46,7 +46,8 @@ ACPI::ACPI(void) {
 		auto size = view[1];
 		assert(size >= HEADER_SIZE);
 		size -= HEADER_SIZE;
-		if (rsdp->type){    //XSDT
+		version = rsdp->version;
+		if (rsdp->version){    //XSDT
 			if (*view != 0x54445358 /*XSDT*/ || (size & 0x07))
 				break;
 			auto it = (qword const*)(view + HEADER_SIZE/4);
@@ -93,6 +94,22 @@ void ACPI::parse_table(qword pbase){
 	}
 }
 
+byte ACPI::get_version(void) const{
+	return version;
+}
+
+const MADT& ACPI::get_madt(void) const{
+	if (!madt)
+		BugCheck(hardware_fault,this);
+	return *madt;
+}
+
+const FADT& ACPI::get_fadt(void) const{
+	if (!fadt)
+		BugCheck(hardware_fault,this);
+	return *fadt;
+}
+
 FADT::FADT(const dword* view){
 	auto size = *(view + 1);
 	memcpy(this,view + HEADER_SIZE/4,min<size_t>(size,sizeof(FADT)));
@@ -103,6 +120,7 @@ FADT::FADT(const dword* view){
 	dbgprint("SCI IRQ %d",SCI_Interrupt);
 	dbgprint("RTC century support : %s",Century ? "true" : "false");
 	dbgprint("FADT flags = 0x%x",(qword)Flags);
+	dbgprint("FADT BootArch = 0x%x",(qword)BootArchitectureFlags);
 }
 
 MADT::MADT(void const* vbase){
@@ -176,14 +194,3 @@ MADT::MADT(void const* vbase){
 	}
 }
 
-const MADT& ACPI::get_madt(void) const{
-	if (!madt)
-		BugCheck(hardware_fault,this);
-	return *madt;
-}
-
-const FADT& ACPI::get_fadt(void) const{
-	if (!fadt)
-		BugCheck(hardware_fault,this);
-	return *fadt;
-}

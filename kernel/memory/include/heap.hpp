@@ -2,7 +2,7 @@
 #include "types.hpp"
 
 #ifndef _TEST
-#include "../../sync/include/spin_lock.hpp"
+#include "sync/include/spin_lock.hpp"
 #else
 #include <mutex>
 #endif

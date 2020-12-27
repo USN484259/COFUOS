@@ -1,6 +1,6 @@
 #!/bin/sh
 
-export WINEPATH="D:\\VC\\bin\\amd64\\;D:\\bin\\"
+export WINEPATH="D:\\VC\\bin\\;D:\\bin\\"
 
 cmd="all"
 if [ $# -ne 0 ]

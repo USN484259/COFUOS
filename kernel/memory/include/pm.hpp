@@ -1,7 +1,7 @@
 #pragma once
 #include "types.hpp"
 #include "constant.hpp"
-#include "../../sync/include/spin_lock.hpp"
+#include "sync/include/spin_lock.hpp"
 
 namespace UOS{
 	class PM{
@@ -12,7 +12,7 @@ namespace UOS{
 		qword next;
 
 #ifdef _DEBUG
-		void check_integration(void);
+		void check_integrity(void);
 #endif
 
 	public:

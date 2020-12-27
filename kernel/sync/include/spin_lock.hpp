@@ -12,5 +12,5 @@ namespace UOS{
         bool try_lock(void);
         bool is_locked(void) const;
     };
-
+    constexpr size_t spin_timeout = 0x04000000;
 }

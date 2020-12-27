@@ -87,6 +87,7 @@ namespace UOS{
 	struct pair{
 		A first;
 		B second;
+		pair(void) = default;
 		inline pair(const A& a,const B& b) : first(a),second(b){}
 		inline pair(A&& a,B&& b) : first(move(a)),second(move(b)){}
 	};
@@ -183,17 +184,17 @@ namespace UOS{
 		return align_down((T)(value + align - 1),align);
 	}
 	
-    template<typename M>
-    class lock_guard{
-        M& mutex;
-    public:
-        lock_guard(M& m) : mutex(m) {
-            m.lock();
-        }
-        ~lock_guard(void) {
-            mutex.unlock();
-        }
-    };
+	struct Point{
+		int x;
+		int y;
+	};
+
+	struct Rect{
+		int left;
+		int top;
+		int right;
+		int bottom;
+	};
 
 	template<typename T>
 	class optional{		//simple and *buggy* implementation of C++17 std::optional

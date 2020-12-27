@@ -1,11 +1,10 @@
 #include "types.hpp"
 #include "kdb.hpp"
-#include "../cpu/include/hal.hpp"
-#include "../cpu/include/port_io.hpp"
-#include "../cpu/include/cpu.hpp"
+#include "cpu/include/hal.hpp"
+#include "cpu/include/port_io.hpp"
 #include "sysinfo.hpp"
-#include "../memory/include/pm.hpp"
-#include "../memory/include/vm.hpp"
+#include "memory/include/pm.hpp"
+#include "memory/include/vm.hpp"
 #include "util.hpp"
 #include "lang.hpp"
 
@@ -112,7 +111,6 @@ void UOS::kdb_break(byte id,exception_context* context){
 				break;
 			case 'B':	//breakpoint
 			{
-				interrupt_guard ig;
 				DR_STATE dr;
 				qword mask;
 				DR_get(&dr);
@@ -316,6 +314,9 @@ void UOS::dbgprint(const char* fmt,...){
 					}
 					continue;
 				}
+				case 'C':	//character
+					c = va_arg(args,char);
+					break;
 			}
 		}
 		if (!c)

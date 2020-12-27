@@ -1,17 +1,17 @@
 #include "apic.hpp"
 #include "constant.hpp"
-#include "../memory/include/vm.hpp"
-#include "../exception/include/kdb.hpp"
-#include "cpu.hpp"
+#include "memory/include/vm.hpp"
+#include "exception/include/kdb.hpp"
 #include "port_io.hpp"
-#include "../dev/include/acpi.hpp"
+#include "dev/include/acpi.hpp"
+#include "sync/include/lock_guard.hpp"
 #include "assert.hpp"
 
 using namespace UOS;
 
-constexpr auto apic_base = (dword volatile* const)LOCAL_APIC_VBASE;
-constexpr auto io_apic_index = (dword volatile* const)IO_APIC_VBASE;
-constexpr auto io_apic_data = (dword volatile* const)(IO_APIC_VBASE + 0x10);
+static auto apic_base = (dword volatile* const)LOCAL_APIC_VBASE;
+static auto io_apic_index = (dword volatile* const)IO_APIC_VBASE;
+static auto io_apic_data = (dword volatile* const)(IO_APIC_VBASE + 0x10);
 
 void io_apic_write(word offset,qword value){
 	assert(0 == (offset & 1));
@@ -185,7 +185,8 @@ APIC::APIC(void) : table{0}{
 		dbgprint("Entry#%d = %x",i,rte[i]);
 		io_apic_write((word)(0x10 + 2*i),rte[i]);
 	}
-
+	//set IF
+	_enable();
 }
 
 byte APIC::id(void){
@@ -197,7 +198,7 @@ void APIC::dispatch(byte off_id){
 	assert(off_id < IRQ_MAX - IRQ_MIN);
 	irq_handler entry;
 	{
-		lock_guard<spin_lock> guard(lock);
+		interrupt_guard<spin_lock> guard(lock);
 		entry.callback = table[off_id].callback;
 		entry.data = table[off_id].data;
 	}
@@ -213,8 +214,7 @@ APIC::CALLBACK APIC::get(byte irq) const{
 
 void APIC::set(byte irq,CALLBACK callback,void* data){
 	if (irq >= IRQ_MIN && irq < IRQ_MAX){
-		interrupt_guard ig;
-		lock_guard<spin_lock> guard(lock);
+		interrupt_guard<spin_lock> guard(lock);
 		table[irq - IRQ_MIN] = {callback,data};
 		return;
 	}

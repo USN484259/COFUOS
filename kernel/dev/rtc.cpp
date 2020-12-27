@@ -1,14 +1,19 @@
 #include "rtc.hpp"
-#include "port_io.hpp"
+#include "cpu/include/port_io.hpp"
 #include "assert.hpp"
-#include "../exception/include/kdb.hpp"
-#include "apic.hpp"
+#include "exception/include/kdb.hpp"
+#include "cpu/include/apic.hpp"
 #include "acpi.hpp"
+#include "sync/include/lock_guard.hpp"
 
 using namespace UOS;
 
 RTC::RTC(void){
-	IF_assert;
+	interrupt_guard<void> guard;
+	if (acpi.get_version() && acpi.get_fadt().BootArchitectureFlags & 0x20){
+		//RTC not present
+		BugCheck(hardware_fault,this);
+	}
 	apic.set(APIC::IRQ_RTC,on_irq,this);
 	port_write(0x70,(byte)0x8A);  //RTC Status Register A & disable NMI
 	byte val;

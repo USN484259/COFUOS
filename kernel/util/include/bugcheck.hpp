@@ -13,7 +13,8 @@ namespace UOS{
 		invalid_argument,
 		null_deref,
 		corrupted,
-		hardware_fault
+		hardware_fault,
+		deadlock
 	};
 }
 extern "C" {

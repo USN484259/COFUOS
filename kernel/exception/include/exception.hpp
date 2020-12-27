@@ -1,12 +1,9 @@
 #pragma once
 #include "types.hpp"
 #include "exception_context.hpp"
-#include "../../sync/include/spin_lock.hpp"
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(corrupted,x)
-#include "stack.hpp"
-#undef THROW
+#include "sync/include/spin_lock.hpp"
 
+#include "stack.hpp"
 
 namespace UOS{
 

@@ -33,6 +33,8 @@ PT_LEN equ (0xA000-PT_BASE)
 PMMSCAN_BASE equ 0x1000
 PMMSCAN_LEN equ 0x0F00
 
+%define LIMITED_RESOLUTION 1
+
 ;	physical Memory layout
 
 ;	000000		001000		RW	TSS & GDT & IDT & sysinfo
@@ -302,7 +304,7 @@ loop .checksum_1
 test dl,dl
 jnz .next
 
-cmp [si-5],al	;al == 0
+cmp [si-5],dl	;dl == 0
 jnz .v2
 ;ACPI version 1.0
 mov eax,[si-4]
@@ -321,15 +323,14 @@ test dl,dl
 jnz .next
 ;ACPI version >= 2.0
 ;&XSDT should lower than (1 << 56)
-cmp [si-0x05],cl	;cx == 0
+cmp [si-0x05],dl	;dx == 0
 jnz .next
 ;get XSDT
 mov eax,[si-0x0C]
 mov edx,[si-0x08]
+mov cl,[si-0x15]	;ACPI version
 mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT],eax
 mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT+4],edx
-
-dec cx	;cl == 0xFF, indicate XSDT
 mov [es:SYSINFO_BASE+sysinfo.ACPI_RSDT+7],cl
 stc
 ret
@@ -466,25 +467,41 @@ xor dx,dx
 mov es,dx
 
 cmp ax,0x4F
-jnz .end
+jnz NEAR .end
 
 
 test BYTE [es:PMMSCAN_BASE],0x80
 jz .video_loop
 
 
-mov cx,[es:PMMSCAN_BASE+0x12]
+mov cx,[es:PMMSCAN_BASE+0x12]	;width
+mov dx,[es:PMMSCAN_BASE+0x14]	;height
+
 cmp cx,800
 jb .video_loop
 
-mov dx,[es:PMMSCAN_BASE+0x14]
 cmp dx,600
 jb .video_loop
 
+%if LIMITED_RESOLUTION == 0
 cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_width]
 jb .video_loop
 cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
 jb .video_loop
+%else
+xor ax,ax
+cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_width]
+jz .initial
+cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_height]
+jz .initial
+
+cmp cx,[es:SYSINFO_BASE+sysinfo.VBE_width]
+ja .video_loop
+cmp dx,[es:SYSINFO_BASE+sysinfo.VBE_height]
+ja .video_loop
+
+.initial:
+%endif
 
 movzx ax,BYTE [es:PMMSCAN_BASE+0x19]
 cmp ax,[es:SYSINFO_BASE+sysinfo.VBE_bpp]
@@ -493,18 +510,18 @@ jb .video_loop
 ;save current video mode
 
 mov di,SYSINFO_BASE+sysinfo.VBE_mode
-mov [es:di],bx
-mov [es:di + 4],cx
-mov [es:di + 6],dx
-mov [es:di + 8],ax
+mov [es:di],bx	;mode
+mov [es:di + 4],cx	;width
+mov [es:di + 6],dx	;height
+mov [es:di + 8],ax	;bpp
 
+mov cx,[es:PMMSCAN_BASE+0x200+0x04]	;VBE version
 mov dx,[es:PMMSCAN_BASE+0x10]
-mov cx,[es:PMMSCAN_BASE+0x200+0x04]
-sub cx,0x0300
+sub cx,0x0300	; >= VBE 3.0
 js .nvbe3
 mov dx,[es:PMMSCAN_BASE+0x32]
 .nvbe3:
-mov [es:di + 2],dx
+mov [es:di + 2],dx	;scanline
 
 mov ax,[es:PMMSCAN_BASE+0x28]
 add di,0x0C

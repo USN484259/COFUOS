@@ -3,14 +3,14 @@
 #include "constant.hpp"
 #include "util.hpp"
 #include "lang.hpp"
-#include "hal.hpp"
-#include "cpu.hpp"
+#include "cpu/include/hal.hpp"
 #include "assert.hpp"
-#include "../exception/include/kdb.hpp"
+#include "sync/include/lock_guard.hpp"
+#include "exception/include/kdb.hpp"
 
 using namespace UOS;
 
-constexpr auto pdpt_table = (VM::PDPT *)HIGHADDR(PDPT8_PBASE);
+static auto pdpt_table = (VM::PDPT *)HIGHADDR(PDPT8_PBASE);
 
 VM::kernel_vspace::kernel_vspace(void){
 	assert(pe_kernel);
@@ -137,8 +137,7 @@ qword VM::kernel_vspace::reserve(qword addr,size_t page_count){
 			return 0;
 		}
 	}
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	if (addr){
 		return reserve_fixed(addr,page_count) ? addr : 0;
 	}
@@ -300,8 +299,7 @@ rollback:
 bool VM::kernel_vspace::release(qword addr,size_t page_count){
 	if (!common_check(addr,page_count))
 		return false;
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	auto res = imp_iterate(pdpt_table,addr,page_count,[](PT& pt,qword,qword) -> bool{
 		if (pt.bypass)
 			return false;
@@ -367,8 +365,7 @@ bool VM::kernel_vspace::commit(qword base_addr,size_t page_count){
 		//no physical memory
 		return false;
 	}
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
 		return (pt.preserve && !pt.bypass && !pt.present) ? true : false;
 	});
@@ -397,8 +394,7 @@ bool VM::kernel_vspace::protect(qword base_addr,size_t page_count,qword attrib){
 	qword mask = PAGE_XD | PAGE_GLOBAL | PAGE_CD | PAGE_WT | PAGE_WRITE;
 	if (attrib & ~mask)
 		return false;
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
 		return (pt.present && !pt.bypass && !pt.user && pt.page_addr) ? true : false;
 	});
@@ -424,8 +420,7 @@ bool VM::kernel_vspace::protect(qword base_addr,size_t page_count,qword attrib){
 bool VM::kernel_vspace::assign(qword base_addr,qword phy_addr,size_t page_count){
 	if (!common_check(base_addr,page_count) || !phy_addr)
 		return false;
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword){
 		return (pt.preserve && !pt.present) ? true : false;
 	});

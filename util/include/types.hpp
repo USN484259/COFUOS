@@ -12,7 +12,7 @@ typedef struct{
 
 typedef qword size_t;
 
-#pragma warning(disable: 4464 4626 4514 4710 4711 4820 5027)
+#pragma warning(disable: 4464 4626 4514 4710 4711 4820 5027 5045 5220)
 
 static_assert(sizeof(byte) == 1, "size_byte_assert_failed");
 static_assert(sizeof(word) == 2, "size_word_assert_failed");

@@ -10,11 +10,13 @@
 #include "exception/include/kdb.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
+#include "dev/include/ps_2.hpp"
+#include "cui.hpp"
 #include "lang.hpp"
 
 using namespace UOS;
 
-
+extern "C" const byte scancode_table;
 //[[ noreturn ]]
 //void AP_entry(word);
 
@@ -198,11 +200,22 @@ void krnlentry(void* module_base){
 		for (unsigned i = 0;i < pe_kernel->section_count;++i){
 			const auto section = pe_kernel->get_section(i);
 			assert(section);
-			const char strCRT[8]={'.','C','R','T',0};
+			constexpr char strCRT[8]={'.','C','R','T',0};
 			if (8 == match(strCRT,section->name,8)){
 				global_constructor = (procedure*)(pe_kernel->imgbase + section->offset);
-				break;
+				//break;
 			}
+			char buf[9];
+			memcpy(buf,section->name,8);
+			buf[8] = 0;
+			char attr[4] = {' ',' ',' ',0};
+			if (section->attrib & 0x80000000)
+				attr[1] = 'W';
+			if (section->attrib & 0x40000000)
+				attr[0] = 'R';
+			if (section->attrib & 0x20000000)
+				attr[2] = 'X';
+			dbgprint("%s @ %p size = 0x%x %s",buf,pe_kernel->imgbase + section->offset,(qword)section->datasize,attr);
 		}
 		assert(global_constructor);
 		while(*global_constructor){
@@ -212,31 +225,47 @@ void krnlentry(void* module_base){
 	//pm_test();
 	//vm_test();
 
-	_enable();
-
-	constexpr auto w = 400;
-	constexpr auto h = 300;
-	auto buffer = new dword[w*h];
-	assert(buffer);
-	volatile qword tm = 0;
+	pair<qword,qword> timestamp(0,0);
 	rtc.set_handler([](qword tm,word ms,void* data){
-		if (tm && ms == 0)
-			*(qword*)data = tm;
-	},(void*)&tm);
+		if (tm){
+			auto& timestamp = *(pair<qword,qword>*)data;
+			timestamp = {tm,ms};
 
+		}
+	},&timestamp);
+
+	CUI console(Rect{0,0,display.get_width()/2,display.get_height()/2});
+	__debugbreak();
+	console.print("COFUOS v0.0.1\tby USN484259\n");
+	console.print("https://github.com/USN484259/COFUOS");
+	console.put('\n');
+
+	ps2_device.set([](byte charcode,dword param,void* ptr){
+		if (param && charcode < 0x80){
+			charcode = *(&scancode_table + charcode);
+			if (charcode == 0)
+				return;
+			auto& console = *(CUI*)ptr;
+			if (charcode == 8)	//backspace
+				console.back();
+			else
+				console.put((char)charcode);
+		}
+	},&console);
+	__debugbreak();
 	while(true){
 		__halt();
-		if (tm){
-			dbgprint("drawing...");
-			srand(tm);
-			Rect rect{-w/2,-h/2,w/2,h/2};
-			for (unsigned i = 0;i < (w*h);++i){
-				buffer[i] = rand();
+		
+		if (timestamp.first){
+			auto ms = timestamp.second;
+			timestamp.first = 0;
+			if (ms == 500){
+				//console.print("Hello World !\t");
+				console.set_color(rand());
 			}
-			auto res = display.draw(rect,buffer,4*w*h);
-			assert(res);
-			tm = 0;
 		}
+		
+		ps2_device.step(rtc.get_time());
 	}
 
 	__debugbreak();

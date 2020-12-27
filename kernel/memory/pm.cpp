@@ -2,11 +2,11 @@
 #include "sysinfo.hpp"
 #include "constant.hpp"
 #include "util.hpp"
-#include "cpu.hpp"
 #include "assert.hpp"
 #include "vm.hpp"
 #include "lang.hpp"
-#include "../exception/include/kdb.hpp"
+#include "sync/include/lock_guard.hpp"
+#include "exception/include/kdb.hpp"
 
 using namespace UOS;
 
@@ -25,7 +25,7 @@ struct BLOCK{
 static_assert(sizeof(BLOCK) == sizeof(byte),"BLOCK size mismatch");
 
 PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
-	constexpr auto scan_base = (PMMSCAN*)PMMSCAN_BASE;
+	auto scan_base = (PMMSCAN* const)PMMSCAN_BASE;
 	bmp_size = sysinfo->PMM_avl_top >> 12;
 
 	qword page_count = align_up(bmp_size,PAGE_SIZE) >> 12;
@@ -61,7 +61,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 		BugCheck(bad_alloc,bmp_size);
 	
 	//maps everything
-	constexpr auto pdt0 = (volatile qword*)HIGHADDR(PDT0_PBASE);
+	auto pdt0 = (qword volatile* const)HIGHADDR(PDT0_PBASE);
 	constexpr auto pdt_off = LOWADDR(PMMBMP_BASE) >> 21;
 	qword i;
 	for (i = 0;i < pdt_count;++i){
@@ -81,7 +81,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 		++i;
 	}
 
-	constexpr auto pmm_bmp = (BLOCK*)PMMBMP_BASE;
+	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	zeromemory(pmm_bmp,page_count*PAGE_SIZE);
 	//scan & fill wmp
 	for (auto it = scan_base;it->type;++it){
@@ -140,9 +140,8 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 }
 
 qword PM::allocate(byte tag){
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
-	constexpr auto pmm_bmp = (BLOCK*)PMMBMP_BASE;
+	interrupt_guard<spin_lock> guard(lock);
+	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	auto page_count = align_up(bmp_size,PAGE_SIZE) >> 12;
 	auto page = next;
 	do{
@@ -203,7 +202,7 @@ qword PM::allocate(byte tag){
 	assert(used < total);
 	++used;
 #ifdef _DEBUG
-	check_integration();
+	check_integrity();
 #endif
 	return res_page << 12;
 }
@@ -212,9 +211,8 @@ void PM::release(qword pa){
 	assert(0 == (pa & PAGE_MASK));
 	auto page = pa >> 12;
 	assert(page < bmp_size);
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
-	constexpr auto pmm_bmp = (BLOCK*)PMMBMP_BASE;
+	interrupt_guard<spin_lock> guard(lock);
+	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	auto& cur = pmm_bmp[page];
 	if (cur.free)
 		BugCheck(corrupted,pa);
@@ -234,7 +232,7 @@ void PM::release(qword pa){
 	assert(used);
 	--used;
 #ifdef _DEBUG
-	check_integration();
+	check_integrity();
 #endif
 }
 
@@ -268,8 +266,8 @@ bool PM::peek(void* dest,qword paddr,size_t count){
 }
 
 #ifdef _DEBUG
-void PM::check_integration(void){
-	constexpr auto pmm_bmp = (BLOCK*)PMMBMP_BASE;
+void PM::check_integrity(void){
+	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	auto page_count = align_up(bmp_size,PAGE_SIZE) >> 12;
 	auto discovered_free_page = 0;
 	for (unsigned page = 0;page < page_count;++page){

@@ -2,10 +2,8 @@
 #include "types.hpp"
 #include "sysinfo.hpp"
 
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(corrupted,x)
 #include "vector.hpp"
-#undef THROW
+
 
 namespace UOS{
 	struct MADT{
@@ -112,13 +110,14 @@ namespace UOS{
 	class ACPI{
 		MADT* madt = nullptr;
 		FADT* fadt = nullptr;
+		byte version = 0;
 		static bool validate(const void* addr,size_t limit);
 
 		void parse_table(qword pbase);
 	public:
 		ACPI(void);
 		ACPI(const ACPI&) = delete;
-
+		byte get_version(void) const;
 		const MADT& get_madt(void) const;
 		const FADT& get_fadt(void) const;
 	};

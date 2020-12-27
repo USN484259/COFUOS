@@ -1,8 +1,7 @@
 #include "heap.hpp"
 #include "util.hpp"
-#include "cpu.hpp"
 #include "assert.hpp"
-
+#include "sync/include/lock_guard.hpp"
 
 using namespace UOS;
 
@@ -179,8 +178,7 @@ bool paired_heap::expand(void* base,size_t len) {
 	if (reinterpret_cast<qword>(base) & align_mask(0))	//not b32 aligned
 		return false;
 
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	
 	byte* cur = static_cast<byte*>(base);
 	while (len >= align_size(0)) {
@@ -225,8 +223,7 @@ void* paired_heap::allocate(size_t req) {
 
 	void* res = nullptr;
 	{
-		interrupt_guard ig;
-		lock_guard<spin_lock> guard(lock);
+		interrupt_guard<spin_lock> guard(lock);
 		res = get(level);
 	}
 	if (res || callback == nullptr)
@@ -247,8 +244,7 @@ void paired_heap::release(void* base,size_t req) {
 	BLOCK level = category(req);
 	assert(level < nomem);
 
-	interrupt_guard ig;
-	lock_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(lock);
 	//assert(0,reinterpret_cast<size_t>(base) & align_mask(cur));
 	put(base, level);
 
