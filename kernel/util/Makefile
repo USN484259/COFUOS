@@ -1,4 +1,15 @@
-all:
-	$(CL_PREFIX) $(CL_OPTIONS) $(INC_PATH) $(DEFINES) fasthash.c lang.cpp cui.cpp $(CL_POSTFIX)
-	$(CP_PREFIX) bin/*.obj ../bin/ $(CP_POSTFIX)
+all:	bin/fasthash.o bin/lang.o bin/sysinfo.o	#bin/cui.o
+
+bin/fasthash.o:	fasthash.c
+	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@
+	$(CP) $@ ../bin/
+
+bin/%.o:	%.cpp
+	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@
+	$(CP) $@ ../bin/
+
+fasthash.c:	include/fasthash.h
+%.cpp:	include/*.hpp $(COFUOS_ROOT)/util/include/*.hpp
+
+.PHONY: all
 

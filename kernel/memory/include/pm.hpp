@@ -11,7 +11,7 @@ namespace UOS{
 		qword used;
 		qword next;
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 		void check_integrity(void);
 #endif
 

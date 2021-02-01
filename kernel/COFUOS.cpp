@@ -11,7 +11,7 @@
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/ps_2.hpp"
-#include "cui.hpp"
+//#include "cui.hpp"
 #include "lang.hpp"
 
 using namespace UOS;
@@ -39,7 +39,7 @@ void print_sysinfo(void){
 void pm_test(void){
 	static byte unitest_buffer[PAGE_SIZE];
 	zeromemory(unitest_buffer,PAGE_SIZE);
-	__debugbreak();
+	int_trap<3>();
 	
 	size_t page_count = 0;
 	do{
@@ -51,7 +51,7 @@ void pm_test(void){
 		unitest_buffer[addr >> 3] |= (1 << (addr & 7));
 		++page_count;
 	}while(true);
-	__debugbreak();
+	int_trap<3>();
 
 	constexpr qword table[] = {0x316,0x315};
 	for (auto index : table){
@@ -59,9 +59,9 @@ void pm_test(void){
 		unitest_buffer[index >> 3] &= ~(1 << (index & 7));
 		pm.release(index << 12);
 	}
-	__debugbreak();
+	int_trap<3>();
 	while(page_count){
-		qword tsc = __rdtsc();
+		qword tsc = rdtsc();
 		dbgprint("random from TSC : %x",tsc);
 		tsc &= ((1 << 15) - 1);
 		auto index = tsc;
@@ -81,11 +81,11 @@ void pm_test(void){
 
 
 	}
-	__debugbreak();
+	int_trap<3>();
 }
 
 void vm_test(void){
-	__debugbreak();
+	int_trap<3>();
 	constexpr qword fixed_addr = HIGHADDR(0x3FDFE000);
 	size_t fixed_size = 4*pm.capacity();
 	qword fixed_offset = PAGE_SIZE*(fixed_size/0x10);
@@ -136,14 +136,14 @@ void vm_test(void){
 	dbgprint("Committing 0x%x pages @ %p",committed,fixed_addr + fixed_offset);
 	res = vm.commit(fixed_addr + fixed_offset,committed);	//normal commit
 	assert(res);
-	__debugbreak();
+	int_trap<3>();
 	for (qword i = 0;i < committed;++i){
 		//probe every committed page
 		auto ptr = (qword*)(fixed_addr + fixed_offset + PAGE_SIZE*i);
 		dbgprint("Probing %p",ptr);
 		*ptr = i;
 	}
-	__debugbreak();
+	int_trap<3>();
 	res = vm.protect(fixed_addr + fixed_offset,committed/2,PAGE_USER);	//invalid attrib
 	assert(!res);
 
@@ -182,46 +182,61 @@ void vm_test(void){
 	res = vm.release(addr + PAGE_SIZE*0x10,0x1F0);
 	assert(res);
 
-	__debugbreak();
+	int_trap<3>();
 }
+extern "C"
+procedure __CTOR_LIST__;
 
-
+extern "C"
 [[ noreturn ]]
 void krnlentry(void* module_base){
 	buildIDT();
-	kdb_init(sysinfo->ports[0]);
-
+	debug_stub.emplace(sysinfo->ports[0]);
 	print_sysinfo();
-
+	fpu_init();
+	
 	pe_kernel = PE64::construct(module_base);
+
 	assert(pe_kernel->imgbase == (qword)module_base);
+	for (unsigned i = 0;i < pe_kernel->section_count;++i){
+		const auto section = pe_kernel->get_section(i);
+		assert(section);
+		char buf[9];
+		memcpy(buf,section->name,8);
+		buf[8] = 0;
+		char attr[4] = {' ',' ',' ',0};
+		if (section->attrib & 0x80000000)
+			attr[1] = 'W';
+		if (section->attrib & 0x40000000)
+			attr[0] = 'R';
+		if (section->attrib & 0x20000000)
+			attr[2] = 'X';
+		dbgprint("%s @ %p size = 0x%x %s",buf,pe_kernel->imgbase + section->offset,(qword)section->datasize,attr);
+	}
 	{
-		procedure* global_constructor = nullptr;
-		for (unsigned i = 0;i < pe_kernel->section_count;++i){
-			const auto section = pe_kernel->get_section(i);
-			assert(section);
-			constexpr char strCRT[8]={'.','C','R','T',0};
-			if (8 == match(strCRT,section->name,8)){
-				global_constructor = (procedure*)(pe_kernel->imgbase + section->offset);
-				//break;
-			}
-			char buf[9];
-			memcpy(buf,section->name,8);
-			buf[8] = 0;
-			char attr[4] = {' ',' ',' ',0};
-			if (section->attrib & 0x80000000)
-				attr[1] = 'W';
-			if (section->attrib & 0x40000000)
-				attr[0] = 'R';
-			if (section->attrib & 0x20000000)
-				attr[2] = 'X';
-			dbgprint("%s @ %p size = 0x%x %s",buf,pe_kernel->imgbase + section->offset,(qword)section->datasize,attr);
-		}
-		assert(global_constructor);
-		while(*global_constructor){
-			(*global_constructor++)();
+		procedure* head = &__CTOR_LIST__;
+		assert(head);
+		auto tail = head;
+		do{
+			++tail;
+		}while(*tail);
+		--tail;
+		while(head != tail){
+			(*tail--)();
 		}
 	}
+
+	int_trap<3>();
+	//sti();
+
+	//TODO spawn startup thread
+
+	//as idle thread
+	while(true){
+		halt();
+	}
+
+	/*
 	//pm_test();
 	//vm_test();
 
@@ -234,8 +249,8 @@ void krnlentry(void* module_base){
 		}
 	},&timestamp);
 
-	CUI console(Rect{0,0,display.get_width()/2,display.get_height()/2});
-	__debugbreak();
+	CUI console(Rect{0,0,display.get_width(),display.get_height()});
+	int_trap<3>();
 	console.print("COFUOS v0.0.1\tby USN484259\n");
 	console.print("https://github.com/USN484259/COFUOS");
 	console.put('\n');
@@ -252,9 +267,9 @@ void krnlentry(void* module_base){
 				console.put((char)charcode);
 		}
 	},&console);
-	__debugbreak();
+	int_trap<3>();
 	while(true){
-		__halt();
+		halt();
 		
 		if (timestamp.first){
 			auto ms = timestamp.second;
@@ -268,6 +283,7 @@ void krnlentry(void* module_base){
 		ps2_device.step(rtc.get_time());
 	}
 
-	__debugbreak();
+	int_trap<3>();
 	BugCheck(not_implemented,0);
+	*/
 }

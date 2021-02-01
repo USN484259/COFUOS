@@ -7,6 +7,7 @@
 #include "assert.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "exception/include/kdb.hpp"
+#include "sysinfo.hpp"
 
 using namespace UOS;
 
@@ -25,10 +26,10 @@ VM::kernel_vspace::kernel_vspace(void){
 	stk_commit = align_up(stk_commit,PAGE_SIZE) >> 12;
 	auto stk_top = LOWADDR(KRNL_STK_TOP) >> 12;
 	assert(stk_top < 0x200);
-#ifdef VM_TEST
-	dbgprint("stack committed : %p - %p",HIGHADDR((stk_top - stk_commit)*PAGE_SIZE),HIGHADDR(stk_top*PAGE_SIZE));
-	dbgprint("stack reserved : %p - %p",HIGHADDR((stk_top - stk_reserve)*PAGE_SIZE),HIGHADDR((stk_top - stk_commit)*PAGE_SIZE));
-#endif
+
+	dbgprint("kernel stack committed : %p - %p",HIGHADDR((stk_top - stk_commit)*PAGE_SIZE),HIGHADDR(stk_top*PAGE_SIZE));
+	dbgprint("kernel stack reserved : %p - %p",HIGHADDR((stk_top - stk_reserve)*PAGE_SIZE),HIGHADDR((stk_top - stk_commit)*PAGE_SIZE));
+
 	//stack guard
 	assert(!pt0_table[stk_top].present);
 	pt0_table[stk_top].preserve = 1;
@@ -48,15 +49,15 @@ VM::kernel_vspace::kernel_vspace(void){
 		pt0_table[i].present = 0;
 		pt0_table[i].preserve = 1;
 		pt0_table[i].bypass = 1;
-		__invlpg((void*)HIGHADDR(i*PAGE_SIZE));
+		invlpg((void*)HIGHADDR(i*PAGE_SIZE));
 	}
 	BLOCK block;
 	block.self = (BOOT_AREA_TOP >> 12);
 	block.size = stk_top - block.self - stk_reserve;
 	block.prev_valid = block.next_valid = 0;
-#ifdef VM_TEST
-	dbgprint("free block : 0x%x - 0x%x",block.self, block.self + block.size);
-#endif
+
+	dbgprint("boot area free block : 0x%x - 0x%x",block.self, block.self + block.size);
+
 	block.put(pt0_table + block.self);
 	pdt_table[0].head = block.self;
 	put_max_size(pdt_table[0],block.size);
@@ -75,6 +76,9 @@ VM::kernel_vspace::kernel_vspace(void){
 	auto krnl_index = LOWADDR(module_base) >> 21;
 	assert(krnl_index < 0x200 && pdt_table[krnl_index].present);
 	pdt_table[krnl_index].bypass = 1;
+
+	features.set(decltype(features)::MEM);
+	int_trap<3>();
 }
 
 void VM::kernel_vspace::new_pdt(PDPT& pdpt,map_view& view){
@@ -408,7 +412,7 @@ bool VM::kernel_vspace::protect(qword base_addr,size_t page_count,qword attrib){
 		pt.cd = (attrib & PAGE_CD) ? 1 : 0;
 		pt.wt = (attrib & PAGE_WT) ? 1 : 0;
 		pt.write = (attrib & PAGE_WRITE) ? 1 : 0;
-		__invlpg((void*)addr);
+		invlpg((void*)addr);
 		return true;
 	};
 	res = imp_iterate(pdpt_table,base_addr,page_count,fun,attrib);
@@ -452,7 +456,10 @@ bool VM::kernel_vspace::assign(qword base_addr,qword phy_addr,size_t page_count)
 	return true;
 }
 
-bool VM::kernel_vspace::peek(void*,qword,size_t){
-	//TODO
-	return false;
+size_t VM::kernel_vspace::peek(void* dst,qword va,size_t len){
+	if (va < HIGHADDR(0))
+		return 0;
+	//TODO check PT
+	memcpy(dst,(void const*)va,len);
+	return len;
 }

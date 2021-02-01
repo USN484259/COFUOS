@@ -104,11 +104,12 @@ namespace UOS{
 		static_assert(sizeof(PDPT) == 8,"PDPT size mismatch");
 		class virtual_space{
 		public:
+			virtual ~virtual_space(void) = default;
 			virtual qword reserve(qword addr,size_t page_count) = 0;
 			virtual bool commit(qword addr,size_t page_count) = 0;
 			virtual bool protect(qword addr,size_t page_count,qword attrib) = 0;
 			virtual bool release(qword addr,size_t page_count) = 0;
-			virtual bool peek(void* dst,qword addr,size_t count) = 0;
+			virtual size_t peek(void* dst,qword addr,size_t count) = 0;
 		protected:
 			//enum PAGE_STATE {FREE,PRESERVE,COMMIT_KRNL,COMMIT_USER};
 			typedef bool (*PTE_CALLBACK)(PT& pt,qword addr,qword data);
@@ -138,7 +139,7 @@ namespace UOS{
 			void shift_left(PDT& pdt,PT* table,BLOCK& block);
 			void shift_right(PDT& pdt,PT* table,BLOCK& block);
 			void insert(PDT& pdt,PT* table,BLOCK& block,word hint);
-#ifdef _DEBUG
+#ifndef NDEBUG
 			void check_integrity(PDT& pdt,PT* table);
 #endif
 		};
@@ -151,7 +152,7 @@ namespace UOS{
 			bool commit(qword addr,size_t page_count) override;
 			bool protect(qword addr,size_t page_count,qword attrib) override;
 			bool release(qword addr,size_t page_count) override;
-			bool peek(void* dst,qword addr,size_t count) override;
+			size_t peek(void* dst,qword addr,size_t count) override;
 			bool assign(qword va,qword pa,size_t page_count);
 		private:
 			static bool common_check(qword addr,size_t page_count);

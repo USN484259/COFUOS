@@ -2,7 +2,7 @@
 #include "types.hpp"
 #include "sync/include/spin_lock.hpp"
 #include "sync/include/lock_guard.hpp"
-#include "atomic.hpp"
+#include "intrinsics.hpp"
 #include "assert.hpp"
 
 namespace UOS{
@@ -30,7 +30,7 @@ namespace UOS{
 			if (next == head)
 				return false;
 			*original_tail = val;
-			auto res = cmpxchg(tail,next,original_tail);
+			auto res = cmpxchg_ptr(&tail,next,original_tail);
 			assert(res == original_tail);
 			return true;
 		}
@@ -44,7 +44,7 @@ namespace UOS{
 			T* next = original_head + 1;
 			if (next == buffer + SIZE)
 				next = buffer;
-			auto res = cmpxchg(head,next,original_head);
+			auto res = cmpxchg_ptr(&head,next,original_head);
 			assert(res == original_head);
 			return true;
 		}

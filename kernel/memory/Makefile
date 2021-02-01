@@ -1,4 +1,12 @@
-all:
-	$(CL_PREFIX) $(CL_OPTIONS) $(INC_PATH) $(DEFINES) pm.cpp vm.cpp kernel_vspace.cpp heap.cpp $(CL_POSTFIX)
-	$(CP_PREFIX) bin/*.obj ../bin/ $(CP_POSTFIX)
+all:	bin/pm.o bin/vm.o bin/kernel_vspace.o bin/heap.o
+
+bin/%.o:	%.cpp
+	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@
+	$(CP) $@ ../bin/
+
+%.cpp:	include/*.hpp ../util/include/*.hpp $(COFUOS_ROOT)/util/include/*.hpp
+
+.PHONY: all
+
+
 

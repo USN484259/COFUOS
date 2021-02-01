@@ -26,20 +26,21 @@
 #ifndef _FASTHASH_H
 #define _FASTHASH_H
 
-#ifdef COFUOS
-#include "types.hpp"
-typedef dword uint32_t;
-typedef qword uint64_t;
-#else
+
+
+
 #include <stdint.h>
+#ifndef COFUOS
 #include <stdio.h>
+#else
+#include <stddef.h>
 #endif
 
-#ifndef COFUOS
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-#endif
+
 
 /**
  * fasthash32 - 32-bit implementation of fasthash
@@ -57,10 +58,10 @@ extern "C" {
  */
 	uint64_t fasthash64(const void *buf, size_t len, uint64_t seed);
 
-#ifndef COFUOS
+
 #ifdef __cplusplus
 }
 #endif
-#endif
+
 
 #endif

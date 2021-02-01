@@ -1,18 +1,10 @@
 #pragma once
 #include "types.hpp"
+#include "container.hpp"
 #include "util.hpp"
 #include "constant.hpp"
 #include "lang.hpp"
 #include "assert.hpp"
-
-#ifndef THROW
-#ifdef COFUOS
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(unhandled_exception,x)
-#else
-#define THROW throw
-#endif
-#endif
 
 namespace UOS{
 	template<typename T>
@@ -39,9 +31,7 @@ namespace UOS{
 			assert(count == other.count);
 		}
 		vector(vector&& other){
-			swap(buffer,other.buffer);
-			swap(count,other.count);
-			swap(cap,other.cap);
+			swap(other);
 		}
 		~vector(void){
 			clear();
@@ -65,6 +55,12 @@ namespace UOS{
 			cap = 0;
 			delete[] (byte*)buffer;
 			buffer = nullptr;
+		}
+		void swap(vector& other){
+			using UOS::swap;
+			swap(buffer,other.buffer);
+			swap(count,other.count);
+			swap(cap,other.cap);
 		}
 		void reserve(size_t new_size){
 			assert(count <= cap);

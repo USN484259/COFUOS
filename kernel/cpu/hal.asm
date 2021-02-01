@@ -11,6 +11,8 @@ extern dispatch_exception
 extern dispatch_irq
 
 global buildIDT
+global fpu_init
+
 global DR_match
 global DR_get
 global DR_set
@@ -18,10 +20,6 @@ global DR_set
 global memset
 global zeromemory
 global memcpy
-
-global serial_peek
-global serial_get
-global serial_put
 
 global BugCheck
 ;global __C_specific_handler
@@ -42,8 +40,7 @@ section .text
 push rax
 %endif
 call near exception_entry
-int3
-align 8
+align 8, db 0xCC
 %endmacro
 
 align 16
@@ -56,96 +53,181 @@ ISR_STUB i
 
 exception_entry:
 
-;SS
-;rsp
-;rflags
-;CS
-;rip
-;errcode
-;exp#
-push rbp
-push rax
-push rcx
-push rdx
-push rbx
-push rsi
-push rdi
+;+98	SS
+;+90	rsp
+;+88	rflags
+;+80	CS
+;+78	rip
+;+70	errcode	|	r15
+;+68	exp#		|	r14
+;+60	r13
+;+58	r12
+;+50	r11
+;+48	r10
+;+40	r9
+;+38	r8
+;+30	rbp
+;+28	rdi
+;+20	rsi
+;+18	rbx
+;+10	rdx
+;+08	rcx
+;+00	rax
 
-push r8
-push r9
-push r10
-push r11
-push r12
-push r13
-push r14
-push r15
-
-mov rbp,rsp
-mov rcx,[rbp+8*15]	;exp#
+sub rsp,(8*15 - 2*8 + 0x20)
+mov [rsp+0x20+0x00],rax
+mov [rsp+0x20+0x08],rcx
+mov [rsp+0x20+0x10],rdx
+mov [rsp+0x20+0x18],rbx
+mov [rsp+0x20+0x20],rsi
+mov [rsp+0x20+0x28],rdi
+mov [rsp+0x20+0x30],rbp
 mov rax,ISR_exception
-;mov rdx,[rbp+8*16]	;errcode
-mov rdx,rbp	;context
+mov rcx,[rsp+0x20+0x68]		;exp#
+mov rdx,[rsp+0x20+0x70]		;errcode
+mov [rsp+0x20+0x38],r8
+mov [rsp+0x20+0x40],r9
+mov [rsp+0x20+0x48],r10
+mov [rsp+0x20+0x50],r11
+lea rbp,[rsp+0x20]
 sub rcx,rax
-;and sp,0xF800	;lower 2K
-shr rcx,3	;8 byte alignment
-;mov r8,rbp	;context
+mov [rsp+0x20+0x58],r12
+mov [rsp+0x20+0x60],r13
+mov [rsp+0x20+0x68],r14		;overwrite exp#
+mov [rsp+0x20+0x70],r15		;overwrite errorcode
 
-sub rsp,0x20
+shr rcx,3
+test word [rsp+0x20+0x80],0x03	;CS
+mov ax,ss
+mov r8,rbp	;rbp points to context
+jz .en_no_swap_gs
+swapgs
+.en_no_swap_gs:
+mov ds,ax
+mov es,ax
 
+cld
 call dispatch_exception
 
-
+test word [rbp+0x80],0x03	;CS
+mov ax,[rbp+0x98]	;SS
 mov rsp,rbp
-pop r15
-pop r14
-pop r13
-pop r12
-pop r11
-pop r10
-pop r9
-pop r8
-pop rdi
-pop rsi
-pop rbx
-pop rdx
-pop rcx
-pop rax
-pop rbp
-
-add rsp,0x10	;exp# and errcode
-
+jz .ex_no_swap_gs
+swapgs
+.ex_no_swap_gs:
+mov r15,[rbp+0x70]
+mov r14,[rbp+0x68]
+mov r13,[rbp+0x60]
+mov r12,[rbp+0x58]
+mov r11,[rsp+0x50]
+mov r10,[rsp+0x48]
+mov r9,[rsp+0x40]
+mov r8,[rsp+0x38]
+mov ds,ax
+mov es,ax
+mov rbp,[rsp+0x30]
+mov rdi,[rsp+0x28]
+mov rsi,[rsp+0x20]
+mov rbx,[rsp+0x18]
+mov rdx,[rsp+0x10]
+mov rcx,[rsp+0x08]
+mov rax,[rsp+0x00]
+add rsp,(8*15)
 iretq
 
 align 16
 ISR_irq:
 %rep (IDT_LIM/0x10 - 0x20)
 call near irq_entry
-int3
-align 8
+align 8, db 0xCC
 %endrep
 
 irq_entry:
-xchg rcx,[rsp]
-push rax
-push rdx
-push r8
-push r9
-mov rax,ISR_irq
-push r10
-push r11
-sub rcx,rax
-sub rsp,0x20
-shr rcx,3
-call dispatch_irq
-add rsp,0x20
+;+40	SS
+;+38	rsp
+;+30	rflags
+;+28	CS
+;+20	rip
+;+18	exp#
 
-pop r11
-pop r10
-pop r9
-pop r8
-pop rdx
-pop rax
-pop rcx
+sub rsp,0x18
+test word [rsp+0x28],0x03	;CS
+mov [rsp],rbp
+jz .en_no_swap_gs
+swapgs
+.en_no_swap_gs:
+mov rbp,[gs:8]	;this_thread
+mov [rbp+CONX_OFF+0x00],rax
+mov [rbp+CONX_OFF+0x08],rcx
+mov [rbp+CONX_OFF+0x10],rdx
+mov [rbp+CONX_OFF+0x18],rbx
+mov [rbp+CONX_OFF+0x20],rsi
+mov [rbp+CONX_OFF+0x28],rdi
+;	rbp @ [rsp]
+mov rax,ISR_irq
+mov rcx,[rsp]	;rbp
+mov rdx,[rsp+0x18]	;exp#
+mov [rbp+CONX_OFF+0x38],r8
+mov [rbp+CONX_OFF+0x40],r9
+mov [rbp+CONX_OFF+0x48],r10
+mov [rbp+CONX_OFF+0x50],r11
+mov [rbp+CONX_OFF+0x30],rcx	;rbp
+lea rsi,[rsp+0x20]
+lea rdi,[rbp+CONX_OFF+0x78]
+sub rdx,rax
+mov ecx,5
+cld
+mov ax,ss
+mov [rbp+CONX_OFF+0x58],r12
+mov [rbp+CONX_OFF+0x60],r13
+mov [rbp+CONX_OFF+0x68],r14
+mov [rbp+CONX_OFF+0x70],r15
+shr edx,3
+rep movsq
+mov ds,ax
+mov es,ax
+
+mov ecx,edx		;id
+call dispatch_irq
+
+mov rdx,[gs:8]
+xor rbx,rbx
+cmp rdx,rbp
+lea rdi,[rsp+0x20]
+jz .no_switch
+lea rsi,[rdx+CONX_OFF+0x78]
+mov ecx,5
+mov rbp,rdx
+rep movsq
+.no_switch:
+add rsp,0x20
+mov r15,[rbp+CONX_OFF+0x70]
+mov r14,[rbp+CONX_OFF+0x68]
+mov r13,[rbp+CONX_OFF+0x60]
+mov r12,[rbp+CONX_OFF+0x58]
+mov ax,[rsp+0x40]	;SS
+test word [rsp+0x28],0x03	;CS
+mov r11,[rbp+CONX_OFF+0x50]
+mov r10,[rbp+CONX_OFF+0x48]
+mov r9,[rbp+CONX_OFF+0x40]
+mov r8,[rbp+CONX_OFF+0x38]
+;rbp below
+;zeroing context.rflags
+;mark as invalid context
+mov [rbp+CONX_OFF+0x88],rbx		;rflags, rbx == 0
+jz .ex_no_swap_gs
+swapgs
+.ex_no_swap_gs:
+mov ds,ax
+mov es,ax
+mov rdi,[rbp+CONX_OFF+0x28]
+mov rsi,[rbp+CONX_OFF+0x20]
+mov rbx,[rbp+CONX_OFF+0x18]
+mov rdx,[rbp+CONX_OFF+0x10]
+mov rcx,[rbp+CONX_OFF+0x08]
+mov rax,[rbp+CONX_OFF+0x00]
+
+mov rbp,[rbp+CONX_OFF+0x30]
 iretq
 
 
@@ -197,58 +279,10 @@ mov rsi,[rsp+0x08]
 ret
 
 align 16
-DR_match:
-;pushf
-;cli
-mov rax,dr6
-test al,1	;B0
-jz .end
-mov rdx,dr7
-and dl,0xFC
-mov dr7,rdx
-.end:
-;popf
-ret
-
-align 16
-DR_get:
-
-mov [rsp+8],rdi
-mov rdi,rcx
-mov rax,dr0
-stosq
-mov rax,dr1
-stosq
-mov rax,dr2
-stosq
-mov rax,dr3
-stosq
-mov rax,dr6
-stosq
-mov rax,dr7
-stosq
-
-mov rdi,[rsp+8]
-ret
-
-align 16
-DR_set:
-mov [rsp+8],rsi
-mov rsi,rcx
-lodsq
-mov dr0,rax
-lodsq
-mov dr1,rax
-lodsq
-mov dr2,rax
-lodsq
-mov dr3,rax
-lodsq
-mov dr6,rax
-lodsq
-mov dr7,rax
-
-mov rsi,[rsp+8]
+fpu_init:
+mov DWORD [rsp+8],0x1F80
+fninit
+ldmxcsr [rsp+8]
 ret
 
 align 16
@@ -268,6 +302,7 @@ memset:
 test edx,edx
 jnz memset_val
 mov rdx,r8
+nop DWORD [eax + eax*1 + 0x00]
 
 align 16
 zeromemory:		;rcx dst	rdx size
@@ -424,84 +459,43 @@ mov rax,[rsp+0x18]
 ret
 
 
-;byte serial_peek(word);
-align 16
-serial_peek:
-mov dx,cx
-add dx,5
-in al,dx
-
-and al,1
-ret
-
-;byte serial_get(word);
-align 16
-serial_get:
-pause
-call serial_peek
-test al,al
-jz serial_get
-
-mov dx,cx
-in al,dx
-ret
-
-;void serial_put(word,byte);
-align 16
-serial_put:
-mov r8,rdx
-mov dx,cx
-add dx,5
-
-.wait:
-pause
-in al,dx
-test al,0x20
-jz .wait
-
-mov dx,cx
-mov rax,r8
-out dx,al
-ret
-
-
-
-
-
 ;BugCheck status,arg1,arg2
 align 16
 BugCheck:
+pushfq
+sub rsp,(8*(15 + 5) + 0x20 - 8)
+mov [rsp+0x20+0x00],rax
+mov [rsp+0x20+0x08],rcx
+mov [rsp+0x20+0x10],rdx
+mov [rsp+0x20+0x18],rbx
+mov [rsp+0x20+0x20],rsi
+mov [rsp+0x20+0x28],rdi
+mov [rsp+0x20+0x30],rbp
+mov ax,ss
+mov bx,cs
+mov rdx,[rsp+0x20+0x70]	;rflags
+lea rsi,[rsp+8*(15 + 5) + 0x20 + 8]
+mov rdi,[rsp+8*(15 + 5) + 0x20]	;ret_addr
+mov [rsp+0x20+0x38],r8
+mov [rsp+0x20+0x40],r9
+mov [rsp+0x20+0x48],r10
+mov [rsp+0x20+0x50],r11
+mov [rsp+0x20+0x58],r12
+mov [rsp+0x20+0x60],r13
+mov [rsp+0x20+0x68],r14
+mov [rsp+0x20+0x70],r15	;overwrite rflags
 
-push rbp
-mov rbp,rsp
-push rax
-push rcx
-push rdx
-push rbx
-push rsi
-push rdi
+mov [rsp+0x20+0x78],rdi	;rip
+mov [rsp+0x20+0x80],rbx	;cs
+mov [rsp+0x20+0x88],rdx	;rflags
+mov [rsp+0x20+0x90],rsi	;rsp
+mov [rsp+0x20+0x98],rax	;ss
 
-push r8
-push r9
-push r10
-push r11
-push r12
-push r13
-push r14
-push r15
-
-mov rax,[rbp+8]	;ret addr
-mov [rbp+0x10],rcx	;errcode
-mov [rbp+0x18],rax	;rip
-
-;mov rdx,rcx
+mov edx,ecx		;errcode
+mov r8,rsp	;context
 mov ecx,0xFFFFFFFF
-mov rdx,rsp
-
-sub rsp,0x20
 
 call dispatch_exception
-
 
 .reboot:
 
@@ -511,6 +505,7 @@ or al,1
 out dx,al
 hlt
 jmp .reboot
+
 
 align 16
 __chkstk:

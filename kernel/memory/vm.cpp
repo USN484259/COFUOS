@@ -3,7 +3,7 @@
 #include "constant.hpp"
 #include "util.hpp"
 #include "assert.hpp"
-#include "atomic.hpp"
+#include "intrinsics.hpp"
 
 using namespace UOS;
 
@@ -28,7 +28,7 @@ void VM::map_view::map(qword pa,qword attrib){
 		
 		qword new_value = attrib | pa | PAGE_PRESENT;
 
-		if (origin_value == cmpxchg(table[index], new_value, origin_value)){
+		if (origin_value == cmpxchg(table + index, new_value, origin_value)){
 			//gain this slot
 			view = (void*)(MAP_VIEW_BASE + PAGE_SIZE * index);
 			return;
@@ -52,9 +52,9 @@ void VM::map_view::unmap(void){
 	qword origin_value = table[index];
 	if (0 == (origin_value & 0x01))
 		BugCheck(corrupted, origin_value);
-	if (origin_value != cmpxchg(table[index], (qword)0, origin_value))
+	if (origin_value != cmpxchg(table + index, (qword)0, origin_value))
 		BugCheck(corrupted, origin_value);
-	__invlpg(view);
+	invlpg(view);
 }
 
 void VM::virtual_space::BLOCK::get(const VM::PT* pt){
@@ -108,7 +108,7 @@ void VM::virtual_space::BLOCK::get(const VM::PT* pt){
 	size = pt->data + 1;
 	assert(size > 2);
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 	for (unsigned i = 3;i < size;++i) {
 		++pt;
 		assert((qword)pt & PAGE_MASK);
@@ -155,7 +155,7 @@ void VM::virtual_space::BLOCK::put(PT* pt) const{
 		pt->valid = 1;
 		pt->data = i;
 	}
-#ifdef _DEBUG
+#ifndef NDEBUG
 	++pt;
 	assert(0 == ((qword)pt & PAGE_MASK) || pt->present || pt->preserve);
 #endif
@@ -331,7 +331,7 @@ void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block,word hint){
 	block.put(table + block.self);
 }
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 void VM::virtual_space::check_integrity(PDT& pdt,PT* table){
 	bool free_map[0x200] = {0};
 	unsigned free_count = 0;
@@ -409,7 +409,7 @@ qword VM::virtual_space::imp_reserve_any(VM::PDT& pdt,PT* table,qword base_addr,
 			}
 			block.size -= count;
 			shift_left(pdt,table,block);
-#ifdef _DEBUG
+#ifndef NDEBUG
 	check_integrity(pdt,table);
 #endif
 			return base_addr + (allocated_block << 12);
@@ -448,7 +448,7 @@ bool VM::virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word cou
 	shift_left(pdt,table,blocks[0]);
 	insert(pdt,table,blocks[1],blocks[0].self);
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 	check_integrity(pdt,table);
 #endif
 
@@ -468,7 +468,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 			cur.present = 0;
 			pm.release(cur.page_addr << 12);
 			cur.page_addr = 0;
-			__invlpg((void*)addr);
+			invlpg((void*)addr);
 		}
 		else if (!cur.preserve){
 			BugCheck(corrupted,i);
@@ -513,7 +513,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 		block.size = count;
 		insert(pdt,table,block,pdt.head);
 	}
-#ifdef _DEBUG
+#ifndef NDEBUG
 	check_integrity(pdt,table);
 #endif
 }

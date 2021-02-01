@@ -9,12 +9,16 @@
 #include "memory/include/vm.hpp"
 #include "dev/include/acpi.hpp"
 #include "exception/include/exception.hpp"
+#include "process/include/process.hpp"
+#include "process/include/core_state.hpp"
 #include "cpu/include/apic.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/ps_2.hpp"
 
 namespace UOS{
+	system_feature features;
+	optional<kdb_stub> debug_stub;
 	PE64 const* pe_kernel;
 	PM pm;
 	VM::kernel_vspace vm;
@@ -33,10 +37,14 @@ namespace UOS{
 	});
 	ACPI acpi;
 	exception eh;
+	process_manager proc;
+	scheduler ready_queue;
+
 	APIC apic;
-	//NOTE IF set after APIC init
-	RTC rtc;
-	Display display;
-	Font text_font;
-	PS_2 ps2_device;
+	core_manager cores;
+	
+	// RTC rtc;
+	// Display display;
+	// Font text_font;
+	// PS_2 ps2_device;
 }

@@ -8,13 +8,14 @@ then
 	cmd=$1
 fi
 
-if [ $cmd = "run" -o $cmd = "debug" ]
+if [ $cmd = "vbox" ]
 then
-	cd tools/bochs
-	wine cmd /c "${1}.bat"
+	virtualboxvm --startvm COFUOS --start-running --debug &
+	#--start-running --debug
+	sleep 5s
+	cd kernel/ && gdb
 else
-	export DEFINES=
-	. ./defines
+	export DEFINES=COFUOS
 	make $@
 fi
 

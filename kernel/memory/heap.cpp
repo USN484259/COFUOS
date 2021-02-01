@@ -76,7 +76,7 @@ void* paired_heap::get(BLOCK index){
 		pool[index]=cur->next;
 		if (pool[index])
 			pool[index]->prev=nullptr;
-#ifdef _DEBUG
+#ifndef NDEBUG
 		cur->prev=cur->next=nullptr;
 #endif
 		return cur;

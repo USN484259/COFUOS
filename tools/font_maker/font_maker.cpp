@@ -8,11 +8,7 @@
 using namespace std;
 using namespace UOS;
 
-/*
-NOT FOUND useful document for .fnt format
-Only reference is a weird makefont.cpp written years ago by myself
-Tried to port structures and logic to here
-*/
+// see https://www.angelcode.com/products/bmfont/
 
 
 struct fontchar{
@@ -37,6 +33,8 @@ class DDS_image{
 
 public:
 	DDS_image(const char* filename);
+	DDS_image(const DDS_image&) = delete;
+	DDS_image(DDS_image&&);
 	~DDS_image(void);
 	dword at(dword x,dword y) const;
 };
@@ -81,13 +79,20 @@ DDS_image::DDS_image(const char* filename){
 			break;
 
 		auto size = (size_t)((depth + 7)/8)*width*height;
-		//cout << filename << '\t' << size << ':' << width << '*' << height << endl;
+		cout << filename << '\t' << size << ':' << width << '*' << height << endl;
 		buffer = new byte[size];
 		dds_file.seekg(0x80,ios::beg);
 		dds_file.read((char*)buffer,size);
 		return;
 	}while(false);
 	throw runtime_error("bad DDS format");
+}
+
+DDS_image::DDS_image(DDS_image&& other){
+	swap(width,other.width);
+	swap(height,other.height);
+	swap(depth,other.depth);
+	swap(buffer,other.buffer);
 }
 
 DDS_image::~DDS_image(void){
@@ -149,7 +154,7 @@ void Font::proceed(F func){
 			while(size){
 				fontchar fc;
 				font_file.read((char*)&fc,sizeof(fontchar));
-				auto image = images.at(fc.page);
+				auto& image = images.at(fc.page);
 				func(fc,image);
 				size -= sizeof(fontchar);
 			}
@@ -228,7 +233,7 @@ int main(int argc,char** argv){
 		out_file.write((const char*)&padding,4);
 
 		font.proceed([&](const fontchar& fc,const DDS_image& image) {
-			//cout << "0x" << hex << fc.charcode << ' ' << (char)fc.charcode \
+			cout << "0x" << hex << fc.charcode << ' ' << (char)fc.charcode \
 				<< '\t' << dec << fc.width << '*' << fc.height \
 				<< "\t@ " << (unsigned)fc.page << ':' << fc.xpos << ',' << fc.ypos << endl;
 			generate_font(out_file,fc,image);

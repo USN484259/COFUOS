@@ -32,8 +32,6 @@ namespace UOS{
 		MADT(void const* vbase);
 	};
 
-#pragma pack(push)
-#pragma pack(1)
 	struct FADT{	//see: https://wiki.osdev.org/FADT
 		struct GenericAddressStructure {
 			byte AddressSpace;
@@ -41,7 +39,7 @@ namespace UOS{
 			byte BitOffset;
 			byte AccessSize;
 			qword Address;
-		};
+		} __attribute__((packed));
 
 		dword FirmwareCtrl;
 		dword Dsdt;
@@ -103,9 +101,12 @@ namespace UOS{
 		GenericAddressStructure X_GPE1Block;
 
 		FADT(const dword* view);
-	};
-#pragma pack(pop)
+	} __attribute__((packed));
+
 	static_assert(offsetof(FADT,X_GPE1Block) == 196,"FADT size mismatch");
+
+	[[noreturn]]
+	void shutdown(void);
 
 	class ACPI{
 		MADT* madt = nullptr;

@@ -1,6 +1,7 @@
 #pragma once
 
-#define IA32_APIC_BASE 0x1B
+#define MSR_APIC_BASE 0x1B
+#define MSR_GS_BASE 0xC0000101
 
 #define HIGHADDR(x) ( (qword)0xFFFF800000000000 | (qword)(x) )
 #define LOWADDR(x) ( (qword)0x00007FFFFFFFFFFF & (qword)(x) )

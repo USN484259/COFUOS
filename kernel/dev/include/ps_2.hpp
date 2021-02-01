@@ -33,5 +33,5 @@ namespace UOS{
 		void step(size_t);
 		void set(CALLBACK callback,void* data = nullptr);
 	};
-	extern PS_2 ps2_device;
+	//extern PS_2 ps2_device;
 }

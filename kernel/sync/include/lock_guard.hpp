@@ -1,6 +1,6 @@
 #pragma once
 #include "types.hpp"
-#include "cpu/include/hal.hpp"
+#include "intrinsics.hpp"
 
 namespace UOS{
 	
@@ -23,21 +23,21 @@ namespace UOS{
 		const qword state;
 		M& mutex;
 	public:
-		interrupt_guard(M& m) : state(__readeflags() & 0x0200), mutex(m){
+		interrupt_guard(M& m) : state(read_eflags() & 0x0200), mutex(m){
 			do{
-				_disable();
+				cli();
 				if (m.try_lock())
 					break;
 				if (state){
-					_enable();
+					sti();
 				}
-				_mm_pause();
+				mm_pause();
 			}while(true);
 		}
 		~interrupt_guard(void){
 			mutex.unlock();
 			if (state)
-				_enable();
+				sti();
 		}
 	};
 
@@ -45,10 +45,10 @@ namespace UOS{
 	class interrupt_guard<void>{
 		const qword state;
 	public:
-		interrupt_guard(void) : state(__readeflags() & 0x0200) {}
+		interrupt_guard(void) : state(read_eflags() & 0x0200) {}
 		~interrupt_guard(void){
 			if (state)
-				_enable();
+				sti();
 		}
 	};
 

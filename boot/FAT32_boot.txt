@@ -1,2 +1,2 @@
-put krnldr.bin bin\krnldr.bin
+put krnldr.bin bin/krnldr.bin
 list

@@ -24,5 +24,5 @@ namespace UOS{
         void set_handler(CALLBACK,void* = nullptr);
         void reload(void);
     };
-    extern RTC rtc;
+    //extern RTC rtc;
 }

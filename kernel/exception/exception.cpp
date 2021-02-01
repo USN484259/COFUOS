@@ -1,11 +1,15 @@
 #include "exception.hpp"
 #include "kdb.hpp"
-#include "cpu/include/hal.hpp"
-#include "cpu/include/port_io.hpp"
+#include "sysinfo.hpp"
+#include "intrinsics.hpp"
 #include "sync/include/lock_guard.hpp"
-
+#include "dev/include/acpi.hpp"
 
 using namespace UOS;
+
+exception::exception(void){
+	features.set(decltype(features)::EXCEPT);
+}
 
 void exception::push(byte id,CALLBACK callback,void* data){
 	if (id >= 20){
@@ -28,38 +32,36 @@ exception::CALLBACK exception::pop(byte id){
 	return ret;
 }
 
-bool exception::dispatch(byte id,exception_context* context){
+bool exception::dispatch(byte id,qword errcode,context* context){
 	if (id >= 20)
 		return false;
 
 	interrupt_guard<spin_lock> guard(lock);
 	for (auto it : table[id]){
-		if (it.callback(context,it.data))
+		if (it.callback(id,errcode,context,it.data))
 			return true;
 	}
 	return false;
 }
 
 extern "C"
-void dispatch_exception(byte id,exception_context* context){
+void dispatch_exception(byte id,qword errcode,context* context){
 
 //BugCheck : 0xFF
-
-	if (id < 20 && eh.dispatch(id,context))
-		return;
-
-	if (kdb_enable){
-		//clear TF
-		context->rflags &= ~0x100;
-		kdb_break(id,context);
-		if (kdb_enable)
+	if (features.get(decltype(features)::EXCEPT)){
+		if (eh.dispatch(id,errcode,context))
 			return;
 	}
+	if (features.get(decltype(features)::GDB)){
+		//clear TF
+		context->rflags &= ~0x100;
+		debug_stub.get().signal(id,errcode,context);
+		if (id < 20)
+			return;
+	}
+
 	if (id != 0xFF){
 		BugCheck(unhandled_exception,id);
 	}
-	while (true){
-		port_write(0xB004, (word)0x2000);
-		__halt();
-	}
+	shutdown();
 }

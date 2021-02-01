@@ -5,10 +5,19 @@
 #include "bugcheck.hpp"
 #include "assert.hpp"
 #include "memory/include/vm.hpp"
+#include "intrinsics.hpp"
 
 using namespace UOS;
 
 #define HEADER_SIZE 36
+
+void UOS::shutdown(void){
+	while (true){
+		out_word(0xB004, 0x2000);	//Bochs shutdown
+		out_word(0x4004, 0x3400);	//VirtualBox shutdown
+		halt();
+	}
+}
 
 bool ACPI::validate(const void* base_addr,size_t limit){
 	if (limit < 8)

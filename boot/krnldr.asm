@@ -1208,12 +1208,9 @@ add rdi,rax
 
 .smallheader:
 
-
-lodsd
-lodsd	;(DLLCharacteristics<<16) | Subsystem
-bt eax,24	;DEP
-jnc .fail
-
+;lodsd
+;lodsd	;(DLLCharacteristics<<16) | Subsystem
+add rsi,8
 
 ;allocate stack
 
@@ -1239,15 +1236,13 @@ test eax,eax
 jnz .fail
 
 
-;no heap support
-lodsq
-test rax,rax
-jnz .fail
-lodsq
-test rax,rax
-jnz .fail
+;ignore heap
+;lodsq
+;lodsq
 
-lodsd
+;lodsd	;reserved
+add rsi,0x14
+
 lodsd	;datadir cnt
 
 shl eax,3
@@ -1420,7 +1415,7 @@ call rdx	;rcx module base
 nop
 
 BugCheck:
-hlt
+;hlt
 mov dx,0x92
 in al,dx
 or al,1

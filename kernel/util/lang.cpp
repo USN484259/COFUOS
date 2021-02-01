@@ -1,6 +1,6 @@
 #include "lang.hpp"
 #include "util.hpp"
-#include "cpu/include/hal.hpp"
+#include "intrinsics.hpp"
 #include "memory/include/heap.hpp"
 #include "memory/include/vm.hpp"
 #include "assert.hpp"
@@ -13,7 +13,7 @@ constexpr size_t huge_size = 0x10000;
 
 void* operator new(size_t len){
 	if (!len)
-		return nullptr;
+		BugCheck(invalid_argument,len);
 	if (len < huge_size){
 		auto res = heap.allocate(len);
 		if (!res)
@@ -84,7 +84,7 @@ extern "C" {
 static qword seed = 0;
 
 qword UOS::rand(void){
-    qword tsc = __rdtsc();
+    qword tsc = rdtsc();
     seed = fasthash64(&tsc,8,seed);
     return seed;
 }

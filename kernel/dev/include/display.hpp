@@ -43,6 +43,6 @@ namespace UOS{
 		//byte max_height(void) const;
 		const font_info* get(char ch,const dword*& buffer);
 	};
-	extern Font text_font;
-	extern Display display;
+	//extern Font text_font;
+	//extern Display display;
 }

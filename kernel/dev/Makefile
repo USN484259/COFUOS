@@ -1,4 +1,9 @@
-all:
-	$(CL_PREFIX) $(CL_OPTIONS) $(INC_PATH) $(DEFINES) acpi.cpp rtc.cpp display.cpp ps_2.cpp $(CL_POSTFIX)
-	$(CP_PREFIX) bin/*.obj ../bin/ $(CP_POSTFIX)
+all:	bin/acpi.o bin/rtc.o bin/display.o bin/ps_2.o
 
+bin/%.o:	%.cpp
+	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@
+	$(CP) $@ ../bin/
+
+%.cpp:	include/*.hpp ../util/include/*.hpp $(COFUOS_ROOT)/util/include/*.hpp
+
+.PHONY: all

@@ -1,2 +1,2 @@
-put COFUOS.sys bin\COFUOS.sys
+put COFUOS.sys bin/COFUOS.sys.clean
 list

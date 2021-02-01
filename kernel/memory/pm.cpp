@@ -201,7 +201,7 @@ qword PM::allocate(byte tag){
 	}
 	assert(used < total);
 	++used;
-#ifdef _DEBUG
+#ifndef NDEBUG
 	check_integrity();
 #endif
 	return res_page << 12;
@@ -231,7 +231,7 @@ void PM::release(qword pa){
 	}
 	assert(used);
 	--used;
-#ifdef _DEBUG
+#ifndef NDEBUG
 	check_integrity();
 #endif
 }
@@ -265,7 +265,7 @@ bool PM::peek(void* dest,qword paddr,size_t count){
 	return true;
 }
 
-#ifdef _DEBUG
+#ifndef NDEBUG
 void PM::check_integrity(void){
 	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	auto page_count = align_up(bmp_size,PAGE_SIZE) >> 12;

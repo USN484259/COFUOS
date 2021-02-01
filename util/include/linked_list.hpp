@@ -1,28 +1,25 @@
 #pragma once
 #include "types.hpp"
+#include "container.hpp"
 #include "util.hpp"
 #include "assert.hpp"
 
-#ifndef THROW
-#ifdef COFUOS
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(unhandled_exception,x)
-#else
-#define THROW throw
-#endif
-#endif
 
 namespace UOS{
 	template<typename T>
 	class linked_list{
-		struct node{
+	public:
+		class node{
+			friend class linked_list;
 			node* prev = nullptr;
 			node* next = nullptr;
+		public:
 			T payload;
 
 			template<typename ... Arg>
 			node(Arg&& ... args) : payload(forward<Arg>(args)...) {}
 		};
+	private:
 		node* head = nullptr;
 		node* tail = nullptr;
 		size_t count = 0;
@@ -86,20 +83,20 @@ namespace UOS{
 			iterator(void) = default;
 			iterator(const iterator& other) : iterator_base(other.owner,other.ptr) {}
 			iterator& operator=(const iterator& other){
-				owner = other.owner;
-				ptr = other.ptr;
+				this->owner = other.owner;
+				this->ptr = other.ptr;
 				return *this;
 			}
 			using iterator_base::operator*;
 			using iterator_base::operator->;
 			T& operator*(void){
-				if (ptr)
-					return ptr->payload;
+				if (this->ptr)
+					return this->ptr->payload;
 				THROW(this);
 			}
 			T* operator->(void){
-				if (ptr)
-					return &ptr->payload;
+				if (this->ptr)
+					return &this->ptr->payload;
 				THROW(this);
 			}
 		};
@@ -111,18 +108,19 @@ namespace UOS{
 			const_iterator(const const_iterator& other) : iterator_base(other.owner,other.ptr) {}
 			const_iterator(const iterator& other) : iterator_base(other.owner,other.ptr) {}
 			const_iterator& operator=(const const_iterator& other){
-				owner = other.owner;
-				ptr = other.ptr;
+				this->owner = other.owner;
+				this->ptr = other.ptr;
 				return *this;
 			}
 			const_iterator& operator=(const iterator& other){
-				owner = other.owner;
-				ptr = other.ptr;
+				this->owner = other.owner;
+				this->ptr = other.ptr;
 				return *this;
 			}
 		};
 		friend class iterator;
 		friend class const_iterator;
+
 	public:
 		linked_list(void) = default;
 		linked_list(const linked_list& other){
@@ -191,6 +189,11 @@ namespace UOS{
 		template<typename ... Arg>
 		void push_back(Arg&& ... args){
 			auto new_node = new node(forward<Arg>(args)...);
+			put_node(end(),new_node);
+		}
+		/*
+		template<>
+		void push_back(node* new_node){
 			if (count){
 				assert(head && tail);
 				assert(tail->next == nullptr);
@@ -204,6 +207,7 @@ namespace UOS{
 			}
 			++count;
 		}
+		*/
 		void pop_back(void){
 			if (count){
 				assert(head && tail);
@@ -229,6 +233,11 @@ namespace UOS{
 		template<typename ... Arg>
 		void push_front(Arg&& ... args){
 			auto new_node = new node(forward<Arg>(args)...);
+			put_node(begin(),new_node);
+		}
+		/*
+		template<>
+		void push_front(node* new_node){
 			if (count){
 				assert(head && tail);
 				assert(head->prev == nullptr);
@@ -242,6 +251,7 @@ namespace UOS{
 			}
 			++count;
 		}
+		*/
 		void pop_front(void){
 			if (count){
 				assert(head && tail);
@@ -263,6 +273,78 @@ namespace UOS{
 				return;
 			}
 			THROW(this);
+		}
+		iterator erase(const_iterator pos){
+			if (pos.owner != this || pos == end())
+				THROW(this);
+			assert(count && head && tail);
+			node* next = pos.ptr->next;
+			delete get_node(pos);
+
+			if (count == 0)
+				assert(head == nullptr && tail == nullptr);
+			return iterator(this,next);
+		}
+		void splice(const_iterator pos,linked_list& other,const_iterator it){
+			if (pos.owner != this || it.owner != &other || it == other.end())
+				THROW(this);
+			assert(other.count && other.head && other.tail);
+			put_node(pos,other.get_node(it));
+		}
+		node* get_node(const_iterator it){
+			if (it.owner != this || it == end())
+				THROW(this);
+			node* pos = it.ptr;
+			if (pos->prev){
+				pos->prev->next = pos->next;
+			}
+			else{
+				assert(pos == head);
+				head = pos->next;
+			}
+			if (pos->next){
+				pos->next->prev = pos->prev;
+			}
+			else{
+				assert(pos == tail);
+				tail = pos->prev;
+			}
+			--count;
+			return pos;
+		}
+		void put_node(const_iterator it,node* cur){
+			if (it.owner != this)
+				THROW(this);
+			node* pos = it.ptr;
+			if (pos){
+				cur->prev = pos->prev;
+				cur->next = pos;
+				if (pos->prev){
+					pos->prev->next = cur;
+				}
+				else{
+					assert(pos == head);
+					head = cur;
+				}
+				pos->prev = cur;
+			}
+			else{
+				cur->next = nullptr;
+				if (count){
+					assert(head && tail);
+					assert(tail->next == nullptr);
+					tail->next = cur;
+					cur->prev = tail;
+
+					tail = cur;
+				}
+				else{
+					assert(head == nullptr && tail == nullptr);
+					cur->prev = nullptr;
+					head = tail = cur;
+				}
+			}
+			++count;
 		}
 	};
 }

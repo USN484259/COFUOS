@@ -2,7 +2,7 @@
 #include "constant.hpp"
 #include "memory/include/vm.hpp"
 #include "exception/include/kdb.hpp"
-#include "port_io.hpp"
+#include "intrinsics.hpp"
 #include "dev/include/acpi.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "assert.hpp"
@@ -38,14 +38,14 @@ dword apic_read(word offset){
 }
 
 APIC::APIC(void) : table{0}{
-	qword stat = __readmsr(IA32_APIC_BASE);
+	qword stat = rdmsr(MSR_APIC_BASE);
 	qword base = stat & (~PAGE_MASK);
 	if (stat & 0x400){
 		//x2APIC, reset
 		stat &= (~0xC00);
-		__writemsr(IA32_APIC_BASE,stat);
+		wrmsr(MSR_APIC_BASE,stat);
 	}
-	__writemsr(IA32_APIC_BASE,stat | 0x800);
+	wrmsr(MSR_APIC_BASE,stat | 0x800);
 
 	//maps local APIC
 	auto madt = acpi.get_madt();
@@ -107,17 +107,17 @@ APIC::APIC(void) : table{0}{
 	}
 	//disable 8259
 	//ports : 20 21 A0 A1
-	port_write(0x20,(byte)0x11);
-	port_write(0xA0,(byte)0x11);
-	port_write(0x21,(byte)0x20);
-	port_write(0xA1,(byte)0x28);
-	port_write(0x21,(byte)0x04);
-	port_write(0xA1,(byte)0x02);
-	port_write(0x21,(byte)0x01);
-	port_write(0xA1,(byte)0x01);
+	out_byte(0x20,0x11);
+	out_byte(0xA0,0x11);
+	out_byte(0x21,0x20);
+	out_byte(0xA1,0x28);
+	out_byte(0x21,0x04);
+	out_byte(0xA1,0x02);
+	out_byte(0x21,0x01);
+	out_byte(0xA1,0x01);
 	//mask all
-	port_write(0x21,(byte)0xFF);
-	port_write(0xA1,(byte)0xFF);
+	out_byte(0x21,0xFF);
+	out_byte(0xA1,0xFF);
 
 	//IO APIC init
 	/*
@@ -185,8 +185,6 @@ APIC::APIC(void) : table{0}{
 		dbgprint("Entry#%d = %x",i,rte[i]);
 		io_apic_write((word)(0x10 + 2*i),rte[i]);
 	}
-	//set IF
-	_enable();
 }
 
 byte APIC::id(void){
@@ -210,6 +208,7 @@ APIC::CALLBACK APIC::get(byte irq) const{
 	if (irq >= IRQ_MIN && irq < IRQ_MAX){
 		return table[irq - IRQ_MIN].callback;
 	}
+	BugCheck(out_of_range,irq);
 }
 
 void APIC::set(byte irq,CALLBACK callback,void* data){
@@ -226,6 +225,8 @@ void dispatch_irq(byte off_id){
 	if (off_id < APIC::IRQ_MAX - APIC::IRQ_MIN){
 		apic.dispatch(off_id);
 	};
-	//EOI
-	apic_write(0xB0,0);
+	if (off_id != APIC::IRQ_CONTEXT_TRAP){
+		//EOI for non-virtual IRQ
+		apic_write(0xB0,0);
+	}
 }

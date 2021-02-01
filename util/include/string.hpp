@@ -1,17 +1,10 @@
 #pragma once
 #include "types.hpp"
+#include "container.hpp"
 #include "util.hpp"
 #include "vector.hpp"
 #include "assert.hpp"
 
-#ifndef THROW
-#ifdef COFUOS
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(unhandled_exception,x)
-#else
-#define THROW throw
-#endif
-#endif
 
 namespace UOS{
 	template<typename C>

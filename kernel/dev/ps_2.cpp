@@ -1,6 +1,6 @@
 #include "ps_2.hpp"
 #include "cpu/include/apic.hpp"
-#include "cpu/include/port_io.hpp"
+#include "intrinsics.hpp"
 #include "acpi.hpp"
 #include "exception/include/kdb.hpp"
 
@@ -12,13 +12,13 @@ PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
 		BugCheck(hardware_fault,this);
 	}
 	bool dual_channel = false;
-	byte data;
+
 	command(0xAD);
 	command(0xA7);
-	port_read(0x60,data);	//flush buffer
+	in_byte(0x60);	//flush buffer
 	
 	command(0x20);
-	data = read();
+	byte data = read();
 
 	if (data & 0x20){
 		dual_channel = true;
@@ -82,45 +82,41 @@ PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
 void PS_2::command(byte cmd){
 	dword cnt = 0;
 	while(true){
-		byte stat;
-		port_read(0x64,stat);
+		byte stat = in_byte(0x64);
 		if (0 == (stat & 2))
 			break;
 		if (++cnt > spin_timeout)
 			BugCheck(deadlock,cnt);
-		_mm_pause();
+		mm_pause();
 	}
-	port_write(0x64,cmd);
+	out_byte(0x64,cmd);
 }
 
 byte PS_2::read(void){
 	dword cnt = 0;
 	while(true){
-		byte stat;
-		port_read(0x64,stat);
+		byte stat = in_byte(0x64);
 		if (stat & 1)
 			break;
 		if (++cnt > spin_timeout)
 			BugCheck(deadlock,cnt);
-		_mm_pause();
+		mm_pause();
 	}
-	byte data;
-	port_read(0x60,data);
+	byte data = in_byte(0x60);
 	return data;
 }
 
 void PS_2::write(byte data){
 	dword cnt = 0;
 	while (true){
-		byte stat;
-		port_read(0x64,stat);
+		byte stat = in_byte(0x64);
 		if (0 == (stat & 2))
 			break;
 		if (++cnt > spin_timeout)
 			BugCheck(deadlock,cnt);
-		_mm_pause();
+		mm_pause();
 	}
-	port_write(0x60,data);
+	out_byte(0x60,data);
 }
 
 void PS_2::on_irq(byte irq,void* ptr){

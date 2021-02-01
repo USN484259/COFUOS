@@ -1,49 +1,59 @@
-export _PREFIX=wine
+export WINE=wine
 
-export CL_PREFIX=$(_PREFIX) cl.exe
-export CL_POSTFIX= 2>/dev/null
+export CL_EXE=$(WINE) cl.exe
+#export CL_POSTFIX= 2>/dev/null
 
-export NASM_PREFIX=$(_PREFIX) nasm.exe
-export NASM_POSTFIX=
+#export NASM_PREFIX=$(_PREFIX) nasm.exe
+#export NASM_POSTFIX=
 
-export TOOL_PREFIX=$(_PREFIX)
-export TOOL_POSTFIX=
+#export TOOL_PREFIX=$(_PREFIX)
+#export TOOL_POSTFIX=
 
-export CP_PREFIX=cp
-export CP_POSTFIX=
+#export CP_PREFIX=cp
+#export CP_POSTFIX=
 
-export RM_PREFIX=find -type f -name
-export RM_POSTFIX=-delete
+#export RM_PREFIX=find -type f -name
+#export RM_POSTFIX=-delete
 
 export WIN_INC_PATH=D\:\\VC\\include\\ D\:\\win10_kits\\include\\ucrt\\ D\:\\win10_kits\\include\\shared\\ D\:\\win10_kits\\include\\um\\ 
 
 export WIN_LIB_PATH=D\:\\VC\\lib\\ D\:\\win10_kits\\lib\\ucrt\\x64\\ D\:\\win10_kits\\lib\\um\\x64\\ 
 
-#export COFUOS_ROOT:=$(CURDIR)
+export COFUOS_ROOT:=$(CURDIR)
 
-export COFUOS_ROOT:=D:\\COFUOS
+#export COFUOS_ROOT:=D:\\COFUOS
 
-all: boot font COFUOS COFUdbg
+export MINGW_CC=mingw-gcc
+export CC=g++
+export NASM=nasm
+export OBJCOPY=objcopy
+export STRIP=strip
+export CP=cp
+
+all: boot font FAT32_editor COFUOS
 
 boot:
 	@cd boot && $(MAKE) $@
 	
-COFUOS: font
+COFUOS: font FAT32_editor
 	@cd kernel && $(MAKE) $@
 
-COFUdbg:
-	@cd tools/COFUdbg && $(MAKE) $@
+#COFUdbg:
+#	@cd tools/COFUdbg && $(MAKE) $@
 
 font:
 	@cd tools/font_maker && $(MAKE) $@
 
+FAT32_editor:
+	@cd tools/FAT32_editor && $(MAKE) $@
+
 clean:
 	@cd boot && $(MAKE) clean
 	@cd kernel && $(MAKE) clean
-	@cd tools/COFUdbg && $(MAKE) clean
+	@cd tools/FAT32_editor && $(MAKE) clean
 	@cd tools/font_maker && $(MAKE) clean
 
 help:
 	@echo "help text"
 
-.PHONY: all boot font COFUOS COFUdbg clean help
+.PHONY: all boot font FAT32_editor COFUOS clean help

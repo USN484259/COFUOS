@@ -3,7 +3,10 @@
 
 #define BITMASK(i) ( ( (qword)1<<(qword)(i) ) - 1 )
 #define BIT(i) ( (qword)1 << ( (qword)(i)  ) )
+
+#ifndef offsetof
 #define offsetof(T,M) ((size_t)&(((T const*)nullptr)->M))
+#endif
 
 namespace UOS{
 	template< typename T > struct remove_reference      {typedef T type;};
@@ -196,76 +199,5 @@ namespace UOS{
 		int bottom;
 	};
 
-	template<typename T>
-	class optional{		//simple and *buggy* implementation of C++17 std::optional
-		alignas(T) byte buffer[sizeof(T)];
-		bool valid;
-	public:
-		optional(void) : valid(false);
-		optional(T&& other) {
-			construct(move(other));
-		}
-		optional(const optional&) = delete;
-		optional(optional&& other) : valid(other.valid){
-			if (other.valid){
-				construct(*other);
-				other.destruct();
-			}
-		}
-		~optional(void){
-			if (valid)
-				destruct();
-		}
-		operator bool(void) const{
-			return valid;
-		}
 
-		void assign(T&& other){
-			construct(move(other));
-		}
-		template<typename ... Arg>
-		void emplace(Arg&& ... args){
-			if (!valid){
-				new(buffer) T(forward<Arg>(args));
-				valid = true;
-			}
-		}
-		operator T&(void){
-			if (valid)
-				return *static_cast<T*>(buffer);
-			BugCheck(null_deref,this);
-		}
-		operator const T&(void) const{
-			if (valid)
-				return *static_cast<const T*>(buffer);
-			BugCheck(null_deref,this);
-		}
-
-		operator T*(void){
-			return valid ? static_cast<T*>(buffer) : nullptr;
-		}
-		operator const T*(void) const{
-			return valid ? static_cast<const T*>(buffer) : nullptr;
-		}
-		T* operator->(void){
-			return operator T *();
-		}
-		const T* operator->(void) const{
-			return operator const T *();
-		}
-		
-	private:
-		void construct(T&& other){
-			if (!valid){
-				new(buffer) T(move(other));
-				valid = true;
-			}
-		}
-		void destruct(void){
-			if (valid){
-				static_cast<T*>(buffer)->~T();
-				valid = false;
-			}
-		}
-	};
 };

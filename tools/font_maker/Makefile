@@ -17,18 +17,19 @@ WIN_LIB_PATH:=$(addprefix /LIBPATH\:,$(WIN_LIB_PATH))
 
 FONT_NAME=$(basename $(wildcard *.fnt))
 
-font: bin/font.obj
-	$(CP_PREFIX) bin/font.obj ../../kernel/bin/ $(CP_POSTFIX)
+font: bin/font.o
 
-bin/font.obj: bin/font.bin font.asm
-	$(NASM_PREFIX) -f win64 font.asm -o bin\\font.obj $(NASM_POSTFIX)
+bin/font.o: bin/font.bin font.asm
+	$(NASM) -f win64 font.asm -o bin/font.o
+	$(CP) bin/font.o ../../kernel/bin/
 
-bin/font.bin: bin/font_maker.exe
-	$(TOOL_PREFIX) ./bin/font_maker.exe $(FONT_NAME).fnt bin/font.bin $(TOOL_POSTFIX)
+bin/font.bin: bin/font_maker
+	./bin/font_maker $(FONT_NAME).fnt bin/font.bin
 
 clean:
 	-cd bin && $(RM_PREFIX) '*' $(RM_POSTFIX)
 
-bin/font_maker.exe: $(SOURCE_FILES)
-	$(CL_PREFIX) $(CL_OPTIONS) $(WIN_INC_PATH) $(SOURCE_FILES) $(LINK_OPTIONS) $(WIN_LIB_PATH) $(CL_POSTFIX)
+bin/font_maker: $(SOURCE_FILES)
+	$(CC) -g -I $(COFUOS_ROOT)/util/include $< -o $@
+	#$(CL_EXE) $(CL_OPTIONS) $(WIN_INC_PATH) $(SOURCE_FILES) $(LINK_OPTIONS) $(WIN_LIB_PATH)
 .PHONY: font clean

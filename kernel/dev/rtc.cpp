@@ -1,5 +1,5 @@
 #include "rtc.hpp"
-#include "cpu/include/port_io.hpp"
+#include "intrinsics.hpp"
 #include "assert.hpp"
 #include "exception/include/kdb.hpp"
 #include "cpu/include/apic.hpp"
@@ -15,20 +15,19 @@ RTC::RTC(void){
 		BugCheck(hardware_fault,this);
 	}
 	apic.set(APIC::IRQ_RTC,on_irq,this);
-	port_write(0x70,(byte)0x8A);  //RTC Status Register A & disable NMI
-	byte val;
-	port_read(0x71,val);
+	out_byte(0x70,0x8A);  //RTC Status Register A & disable NMI
+	byte val = in_byte(0x71);
 	val = (val & 0xF0) | 6; //set divier to 1024Hz
-	port_write(0x70,(byte)0x8A);
-	port_write(0x71,val);
+	out_byte(0x70,0x8A);
+	out_byte(0x71,val);
 
-	port_write(0x70,(byte)0x8B);  //RTC Status Register B
-	port_read(0x71,mode);
+	out_byte(0x70,0x8B);  //RTC Status Register B
+	mode = in_byte(0x71);
 	mode = (mode & 0x7F) | 0x50;    //periodic & update_end
-	port_write(0x70,(byte)0x8B);
-	port_write(0x71,mode);
-	port_write(0x70,(byte)0x0C);  //enable NMI & throw away RTC Status Register C
-	port_read(0x71,val);
+	out_byte(0x70,0x8B);
+	out_byte(0x71,mode);
+	out_byte(0x70,0x0C);  //enable NMI & throw away RTC Status Register C
+	in_byte(0x71);
 	dbgprint("RTC mode = 0x%x",(qword)mode);
 }
 
@@ -65,22 +64,19 @@ void RTC::convert(byte& val){
 }
 
 void RTC::update(void){
-	byte reason = 0;
-	port_write(0x70,(byte)0x0C);
-	port_read(0x71,reason);
+	out_byte(0x70,0x0C);
+	byte reason = in_byte(0x71);
 	if (reason & 0x40){ //periodic interrupt
 		++ms_count;
 	}
 	if (reason & 0x10){ //update ended interrupt
-		port_write(0x70,(byte)0x0A);
-		byte stat;
-		port_read(0x71,stat);
+		out_byte(0x70,0x0A);
+		byte stat = in_byte(0x71);
 		if (stat & 0x80)
 			dbgprint("RTC warning: non-stable state");
 
-		port_write(0x70,(byte)0); //seconds
-		byte second;
-		port_read(0x71,second);
+		out_byte(0x70,0); //seconds
+		byte second = in_byte(0x71);
 		convert(second);
 		if (!reset && (++time & 0x03) == (second & 0x03)){    //time sync with CMOS
 			auto cnt = ms_count;
@@ -91,14 +87,12 @@ void RTC::update(void){
 			}
 			dbgprint("RTC warning: ms_count overflow");
 		}
-		port_write(0x70,(byte)2); //minute
-		byte minute;
-		port_read(0x71,minute);
+		out_byte(0x70,2); //minute
+		byte minute = in_byte(0x71);
 		convert(minute);
 
-		port_write(0x70,(byte)4); //hour
-		byte hour;
-		port_read(0x71,hour);
+		out_byte(0x70,4); //hour
+		byte hour = in_byte(0x71);
 		if (mode & 0x02){   //24h
 			;
 		}
@@ -111,30 +105,27 @@ void RTC::update(void){
 		}
 		convert(hour);
 
-		port_write(0x70,(byte)7); //day of month
-		byte date;
-		port_read(0x71,date);
+		out_byte(0x70,7); //day of month
+		byte date = in_byte(0x71);
 		convert(date);
 
-		port_write(0x70,(byte)8); //month
-		byte month;
-		port_read(0x71,month);
+		out_byte(0x70,8); //month
+		byte month = in_byte(0x71);
 		convert(month);
 
-		port_write(0x70,(byte)9); //year
-		byte year;
-		port_read(0x71,year);
+		out_byte(0x70,9); //year
+		byte year = in_byte(0x71);
 		convert(year);
 
 		byte century = 20;
 		auto century_index = acpi.get_fadt().Century;
 		if (century_index){
-			port_write(0x70,century_index);
-			port_read(0x71,century);
+			out_byte(0x70,century_index);
+			century = in_byte(0x71);
 			convert(century);
 		}
-		port_write(0x70,(byte)0x0A);
-		port_read(0x71,stat);
+		out_byte(0x70,0x0A);
+		stat = in_byte(0x71);
 		if (stat & 0x80)
 			dbgprint("RTC warning: non-stable state");
 
