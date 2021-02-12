@@ -1,6 +1,5 @@
 #include "spin_lock.hpp"
 #include "intrinsics.hpp"
-#include "bugcheck.hpp"
 #include "assert.hpp"
 
 using namespace UOS;
@@ -15,7 +14,7 @@ void spin_lock::lock(void) {
 	size_t cnt = 0;
 	while(! try_lock() ){
 		if (cnt++ > spin_timeout)
-			BugCheck(deadlock,this);
+			bugcheck("spin_timeout %x",cnt);
 		mm_pause();
 	}
 	

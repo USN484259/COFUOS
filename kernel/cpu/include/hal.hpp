@@ -1,6 +1,5 @@
 #pragma once
 #include "types.hpp"
-#include "bugcheck.hpp"
 
 extern "C"{
 

@@ -21,7 +21,7 @@ global memset
 global zeromemory
 global memcpy
 
-global BugCheck
+global bugcheck_raise
 ;global __C_specific_handler
 global __chkstk
 
@@ -205,8 +205,8 @@ mov r15,[rbp+CONX_OFF+0x70]
 mov r14,[rbp+CONX_OFF+0x68]
 mov r13,[rbp+CONX_OFF+0x60]
 mov r12,[rbp+CONX_OFF+0x58]
-mov ax,[rsp+0x40]	;SS
-test word [rsp+0x28],0x03	;CS
+mov ax,[rsp+0x20]	;SS
+test word [rsp+0x08],0x03	;CS
 mov r11,[rbp+CONX_OFF+0x50]
 mov r10,[rbp+CONX_OFF+0x48]
 mov r9,[rbp+CONX_OFF+0x40]
@@ -302,7 +302,7 @@ memset:
 test edx,edx
 jnz memset_val
 mov rdx,r8
-nop DWORD [eax + eax*1 + 0x00]
+nop DWORD [eax + eax*1 + 00000000h]
 
 align 16
 zeromemory:		;rcx dst	rdx size
@@ -459,11 +459,33 @@ mov rax,[rsp+0x18]
 ret
 
 
-;BugCheck status,arg1,arg2
 align 16
-BugCheck:
+bugcheck_raise:
+
+;+98	SS
+;+90	rsp
+;+88	rflags
+;+80	CS
+;+78	rip		|	retaddr
+;+70	r15		|	rflags	<-- rsp after pushfq
+;+68	r14
+;+60	r13
+;+58	r12
+;+50	r11
+;+48	r10
+;+40	r9
+;+38	r8
+;+30	rbp
+;+28	rdi
+;+20	rsi
+;+18	rbx
+;+10	rdx
+;+08	rcx
+;+00	rax
+
 pushfq
-sub rsp,(8*(15 + 5) + 0x20 - 8)
+cli
+sub rsp,0x70+0x20
 mov [rsp+0x20+0x00],rax
 mov [rsp+0x20+0x08],rcx
 mov [rsp+0x20+0x10],rdx
@@ -473,9 +495,8 @@ mov [rsp+0x20+0x28],rdi
 mov [rsp+0x20+0x30],rbp
 mov ax,ss
 mov bx,cs
-mov rdx,[rsp+0x20+0x70]	;rflags
-lea rsi,[rsp+8*(15 + 5) + 0x20 + 8]
-mov rdi,[rsp+8*(15 + 5) + 0x20]	;ret_addr
+mov rdi,[rsp+0x20+0x70]		;rflags
+lea rsi,[rsp+0x20+0x80]		;old rsp
 mov [rsp+0x20+0x38],r8
 mov [rsp+0x20+0x40],r9
 mov [rsp+0x20+0x48],r10
@@ -483,16 +504,16 @@ mov [rsp+0x20+0x50],r11
 mov [rsp+0x20+0x58],r12
 mov [rsp+0x20+0x60],r13
 mov [rsp+0x20+0x68],r14
-mov [rsp+0x20+0x70],r15	;overwrite rflags
+mov [rsp+0x20+0x70],r15
+;rip & retaddr at the same position, skip
+mov [rsp+0x20+0x80],rbx		;cs
+mov [rsp+0x20+0x88],rdi		;rflags
+mov [rsp+0x20+0x90],rsi		;rsp
+mov [rsp+0x20+0x98],rax		;ss
 
-mov [rsp+0x20+0x78],rdi	;rip
-mov [rsp+0x20+0x80],rbx	;cs
-mov [rsp+0x20+0x88],rdx	;rflags
-mov [rsp+0x20+0x90],rsi	;rsp
-mov [rsp+0x20+0x98],rax	;ss
 
-mov edx,ecx		;errcode
-mov r8,rsp	;context
+
+lea r8,[rsp+0x20]	;context
 mov ecx,0xFFFFFFFF
 
 call dispatch_exception

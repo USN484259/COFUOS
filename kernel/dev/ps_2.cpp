@@ -2,14 +2,13 @@
 #include "cpu/include/apic.hpp"
 #include "intrinsics.hpp"
 #include "acpi.hpp"
-#include "exception/include/kdb.hpp"
 
 using namespace UOS;
 
 PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
 	if (acpi.get_version() && 0 == (acpi.get_fadt().BootArchitectureFlags & 2)){
 		// 8042 not present
-		BugCheck(hardware_fault,this);
+		bugcheck("8042 not present");
 	}
 	bool dual_channel = false;
 
@@ -33,7 +32,7 @@ PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
 	command(0xAA);
 	data = read();
 	if (data != 0x55){
-		BugCheck(hardware_fault,data);
+		bugcheck("invalid response %x",data);
 	}
 	command(0xAB);
 	data = read();
@@ -86,7 +85,7 @@ void PS_2::command(byte cmd){
 		if (0 == (stat & 2))
 			break;
 		if (++cnt > spin_timeout)
-			BugCheck(deadlock,cnt);
+			bugcheck("spin timeout %x",cnt);
 		mm_pause();
 	}
 	out_byte(0x64,cmd);
@@ -99,7 +98,7 @@ byte PS_2::read(void){
 		if (stat & 1)
 			break;
 		if (++cnt > spin_timeout)
-			BugCheck(deadlock,cnt);
+			bugcheck("spin timeout %x",cnt);
 		mm_pause();
 	}
 	byte data = in_byte(0x60);
@@ -113,7 +112,7 @@ void PS_2::write(byte data){
 		if (0 == (stat & 2))
 			break;
 		if (++cnt > spin_timeout)
-			BugCheck(deadlock,cnt);
+			bugcheck("spin timeout %x",cnt);
 		mm_pause();
 	}
 	out_byte(0x60,data);
@@ -126,7 +125,7 @@ void PS_2::on_irq(byte irq,void* ptr){
 	if (irq == APIC::IRQ_KEYBOARD || irq == APIC::IRQ_MOUSE)
 		;
 	else{
-		BugCheck(hardware_fault,irq);
+		bugcheck("invalid IRQ#%d",irq);
 	}
 	auto& channel = self.channels[irq == APIC::IRQ_MOUSE ? 1 : 0];
 	//TODO more robust state machine

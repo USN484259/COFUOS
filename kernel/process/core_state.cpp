@@ -4,6 +4,7 @@
 #include "dev/include/acpi.hpp"
 #include "cpu/include/apic.hpp"
 #include "process.hpp"
+#include "dev/include/timer.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "assert.hpp"
 #include "intrinsics.hpp"
@@ -45,6 +46,9 @@ core_manager::core_manager(void){
 	wrmsr(MSR_GS_BASE,(qword)(core_list + 0));
 
 	apic.set(APIC::IRQ_CONTEXT_TRAP,this_core::irq_switch_to,nullptr);
+
+	//set up periodic timer here
+	timer_ticket = timer.wait(scheduler::slice_us,on_timer,this,true);
 }
 
 core_state* core_manager::get(void){
@@ -54,6 +58,30 @@ core_state* core_manager::get(void){
 			return core_list + i;
 	}
 	return nullptr;
+}
+
+void core_manager::on_timer(qword ticket,void* ptr){
+	IF_assert;
+	auto self = (core_manager*)ptr;
+	if (self->timer_ticket != ticket)
+		bugcheck("core_manager ticket mismatch (%x,%x)",ticket,self->timer_ticket);
+	this_core core;
+	auto slice = core.slice();
+	if (slice){
+		core.slice(slice - 1);
+		return;
+	}
+	auto this_thread = core.this_thread();
+	assert(this_thread->has_context());
+	auto next_thread = ready_queue.get(this_thread->get_priority() + 1);
+	dbgprint("next thread : %p",next_thread ? next_thread : this_thread);
+	if (next_thread){
+		ready_queue.put(this_thread);
+		core.switch_to(next_thread);
+	}
+	else{
+		core.slice(scheduler::max_slice);
+	}
 }
 
 this_core::this_core(void){
@@ -113,7 +141,9 @@ inline void context_trap(qword data){
 void this_core::switch_to(thread* th){
 	assert(th && th->has_context());
 	th->set_state(thread::RUNNING);
+	slice(scheduler::max_slice);
 	if (this_thread()->has_context()){
+		IF_assert;
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}
 	else{

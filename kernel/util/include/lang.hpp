@@ -2,10 +2,15 @@
 #include "types.hpp"
 #include "stdarg.h"
 
+
 extern "C"{
 	void* memset(void*,int,size_t);
     void* zeromemory(void*,size_t);
 	void* memcpy(void*,const void*,size_t);
+    [[ noreturn ]]
+    void bugcheck_raise(void);
+    //defined in kdb.cpp
+    void dbgprint(const char*,...);
 }
 
 void* operator new(size_t);
@@ -21,7 +26,7 @@ namespace UOS{
 
 }
 
-#define dbgprint debug_stub.get().print
+#define bugcheck(...) dbgprint(__VA_ARGS__), bugcheck_raise()
 
 #ifndef va_arg
 typedef qword* va_list;

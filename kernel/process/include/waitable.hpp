@@ -11,6 +11,7 @@ namespace UOS{
 	
 		void put(thread*);
 		thread* get(void);
+		void clear(void);
 	};
 
 	class waitable{
@@ -19,12 +20,17 @@ namespace UOS{
 		dword ref_count;	//????
 		thread_queue wait_queue;
 
-		void notify(thread*);
+		static size_t imp_notify(thread*);
+		static void on_timer(qword,void*);
 	public:
 		virtual ~waitable(void);
-		virtual void wait(void);
-		//virtual bool notify_one(void);
-		//virtual size_t notify_all(void);
+		// (this_thread) waits for (this)
+		virtual void wait(qword us = 0);
+		// notify all in (this)'s queue
+		virtual size_t notify(void);
+		void cancel(thread*);
+
+
 
 	};
 	static_assert(sizeof(waitable) == 0x20,"waitable size mismatch");

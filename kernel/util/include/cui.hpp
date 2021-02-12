@@ -3,8 +3,7 @@
 #include "util.hpp"
 #include "dev/include/display.hpp"
 
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(unhandled_exception,x)
+#define THROW(x) bugcheck(unhandled_exception,x)
 #include "string.hpp"
 #include "linked_list.hpp"
 

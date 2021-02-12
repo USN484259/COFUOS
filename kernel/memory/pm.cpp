@@ -6,7 +6,6 @@
 #include "vm.hpp"
 #include "lang.hpp"
 #include "sync/include/lock_guard.hpp"
-#include "exception/include/kdb.hpp"
 
 using namespace UOS;
 
@@ -36,7 +35,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 	constexpr auto pdt_limit = (BOOT_AREA_TOP - DIRECT_MAP_TOP) >> 12;
 
 	if (pdt_count > pdt_limit)
-		BugCheck(not_implemented,bmp_size);
+		bugcheck("too many physical memory (0x%x pages)",bmp_size);
 	//find pbase for bmp
 	qword bmp_pbase = 0;
 	for (auto it = scan_base;it->type;++it){
@@ -58,7 +57,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 	dbgprint("pmmbmp_pbase = %p",bmp_pbase);
 
 	if (0 == bmp_pbase)
-		BugCheck(bad_alloc,bmp_size);
+		bugcheck("cannot allocate bmp_pbase");
 	
 	//maps everything
 	auto pdt0 = (qword volatile* const)HIGHADDR(PDT0_PBASE);
@@ -215,7 +214,7 @@ void PM::release(qword pa){
 	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	auto& cur = pmm_bmp[page];
 	if (cur.free)
-		BugCheck(corrupted,pa);
+		bugcheck("double release %p",pa);
 	cur.free = 1;
 	if (page + 1 == PAGE_SIZE){		//last element
 		assert(cur.solid);
@@ -279,18 +278,18 @@ void PM::check_integrity(void){
 					if (cur.free || i == 0)
 						pierce = 0;
 					else
-						BugCheck(corrupted,cur);
+						bugcheck("PM corrupted");
 				}
 				if (cur.free)
 					++discovered_free_page;
 			}
 			else if (1 == cur.free || 0 == cur.solid)
-				BugCheck(corrupted,cur);
+				bugcheck("PM corrupted");
 		}
 		if (pierce)
-			BugCheck(corrupted,pierce);
+			bugcheck("PM corrupted");
 	}
 	if (discovered_free_page + used != total)
-		BugCheck(corrupted,discovered_free_page);
+		bugcheck("PM corrupted: free size mispatch 0x%x",discovered_free_page);
 }
 #endif

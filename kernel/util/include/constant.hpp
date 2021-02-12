@@ -3,8 +3,13 @@
 #define MSR_APIC_BASE 0x1B
 #define MSR_GS_BASE 0xC0000101
 
-#define HIGHADDR(x) ( (qword)0xFFFF800000000000 | (qword)(x) )
-#define LOWADDR(x) ( (qword)0x00007FFFFFFFFFFF & (qword)(x) )
+#define SEG_KRNL_CS 0x08
+#define SEG_KRNL_SS 0x10
+#define SEG_USER_CS 0x28
+#define SEG_USER_SS 0x30
+
+#define HIGHADDR(x) ( (qword)0xFFFF800000000000ULL | (qword)(x) )
+#define LOWADDR(x) ( (qword)0x00007FFFFFFFFFFFULL & (qword)(x) )
 
 #define IS_HIGHADDR(x) ( ((qword)(x) & HIGHADDR(0)) == HIGHADDR(0) )
 
@@ -24,6 +29,7 @@
 #define DIRECT_MAP_TOP ((qword)0xA000)
 #define BOOT_AREA_TOP ((qword)0x10000)
 
+#define HPET_VBASE HIGHADDR(0xE000)
 #define LOCAL_APIC_VBASE HIGHADDR(0xD000)
 #define IO_APIC_VBASE HIGHADDR(0xC000)
 

@@ -8,6 +8,8 @@
 #include "memory/include/pm.hpp"
 #include "memory/include/heap.hpp"
 #include "exception/include/kdb.hpp"
+#include "process/include/core_state.hpp"
+#include "process/include/process.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/ps_2.hpp"
@@ -23,7 +25,7 @@ extern "C" const byte scancode_table;
 
 void print_sysinfo(void){
 	dbgprint("%s",&sysinfo->sig);
-	dbgprint("RSDT @ %p",0x00FFFFFFFFFFFFFF & sysinfo->ACPI_RSDT);
+	dbgprint("%cSDT @ %p",sysinfo->rsdp.version ? 'X' : 'R', sysinfo->rsdp.address);
 	dbgprint("PMM_avl_top @ %p",sysinfo->PMM_avl_top);
 	dbgprint("kernel image %d pages",sysinfo->kernel_page);
 	dbgprint("cpuid (eax == 7) -> 0x%x",(qword)sysinfo->cpuinfo);
@@ -71,8 +73,7 @@ void pm_test(void){
 			if (++index == (1 << 15))
 				index = 0;
 			if (index == tsc){
-				dbgprint("page not found");
-				BugCheck(corrupted,tsc);
+				bugcheck("page not found:%x",tsc);
 			}
 		}while(true);
 		dbgprint("releasing page %x, %d remaining",index,--page_count);
@@ -184,8 +185,20 @@ void vm_test(void){
 
 	int_trap<3>();
 }
+
+void thread_test(void*){
+	word cnt = 0;
+	while(++cnt){
+		halt();
+	}
+	bugcheck("bugcheck_test with cnt = %d",cnt);
+}
+
+
+typedef void (*global_constructor)(void);
+
 extern "C"
-procedure __CTOR_LIST__;
+global_constructor __CTOR_LIST__;
 
 extern "C"
 [[ noreturn ]]
@@ -214,7 +227,7 @@ void krnlentry(void* module_base){
 		dbgprint("%s @ %p size = 0x%x %s",buf,pe_kernel->imgbase + section->offset,(qword)section->datasize,attr);
 	}
 	{
-		procedure* head = &__CTOR_LIST__;
+		global_constructor* head = &__CTOR_LIST__;
 		assert(head);
 		auto tail = head;
 		do{
@@ -227,9 +240,12 @@ void krnlentry(void* module_base){
 	}
 
 	int_trap<3>();
-	//sti();
+	sti();
 
 	//TODO spawn startup thread
+	this_core core;
+	core.this_thread()->get_process().spawn(thread_test,nullptr);
+
 
 	//as idle thread
 	while(true){
@@ -284,6 +300,6 @@ void krnlentry(void* module_base){
 	}
 
 	int_trap<3>();
-	BugCheck(not_implemented,0);
+	bugcheck(not_implemented,0);
 	*/
 }

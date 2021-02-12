@@ -1,6 +1,7 @@
 #pragma once
 #include "types.hpp"
 #include "thread.hpp"
+#include "image/include/pe.hpp"
 #include "hash_set.hpp"
 
 namespace UOS{
@@ -27,6 +28,7 @@ namespace UOS{
 		const dword id;
 		//enum : dword {READY,RUNNING,WAITING} state;
 		qword cr3;
+		PE64* image;
 		hash_set<thread, thread::hash, thread::equal> threads;
 
 		struct initial_process_tag {};
@@ -39,6 +41,8 @@ namespace UOS{
 			auto it = threads.find(tid);
 			return (it == threads.end()) ? nullptr : &(*it);
 		}
+
+		thread* spawn(thread::procedure entry,void* arg,qword stk_size = 0);
 	};
 
 	class process_manager{

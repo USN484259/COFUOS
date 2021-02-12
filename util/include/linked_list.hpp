@@ -35,7 +35,7 @@ namespace UOS{
 		public:
 			iterator_base& operator++(void){
 				if (!ptr)
-					THROW(this);
+					THROW("iterator move past the end @ %p",this);
 				ptr = ptr->next;
 				return *this;
 			}
@@ -47,7 +47,7 @@ namespace UOS{
 					ptr = owner->tail;
 				}
 				else{
-					THROW(this);
+					THROW("iterator move past the begin @ %p",this);
 				}
 				return *this;
 			}
@@ -55,23 +55,23 @@ namespace UOS{
 				if (owner == cmp.owner){
 					return ptr == cmp.ptr;
 				}
-				THROW(this);
+				THROW("compare iterators of different containers (%p,%p)",this,&cmp);
 			}
 			bool operator!=(const iterator_base& cmp) const{
 				if (owner == cmp.owner){
 					return ptr != cmp.ptr;
 				}
-				THROW(this);
+				THROW("compare iterators of different containers (%p,%p)",this,&cmp);
 			}
 			const T& operator*(void) const{
 				if (ptr)
 					return ptr->payload;
-				THROW(this);
+				THROW("deref empty iterator @ %p",this);
 			}
 			const T* operator->(void) const{
 				if (ptr)
 					return &ptr->payload;
-				THROW(this);
+				THROW("deref empty iterator @ %p",this);
 			}
 		};
 		friend class iterator_base;
@@ -92,12 +92,12 @@ namespace UOS{
 			T& operator*(void){
 				if (this->ptr)
 					return this->ptr->payload;
-				THROW(this);
+				THROW("deref empty iterator @ %p",this);
 			}
 			T* operator->(void){
 				if (this->ptr)
 					return &this->ptr->payload;
-				THROW(this);
+				THROW("deref empty iterator @ %p",this);
 			}
 		};
 		class const_iterator : public iterator_base{
@@ -163,28 +163,28 @@ namespace UOS{
 				assert(head && tail);
 				return head->payload;
 			}
-			THROW(this);
+			THROW("access empty list @ %p",this);
 		}
 		const T& front(void) const{
 			if (count){
 				assert(head && tail);
 				return head->payload;
 			}
-			THROW(this);
+			THROW("access empty list @ %p",this);
 		}
 		T& back(void){
 			if (count){
 				assert(head && tail);
 				return tail->payload;
 			}
-			THROW(this);
+			THROW("access empty list @ %p",this);
 		}
 		const T& back(void) const{
 			if (count){
 				assert(head && tail);
 				return tail->payload;
 			}
-			THROW(this);
+			THROW("access empty list @ %p",this);
 		}
 		template<typename ... Arg>
 		void push_back(Arg&& ... args){
@@ -228,7 +228,7 @@ namespace UOS{
 				--count;
 				return;
 			}
-			THROW(this);
+			THROW("access empty list @ %p",this);
 		}
 		template<typename ... Arg>
 		void push_front(Arg&& ... args){
@@ -272,11 +272,19 @@ namespace UOS{
 				--count;
 				return;
 			}
-			THROW(this);
+			THROW("access empty list @ %p",this);
 		}
+
+		template<typename ... Arg>
+		iterator insert(const_iterator pos,Arg&& ... args){
+			auto new_node = new node(forward<Arg>(args)...);
+			put_node(pos,new_node);
+			return iterator(this,new_node);
+		}
+
 		iterator erase(const_iterator pos){
 			if (pos.owner != this || pos == end())
-				THROW(this);
+				THROW("invalid iterator %p for erase @ %p",&pos,this);
 			assert(count && head && tail);
 			node* next = pos.ptr->next;
 			delete get_node(pos);
@@ -287,13 +295,13 @@ namespace UOS{
 		}
 		void splice(const_iterator pos,linked_list& other,const_iterator it){
 			if (pos.owner != this || it.owner != &other || it == other.end())
-				THROW(this);
+				THROW("invalid iterator (%p,%p) for splice @ (%p,%p)",&pos,&it,this,&other);
 			assert(other.count && other.head && other.tail);
 			put_node(pos,other.get_node(it));
 		}
 		node* get_node(const_iterator it){
 			if (it.owner != this || it == end())
-				THROW(this);
+				THROW("invalid iterator %p for get_node @ %p",&it,this);
 			node* pos = it.ptr;
 			if (pos->prev){
 				pos->prev->next = pos->next;
@@ -314,7 +322,7 @@ namespace UOS{
 		}
 		void put_node(const_iterator it,node* cur){
 			if (it.owner != this)
-				THROW(this);
+				THROW("invalid iterator %p for put_node @ %p",&it,this);
 			node* pos = it.ptr;
 			if (pos){
 				cur->prev = pos->prev;

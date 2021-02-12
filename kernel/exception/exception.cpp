@@ -13,7 +13,7 @@ exception::exception(void){
 
 void exception::push(byte id,CALLBACK callback,void* data){
 	if (id >= 20){
-		BugCheck(out_of_range,id);
+		bugcheck("invalid ID %d",id);
 	}
 	interrupt_guard<spin_lock> guard(lock);
 	table[id].push(handler{callback,data});
@@ -21,11 +21,11 @@ void exception::push(byte id,CALLBACK callback,void* data){
 
 exception::CALLBACK exception::pop(byte id){
 	if (id >= 20){
-		BugCheck(out_of_range,id);
+		bugcheck("invalid ID %d",id);
 	}
 	interrupt_guard<spin_lock> guard(lock);
 	if (table[id].empty()){
-		BugCheck(corrupted,&table[id]);
+		bugcheck("pop from empty stack @ %p",&table[id]);
 	}
 	auto ret = table[id].top().callback;
 	table[id].pop();
@@ -47,7 +47,7 @@ bool exception::dispatch(byte id,qword errcode,context* context){
 extern "C"
 void dispatch_exception(byte id,qword errcode,context* context){
 
-//BugCheck : 0xFF
+//bugcheck : 0xFF
 	if (features.get(decltype(features)::EXCEPT)){
 		if (eh.dispatch(id,errcode,context))
 			return;
@@ -61,7 +61,7 @@ void dispatch_exception(byte id,qword errcode,context* context){
 	}
 
 	if (id != 0xFF){
-		BugCheck(unhandled_exception,id);
+		bugcheck("unhandled_exception #%d",id);
 	}
 	shutdown();
 }

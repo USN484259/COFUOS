@@ -34,7 +34,7 @@ void VM::map_view::map(qword pa,qword attrib){
 			return;
 		}
 	}
-	BugCheck(bad_alloc,table);
+	bugcheck("map_view::map failed");
 }
 
 void VM::map_view::unmap(void){
@@ -43,17 +43,17 @@ void VM::map_view::unmap(void){
 	qword addr = (qword)view;
 	assert(0 == (addr & PAGE_MASK));
 	if (addr < MAP_VIEW_BASE)
-		BugCheck(out_of_range,view);
+		bugcheck("out_of_range %p",view);
 	auto index = (addr - MAP_VIEW_BASE) >> 12;
 	if (index >= 0x200)
-		BugCheck(out_of_range,view);
+		bugcheck("out_of_range %p",view);
 
 	auto table = (qword volatile* const)MAP_TABLE_BASE;
 	qword origin_value = table[index];
 	if (0 == (origin_value & 0x01))
-		BugCheck(corrupted, origin_value);
+		bugcheck("double free @ %x", index);
 	if (origin_value != cmpxchg(table + index, (qword)0, origin_value))
-		BugCheck(corrupted, origin_value);
+		bugcheck("double free @ %x", index);
 	invlpg(view);
 }
 
@@ -416,7 +416,7 @@ qword VM::virtual_space::imp_reserve_any(VM::PDT& pdt,PT* table,qword base_addr,
 		}
 		cur = block.next;
 	}while (block.next_valid);
-	BugCheck(corrupted,base_addr);
+	bugcheck("VM corrupted %p",base_addr);
 }
 
 bool VM::virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word count){
@@ -471,7 +471,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 			invlpg((void*)addr);
 		}
 		else if (!cur.preserve){
-			BugCheck(corrupted,i);
+			bugcheck("double release %p",addr);
 		}
 		cur.preserve = 0;
 		addr += PAGE_SIZE;

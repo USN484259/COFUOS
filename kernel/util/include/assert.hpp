@@ -2,9 +2,9 @@
 #include "types.hpp"
 
 #ifndef NDEBUG
-#include "bugcheck.hpp"
+#include "lang.hpp"
 
-#define assert(e) ( (e) ? 0:(BugCheck(assert_failed,#e,__FILE__,__LINE__),-1) )
+#define assert(e) ( (e) ? 0:(bugcheck("assert_failed: \'%s\' @ %s:%d",#e,__FILE__,__LINE__),-1) )
 #define IF_assert assert(0 == (read_eflags() & 0x0200))
 
 #else

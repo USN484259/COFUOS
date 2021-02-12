@@ -2,8 +2,12 @@
 #include "types.hpp"
 #include "waitable.hpp"
 #include "context.hpp"
-
+#include "intrinsics.hpp"
 namespace UOS{
+	struct atomic_id {
+		volatile qword count = 0;
+		qword operator()(void);
+	};
 	class process;
 	class thread : waitable{
 		struct hash{
@@ -27,14 +31,18 @@ namespace UOS{
 		friend struct equal;
 		friend class conx_off_check;
 	public:
-		enum STATE : word {READY,RUNNING,WAITING};
+		typedef void (*procedure)(void*);
+		enum STATE : word {READY,RUNNING,STOPPED,WAITING};
 
 	private:
 		const dword id;
 		STATE state = READY;
-		word priority = 0;
+		word priority = 1;
 		process& ps;
 		thread* next = nullptr;
+		waitable* wait_for = nullptr;
+		qword timer_ticket = 0;
+
 		context gpr;
 		SSE_context* sse = nullptr;
 
@@ -45,12 +53,16 @@ namespace UOS{
 		qword user_stk_reserved = 0;
 
 		struct initial_thread_tag {};
+		static atomic_id new_id;
 	public:
 		thread(initial_thread_tag, process&);
+		thread(process& owner,procedure entry,void* arg,qword stk_size);
 		bool has_context(void) const;
 		word get_priority(void) const;
 		context const* get_context(void) const;
+		process& get_process(void);
 		void set_state(STATE);
+		void sleep(qword us);
 	};
 	class conx_off_check{
 		static_assert(offsetof(thread,gpr) == CONX_OFF,"CONX_OFF mismatch");

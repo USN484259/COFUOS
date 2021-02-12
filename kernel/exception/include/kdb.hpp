@@ -7,16 +7,28 @@
 namespace UOS{
 	class kdb_stub{
 		static constexpr size_t buffer_size = 0x400;
+		static constexpr size_t sw_bp_count = 0x10;
+
+		struct bp_slot{
+			qword va;
+			bool active;
+			byte data;
+		};	//simple one-shot software breakpoint implementation
+
 		const word port;
 		byte vector;
 		qword errcode;
-		context* conx = nullptr;
-		size_t length = 0;
+		context* conx;
+		size_t length;
+		bp_slot sw_bp[sw_bp_count];
 		byte buffer[buffer_size];
 
 		void send_bin(void);
 		void send(const char*);
 		void recv(void);
+
+		bool sw_bp_match(qword va);
+		bool breakpoint_sw(qword va,char op);
 
 		void on_break(void);
 
@@ -31,18 +43,11 @@ namespace UOS{
 
 	public:
 		kdb_stub(word);
+		word get_port(void) const;
 		void signal(byte,qword,context*);
 		
-		void print(const char*,...);
+		//void print(const char*,...);
 	};
 	extern optional<kdb_stub> debug_stub;
-/*
-	extern unsigned kdb_state;
 
-	void kdb_init(word);
-	size_t kdb_recv(word port, byte* dst, size_t lim);
-	void kdb_send(word port, const byte* sor, size_t len);
-	void kdb_break(byte id,qword errcode,context* context);
-	void dbgprint(const char* format,...);
-*/
 }

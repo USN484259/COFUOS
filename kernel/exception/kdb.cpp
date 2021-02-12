@@ -12,8 +12,10 @@
 using namespace UOS;
 
 constexpr size_t kdb_stub::buffer_size;
+constexpr size_t kdb_stub::sw_bp_count;
 
-/*erferences
+/*references
+	https://sourceware.org/gdb/current/onlinedocs/gdb/Remote-Protocol.html
 	https://elixir.bootlin.com/linux/latest/source/arch/x86/include/asm/kgdb.h
 	https://elixir.bootlin.com/linux/latest/source/kernel/debug/gdbstub.c
 	https://docs.freebsd.org/info/gdb/gdb.info.Protocol.html
@@ -22,6 +24,7 @@ constexpr size_t kdb_stub::buffer_size;
 static const char* hexchar = "0123456789ABCDEF";
 
 static const char* err_invarg = "E16";
+static const char* err_denied = "E0D";
 
 static const char* feature_list = "PacketSize=400";
 
@@ -64,8 +67,6 @@ inline byte put_hex_char(word port,byte ch){
 }
 
 inline byte put_escaped_char(word port,char ch){
-	if (ch > 0x7D)
-		ch = '?';
 	byte chksum = 0;
 	switch (ch){
 		case 0x23:
@@ -110,20 +111,18 @@ inline size_t hex_to_num(const byte* sor,size_t lim,qword& val){
 	return i;
 }
 
-kdb_stub::kdb_stub(word pt) : port(pt){
-	out_byte(port + 1, 0);
-	out_byte(port + 3, 0x80);
-	out_byte(port + 0, 3);
-	out_byte(port + 1, 0);
-	out_byte(port + 3, 0x03);
-	out_byte(port + 2, 0xC7);
+kdb_stub::kdb_stub(word pt) : port(pt) {
 
-	//__writedr(7,0x700);
+	out_byte(port + 1, 0);	//mask all interrupts
+	out_byte(port + 3, 0x80);	//baud select
+	out_word(port + 0, 3);	//57600 bps
+	out_byte(port + 3, 0x03);	//8n1 & baud clear
+
+	for (unsigned i = 0;i < sw_bp_count;++i){
+		sw_bp[i] = {0};
+	}
 
 	features.set(decltype(features)::GDB);
-
-	//handshake with GDB
-
 
 	int_trap<3>();
 }
@@ -212,8 +211,8 @@ void kdb_stub::send(const char* str){
 
 void kdb_stub::on_break(void){
 	static const char* breakname[] = { "DE","DB","NMI","BP","OF","BR","UD","NM","DF","??","TS","NP","SS","GP","PF","??","MF","AC","MC","XM" };
-	print("%s : %d @ %p",
-		vector == 0xFF ? "BugCheck" : (vector < 20 ? breakname[vector] : "??"),
+	dbgprint("%s : %d @ %p",
+		vector == 0xFF ? "bugcheck" : (vector < 20 ? breakname[vector] : "??"),
 		(dword)vector,conx->rip);
 	switch(vector){
 		case 10:
@@ -221,7 +220,10 @@ void kdb_stub::on_break(void){
 		case 12:
 		case 13:
 		case 14:
-			print("errcode = 0x%x", errcode);
+			dbgprint("errcode = 0x%x", errcode);
+	}
+	if (vector == 3 && sw_bp_match(conx->rip)){
+		--conx->rip;
 	}
 	cmd_status();
 }
@@ -280,7 +282,7 @@ void kdb_stub::cmd_read_regs(void){
 
 void kdb_stub::cmd_write_regs(void){
 // TODO
-	send("E01");
+	send(err_denied);
 }
 
 void kdb_stub::cmd_read_vm(void){
@@ -293,26 +295,159 @@ void kdb_stub::cmd_read_vm(void){
 		auto index = hex_to_num(buffer + 1,length - 1,va);
 		if (0 == index)
 			break;
-		index += 1;
-		if (index + 1 >= length || buffer[index] != ',')
+		index += 2;		//'m' & ','
+		if (index >= length || buffer[index - 1] != ',')
 			break;
 		qword count;
-		index = hex_to_num(buffer + index + 1,length - index - 1,count);
+		index = hex_to_num(buffer + index,length - index,count);
 		if (index == 0)
 			break;
 		
-		length = vm.peek(buffer,va,min((size_t)count,buffer_size));
-		if (!length)
-			break;
-		send_bin();
+		length = 0;
+		count = min((size_t)count,buffer_size);
+
+		while(length < count){
+			assert(length == 0 || 0 == (va & PAGE_MASK));
+			auto pt = vm.peek(va);
+			if (!pt.present)
+				break;
+			auto cur_size = min(count - length,PAGE_SIZE - (va & PAGE_MASK));
+
+			memcpy(buffer + length,(void const*)va,cur_size);
+			length += cur_size;
+			va += cur_size;
+		}
+		if (length){
+			send_bin();
+		}
+		else{
+			send(err_denied);
+		}
 		return;
 	}while(false);
 	send(err_invarg);
 }
 
 void kdb_stub::cmd_write_vm(void){
-// TODO
-	send("E01");
+	do{
+		if (!features.get(decltype(features)::MEM))
+			break;
+		if (length < 2)
+			break;
+		qword va;
+		auto index = hex_to_num(buffer + 1,length - 1,va);
+		if (0 == index)
+			break;
+		index += 2;		//'M' & ','
+		if (index >= length || buffer[index - 1] != ',')
+			break;
+		qword count;
+		auto offset = hex_to_num(buffer + index,length - index,count);
+		if (offset == 0)
+			break;
+		offset += index + 1;	//':'
+		if (offset + 2*count > length || buffer[offset - 1] != ':')
+			break;
+
+		for (length = 0;length < count;++length){
+			byte hi = hex_to_bin(buffer[offset++]);
+			byte lo = hex_to_bin(buffer[offset++]);
+			if (hi > 0x0F || lo > 0x0F)
+				break;
+			buffer[length] = (hi << 4) | lo;
+		}
+		if (length != count)
+			break;
+		
+		length = 0;
+		VM::map_view view;
+		while(length < count){
+			assert(length == 0 || 0 == (va & PAGE_MASK));
+			auto pt = vm.peek(va);
+			if (!pt.present)
+				break;
+			offset = va & PAGE_MASK;
+			view.map(pt.page_addr << 12);
+			auto cur_size = min(count - length,PAGE_SIZE - offset);
+			memcpy((byte*)view + offset,buffer + length,cur_size);
+			length += cur_size;
+			va += cur_size;
+		}
+		send((length == count) ? "OK" : err_denied);
+		return;
+	}while(false);
+	send(err_invarg);
+}
+
+bool modify_instruction(qword va,byte& data){
+	do{
+		if (!features.get(decltype(features)::MEM))
+			break;
+		auto pt = vm.peek(va);
+		if (!pt.present || pt.xd)
+			break;
+		VM::map_view view(pt.page_addr << 12);
+		auto offset = va & PAGE_MASK;
+		swap(*((byte*)view + offset),data);
+		return true;
+	}while(false);
+	return false;
+}
+
+bool kdb_stub::sw_bp_match(qword va){
+	--va;	//point back to the instruction
+	for (unsigned i = 0;i < sw_bp_count;++i){
+		auto& cur_slot = sw_bp[i];
+		if (cur_slot.va == va && cur_slot.active){
+			if (modify_instruction(va,cur_slot.data)){
+				assert(cur_slot.data == 0xCC);
+				cur_slot.active = false;
+				return true;
+			}
+			else
+				break;
+		}
+	}
+	return false;
+}
+
+bool kdb_stub::breakpoint_sw(qword va,char op){
+	auto blank = sw_bp_count;
+	auto match = sw_bp_count;
+	for (unsigned i = 0;i < sw_bp_count;++i){
+		if (sw_bp[i].va == va)
+			match = i;
+		else if (sw_bp[i].va == 0){
+			assert(sw_bp[i].active == false);
+			blank = i;
+		}
+	}
+	switch(op){
+		case 'Z':	//set
+			if (match == sw_bp_count && blank < sw_bp_count){
+				auto& cur_slot = sw_bp[blank];
+				cur_slot.va = va;
+				cur_slot.data = 0xCC;
+				if (modify_instruction(va,cur_slot.data)){
+					cur_slot.active = true;
+					return true;
+				}
+				cur_slot.va = 0;
+			}
+			break;
+		case 'z':	//clear
+			if (match < sw_bp_count){
+				auto& cur_slot = sw_bp[match];
+				if (cur_slot.active){
+					modify_instruction(cur_slot.va,cur_slot.data);
+					cur_slot.active = false;
+				}
+				cur_slot.va = 0;
+				return true;
+			}
+			break;
+	}
+	return false;
 }
 
 struct dr_state{
@@ -358,11 +493,49 @@ struct dr_state{
 	}
 };
 
+bool breakpoint_hw(qword addr,char op){
+	dr_state dr;
+	qword mask = 0x03;
+	dr.load();
+	byte blank = 0xFF;
+	byte match = 0xFF;
+
+	for (unsigned i = 0;i < 4;++i,mask <<= 2){
+		if (dr.dr7 & mask){
+			if (dr.dr[i] == addr)
+				match = i;
+		}
+		else
+			blank = i;
+	}
+	switch(op){
+		case 'Z':	//set
+			if (match >= 4 && blank < 4){
+				mask = 0x03 << (2*blank);
+				dr.dr[blank] = addr;
+				dr.dr7 |= mask;
+				dr.store();
+				return true;
+			}
+			break;
+		case 'z':	//clear
+			if (match < 4){
+				mask = 0x03 << (2*match);
+				dr.dr[match] = 0;
+				dr.dr7 &= ~mask;
+				dr.store(true);
+				return true;
+			}
+			break;
+	}
+	return false;
+}
+
 void kdb_stub::cmd_breakpoint(void){
 	do{
 		if (length < 3 || buffer[2] != ',')
 			break;
-		if (buffer[1] != '1'){
+		if (buffer[1] != '0' && buffer[1] != '1'){
 			send("");
 			return;
 		}
@@ -370,50 +543,14 @@ void kdb_stub::cmd_breakpoint(void){
 		auto index = hex_to_num(buffer + 3,length - 3,addr);
 		if (0 == index)
 			break;
-		index += 3;
-		if (index + 1 >= length || buffer[index] != ',')
+		index += 4;		//"Zx," & ','
+		if (index >= length || buffer[index - 1] != ',')
 			break;
+		//ignore 'kind' parameter
 
-		dr_state dr;
-		qword mask = 0x03;
-		dr.load();
-		byte blank = 0xFF;
-		byte match = 0xFF;
+		bool res = (buffer[1] == '1') ? breakpoint_hw(addr,buffer[0]) : breakpoint_sw(addr,buffer[0]);
 
-		for (unsigned i = 0;i < 4;++i,mask <<= 2){
-			if (dr.dr7 & mask){
-				if (dr.dr[i] == addr)
-					match = i;
-			}
-			else
-				blank = i;
-		}
-		bool res = false;
-		switch(buffer[0]){
-			case 'Z':	//set
-				if (match >= 4 && blank < 4){
-					mask = 0x03 << (2*blank);
-					dr.dr[blank] = addr;
-					dr.dr7 |= mask;
-					dr.store();
-					res = true;
-				}
-				break;
-			case 'z':	//clear
-				if (match < 4){
-					mask = 0x03 << (2*match);
-					dr.dr[match] = 0;
-					dr.dr7 &= ~mask;
-					dr.store(true);
-					res = true;
-				}
-				break;
-		}
-
-		if (res)
-			send("OK");
-		else
-			send("E1C");
+		send(res ? "OK" : err_denied);
 		return;
 	}while(false);
 	send(err_invarg);
@@ -443,7 +580,6 @@ void kdb_stub::signal(byte id,qword error_code,context* i_context){
 	conx = i_context;
 
 	// https://elixir.bootlin.com/linux/latest/source/kernel/debug/gdbstub.c#L957
-
 	on_break();
 
 	while(true){
@@ -487,12 +623,18 @@ void kdb_stub::signal(byte id,qword error_code,context* i_context){
 	}
 }
 
-void kdb_stub::print(const char* fmt,...){
+word kdb_stub::get_port(void) const{
+	return port;
+}
+
+//declared in lang.hpp
+extern "C"
+void dbgprint(const char* fmt,...){
 	if (!features.get(decltype(features)::GDB))
 		return;
 	
 	va_list args;
-	auto port = sysinfo->ports[0];
+	auto port = debug_stub.get().get_port();
 	do{
 		serial_put(port,'$');
 		serial_put(port,'O');
@@ -540,7 +682,7 @@ void kdb_stub::print(const char* fmt,...){
 				{
 					auto val = va_arg(args,dword);
 					if (val == 0){
-						ch = 0;
+						ch = '0';
 						break;
 					}
 					unsigned index = 0;

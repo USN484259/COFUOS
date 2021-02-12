@@ -12,24 +12,30 @@ namespace UOS{
 	};
 
 	class scheduler{
+	public:
+		static constexpr qword slice_us = 4000;
 		static constexpr dword max_slice = 0x10;
 		static constexpr word max_priority = 4;
-		
+	
+	private:
 		spin_lock lock;
 		thread_queue ready_queue[max_priority];
+
 	public:
 		void put(thread*);
 		thread* get(word level = max_priority);
 	};
 
 	class core_manager{
-		spin_lock lock;
 		dword count;
 		core_state* core_list;
+		qword timer_ticket;
 
+		static void on_timer(qword,void*);
 	public:
 		core_manager(void);
 		core_state* get(void);
+
 	};
 
 	struct this_core{

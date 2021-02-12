@@ -1,8 +1,6 @@
 #include "acpi.hpp"
 #include "util.hpp"
 #include "lang.hpp"
-#include "exception/include/kdb.hpp"
-#include "bugcheck.hpp"
 #include "assert.hpp"
 #include "memory/include/vm.hpp"
 #include "intrinsics.hpp"
@@ -35,18 +33,13 @@ bool ACPI::validate(const void* base_addr,size_t limit){
 
 
 ACPI::ACPI(void) {
-	struct RSDP{
-		qword addr : 56;
-		qword version : 8;
-	};
-	static_assert(sizeof(RSDP) == 8,"RSDP size mismatch");
-	auto rsdp = (RSDP const*)&sysinfo->ACPI_RSDT;
+	auto& rsdp = sysinfo->rsdp;
 	do{
-		if (!rsdp->addr)
+		if (!rsdp.address)
 			break;
 		dbgprint("Going through ACPI");
-		auto aligned_addr = align_down(rsdp->addr,PAGE_SIZE);
-		auto offset = rsdp->addr - aligned_addr;
+		auto aligned_addr = align_down(rsdp.address,PAGE_SIZE);
+		auto offset = rsdp.address - aligned_addr;
 		VM::map_view rsdt_view(aligned_addr);
 		auto view = (dword const*)((byte const*)rsdt_view + offset);
 		if (!validate(view,PAGE_SIZE - offset))
@@ -55,8 +48,8 @@ ACPI::ACPI(void) {
 		auto size = view[1];
 		assert(size >= HEADER_SIZE);
 		size -= HEADER_SIZE;
-		version = rsdp->version;
-		if (rsdp->version){    //XSDT
+		version = rsdp.version;
+		if (rsdp.version){    //XSDT
 			if (*view != 0x54445358 /*XSDT*/ || (size & 0x07))
 				break;
 			auto it = (qword const*)(view + HEADER_SIZE/4);
@@ -78,7 +71,7 @@ ACPI::ACPI(void) {
 		}
 		return;
 	}while(false);
-	BugCheck(hardware_fault,rsdp->addr);
+	bugcheck("invalid RSDP @ %p",rsdp.address);
 }
 
 
@@ -95,11 +88,17 @@ void ACPI::parse_table(qword pbase){
 	dbgprint("ACPI table %s @ %x ~ %x",table_name,pbase,pbase + *(view + 1));
 	if (*view == 0x43495041 /*APIC*/){
 		madt = new MADT(view);
+		return;
 	}
 	if (*view == 0x50434146 /*FACP*/){
 		if (fadt)
-			BugCheck(hardware_fault,pbase);
+			bugcheck("duplicated FADT @ %p",pbase);
 		fadt = new FADT(view);
+		return;
+	}
+	if (*view == 0x54455048 /*HPET*/){
+		hpet = new HPET(view);
+		return;
 	}
 }
 
@@ -109,14 +108,20 @@ byte ACPI::get_version(void) const{
 
 const MADT& ACPI::get_madt(void) const{
 	if (!madt)
-		BugCheck(hardware_fault,this);
+		bugcheck("MADT not present");
 	return *madt;
 }
 
 const FADT& ACPI::get_fadt(void) const{
 	if (!fadt)
-		BugCheck(hardware_fault,this);
+		bugcheck("FADT not present");
 	return *fadt;
+}
+
+const HPET& ACPI::get_hpet(void) const{
+	if (!hpet)
+		bugcheck("HPET not present");
+	return *hpet;
 }
 
 FADT::FADT(const dword* view){
@@ -130,6 +135,16 @@ FADT::FADT(const dword* view){
 	dbgprint("RTC century support : %s",Century ? "true" : "false");
 	dbgprint("FADT flags = 0x%x",(qword)Flags);
 	dbgprint("FADT BootArch = 0x%x",(qword)BootArchitectureFlags);
+}
+
+HPET::HPET(const dword* view){
+	auto size = *(view + 1);
+	memcpy(this,view + HEADER_SIZE/4,min<size_t>(size,sizeof(HPET)));
+
+	assert(address.AddressSpace == 0);
+	dbgprint("HPET @ %p %s-bit with %d comparators",\
+		address.Address, counter_size ? "64" : "32", comparator_count + 1);
+	
 }
 
 MADT::MADT(void const* vbase){
@@ -198,7 +213,7 @@ MADT::MADT(void const* vbase){
 			break;
 		}
 		if (0 == *(cur + 1))
-			BugCheck(hardware_fault,cur);
+			bugcheck("invalid ACPI table @ %p",cur);
 		cur += *(cur + 1);
 	}
 }

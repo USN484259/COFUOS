@@ -6,10 +6,11 @@
 #include "cpu/include/hal.hpp"
 #include "assert.hpp"
 #include "sync/include/lock_guard.hpp"
-#include "exception/include/kdb.hpp"
 #include "sysinfo.hpp"
 
 using namespace UOS;
+
+constexpr qword size_512G = 0x008000000000ULL;
 
 static auto pdpt_table = (VM::PDPT *)HIGHADDR(PDPT8_PBASE);
 
@@ -121,7 +122,7 @@ bool VM::kernel_vspace::common_check(qword addr,size_t page_count){
 	if ((addr & PAGE_MASK) || !IS_HIGHADDR(addr))
 		return false;
 
-	if (LOWADDR(addr + page_count*PAGE_SIZE) > (qword)0x008000000000){
+	if (LOWADDR(addr + page_count*PAGE_SIZE) > size_512G){
 		//over 512G not supported
 		return false;
 	}
@@ -233,7 +234,7 @@ qword VM::kernel_vspace::reserve_big(size_t pagecount){
 				PT* table = (PT*)pt_view;
 				auto res = imp_reserve_fixed(cur,table,0,min((size_t)0x200,pagecount));
 				if (!res)
-					BugCheck(corrupted,cur);
+					bugcheck("imp_reserve_fixed failed @ %p",cur);
 				pagecount -= min((size_t)0x200,pagecount);
 			}
 			return base_addr;
@@ -332,14 +333,14 @@ void VM::kernel_vspace::locked_release(qword base_addr,size_t page_count){
 	size_t count = 0;
 	while(count < page_count){
 		if (!pdpt_table[pdpt_index].present){
-			BugCheck(corrupted,pdpt_table + pdpt_index);
+			bugcheck("PDT not present %x",pdpt_table[pdpt_index]);
 		}
 		pdt_view.map(pdpt_table[pdpt_index].pdt_addr << 12);
 		PDT* pdt_table = (PDT*)pdt_view;
 		while(count < page_count){
 			auto& cur = pdt_table[pdt_index];
 			if (cur.bypass || cur.user || !cur.present){
-				BugCheck(corrupted,cur);
+				bugcheck("cannot release page %x",cur);
 			}
 			pt_view.map(cur.pt_addr << 12);
 			PT* table = (PT*)pt_view;
@@ -387,7 +388,7 @@ bool VM::kernel_vspace::commit(qword base_addr,size_t page_count){
 		return true;
 	});
 	if (res != page_count)
-		BugCheck(corrupted,res);
+		bugcheck("page count mispatch (%x,%x)",res,page_count);
 	return true;
 }
 
@@ -417,7 +418,7 @@ bool VM::kernel_vspace::protect(qword base_addr,size_t page_count,qword attrib){
 	};
 	res = imp_iterate(pdpt_table,base_addr,page_count,fun,attrib);
 	if (res != page_count)
-		BugCheck(corrupted,res);
+		bugcheck("page count mispatch (%x,%x)",res,page_count);
 	return true;
 }
 
@@ -433,7 +434,7 @@ bool VM::kernel_vspace::assign(qword base_addr,qword phy_addr,size_t page_count)
 	//assume phy_addr is far lower than base_addr
 	//use delta to calc back phy_addr
 	if (base_addr < phy_addr)
-		BugCheck(not_implemented,phy_addr);
+		bugcheck("assume phy_addr is far lower than base_addr (%x,%x)",phy_addr,base_addr);
 	
 	PTE_CALLBACK fun = [](PT& pt,qword addr,qword delta) -> bool{
 		assert(pt.preserve && !pt.present);
@@ -452,14 +453,28 @@ bool VM::kernel_vspace::assign(qword base_addr,qword phy_addr,size_t page_count)
 	};
 	res = imp_iterate(pdpt_table,base_addr,page_count,fun,base_addr - phy_addr);
 	if (res != page_count)
-		BugCheck(corrupted,res);
+		bugcheck("page count mispatch (%x,%x)",res,page_count);
 	return true;
 }
 
-size_t VM::kernel_vspace::peek(void* dst,qword va,size_t len){
-	if (va < HIGHADDR(0))
-		return 0;
-	//TODO check PT
-	memcpy(dst,(void const*)va,len);
-	return len;
+VM::PT VM::kernel_vspace::peek(qword va){
+	//interrupt_guard<spin_lock> guard(lock);
+	IF_assert;
+	do{
+		if (!IS_HIGHADDR(va) || LOWADDR(va) >= size_512G)
+			break;
+		auto pdpt_index = (va >> 30) & 0x1FF;
+		auto pdt_index = (va >> 21) & 0x1FF;
+		auto pt_index = (va >> 12) & 0x1FF;
+		if (!pdpt_table[pdpt_index].present)
+			break;
+		map_view pdt_view(pdpt_table[pdpt_index].pdt_addr << 12);
+		auto pdt_table = (PDT*)pdt_view;
+		if (!pdt_table[pdt_index].present)
+			break;
+		map_view pt_view(pdt_table[pdt_index].pt_addr << 12);
+		auto pt_table = (PT*)pt_view;
+		return pt_table[pt_index];
+	}while(false);
+	return PT {0};
 }

@@ -28,12 +28,12 @@ namespace UOS{
         }
         T& top(void){
             if (head == nullptr)
-                THROW(this);
+                THROW("access empty stack @ %p",this);
             return head->payload;
         }
         const T& top(void) const{
             if (head == nullptr)
-                THROW(this);
+                THROW("access empty stack @ %p",this);
             return head->payload;
         }
         template<typename ... Arg>
@@ -42,7 +42,7 @@ namespace UOS{
         }
         void pop(void){
             if (head == nullptr)
-                THROW(this);
+                THROW("access empty stack @ %p",this);
             auto next = head->next;
             delete head;
             head = next;
@@ -72,7 +72,7 @@ namespace UOS{
             }
             iterator& operator++(void){
                 if (cur == nullptr)
-                    THROW(this);
+                    THROW("deref empty iterator @ %p",this);
                 cur = cur->next;
                 return *this;
             }

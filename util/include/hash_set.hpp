@@ -52,7 +52,7 @@ namespace UOS{
 
 			iterator_base& operator++(void){
 				if (!container || bucket == container.end())
-					THROW(this);
+					THROW("iterator move past the end @ %p",this);
 				assert(chain != bucket->end());
 				++chain;
 				//points to a valid position
@@ -75,12 +75,12 @@ namespace UOS{
 			}
 			T const& operator*(void) const{
 				if (!container)
-					THROW(this);
+					THROW("deref empty iterator @ %p",this);
 				return chain->payload;
 			}
 			T const* operator->(void) const{
 				if (!container)
-					THROW(this);
+					THROW("deref empty iterator @ %p",this);
 				return &chain->payload;
 			}
 		};
@@ -107,12 +107,12 @@ namespace UOS{
 
 			T& operator*(void) {
 				if (!this->container)
-					THROW(this);
+					THROW("deref empty iterator @ %p",this);
 				return this->chain->payload;
 			}
 			T* operator->(void) {
 				if (!this->container)
-					THROW(this);
+					THROW("deref empty iterator @ %p",this);
 				return &this->chain->payload;
 			}
 		};
@@ -222,7 +222,7 @@ namespace UOS{
 
 		iterator erase(const_iterator pos){
 			if (pos.container != &bucket || pos == end())
-				THROW(this);
+				THROW("invalid iterator %p for erase @ %p",&pos,this);
 			assert(pos.chain != pos.bucket->end());
 			assert(count);
 

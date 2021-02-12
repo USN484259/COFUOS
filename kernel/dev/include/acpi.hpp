@@ -32,15 +32,15 @@ namespace UOS{
 		MADT(void const* vbase);
 	};
 
-	struct FADT{	//see: https://wiki.osdev.org/FADT
-		struct GenericAddressStructure {
-			byte AddressSpace;
-			byte BitWidth;
-			byte BitOffset;
-			byte AccessSize;
-			qword Address;
-		} __attribute__((packed));
+	struct GenericAddressStructure {
+		byte AddressSpace;
+		byte BitWidth;
+		byte BitOffset;
+		byte AccessSize;
+		qword Address;
+	} __attribute__((packed));
 
+	struct FADT{	//see: https://wiki.osdev.org/FADT
 		dword FirmwareCtrl;
 		dword Dsdt;
 		byte  Reserved;
@@ -105,12 +105,32 @@ namespace UOS{
 
 	static_assert(offsetof(FADT,X_GPE1Block) == 196,"FADT size mismatch");
 
+	struct HPET {
+		byte revision_id;
+
+		byte comparator_count : 5;
+		byte counter_size : 1;
+		byte reserved : 1;
+		byte legacy_replacement : 1;
+
+		word pci_vender_id;
+		GenericAddressStructure address;
+		byte hpet_number;
+		word minimum_tick;
+		byte page_protection;
+
+		HPET(const dword* view);
+	} __attribute__((packed));
+
+	static_assert(sizeof(HPET) == 0x14,"HPET size mismatch");
+
 	[[noreturn]]
 	void shutdown(void);
 
 	class ACPI{
 		MADT* madt = nullptr;
 		FADT* fadt = nullptr;
+		HPET* hpet = nullptr;
 		byte version = 0;
 		static bool validate(const void* addr,size_t limit);
 
@@ -121,6 +141,7 @@ namespace UOS{
 		byte get_version(void) const;
 		const MADT& get_madt(void) const;
 		const FADT& get_fadt(void) const;
+		const HPET& get_hpet(void) const;
 	};
 	extern ACPI acpi;
 }

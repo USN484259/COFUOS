@@ -1,11 +1,11 @@
 #export CL_OPTIONS=/nologo /c /ffreestanding /std\:c++14 /GS- /GL /Ox /Z7 /FAsc /DEBUG\:FULL /TP /Wall /KERNEL /Fobin\\ /Fabin\\ 
 #/Zc\:rvalueCast,strictStrings
 
-export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -nostdlib -m64 -mno-mmx -mno-sse -mno-sse2
+export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -nostdlib -m64 -mno-mmx -mno-sse -mno-sse2
 
 #INC_PATH=.\\include\\ ..\\util\\include\\ ..\\cpu\\include\\ ..\\..\\util\\include\\ ..\\sync\\include\\ 
 
-DEFINES:=$(DEFINES) CONX_OFF=0x38
+DEFINES:=$(DEFINES) CONX_OFF=0x48
 
 
 

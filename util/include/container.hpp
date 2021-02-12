@@ -2,8 +2,8 @@
 
 #ifndef THROW
 #ifdef COFUOS
-#include "bugcheck.hpp"
-#define THROW(x) BugCheck(unhandled_exception,x)
+#include "lang.hpp"
+#define THROW bugcheck
 #else
 #define THROW throw
 #endif

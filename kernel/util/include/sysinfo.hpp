@@ -12,7 +12,10 @@ namespace UOS{
 	};
 	struct SYSINFO{
 		qword sig;
-		qword ACPI_RSDT;
+		struct {
+			qword address : 56;
+			qword version : 8;
+		} rsdp;
 
 		qword PMM_avl_top;
 		dword kernel_page;

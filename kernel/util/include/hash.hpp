@@ -4,8 +4,7 @@
 
 namespace UOS{
 	template<typename T>
-	class hash{
-	public:
+	struct hash{
 		qword operator()(const T& val){
 			return fasthash64(&val,sizeof(T),0);
 		}

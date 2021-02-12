@@ -12,7 +12,12 @@ if [ $cmd = "vbox" ]
 then
 	virtualboxvm --startvm COFUOS --start-running --debug &
 	#--start-running --debug
-	sleep 5s
+	sleep 10s
+	cd kernel/ && gdb
+elif [ $cmd = "bochs" ]
+then
+	rm -f COFUOS.vhd.lock
+	gnome-terminal -- bochs -q
 	cd kernel/ && gdb
 else
 	export DEFINES=COFUOS

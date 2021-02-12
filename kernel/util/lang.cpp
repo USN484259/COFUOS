@@ -13,11 +13,11 @@ constexpr size_t huge_size = 0x10000;
 
 void* operator new(size_t len){
 	if (!len)
-		BugCheck(invalid_argument,len);
+		bugcheck("new invalid size %x",len);
 	if (len < huge_size){
 		auto res = heap.allocate(len);
 		if (!res)
-			BugCheck(bad_alloc,len);
+			bugcheck("new bad alloc size %x",len);
 		return res;
 	}
 	else{
@@ -30,7 +30,7 @@ void* operator new(size_t len){
 				return (void*)vbase;
 			vm.release(vbase,page_count);
 		}
-		BugCheck(bad_alloc,len);
+		bugcheck("new bad alloc size %x",len);
 	}
 
 }
@@ -76,7 +76,7 @@ extern "C" {
     }
 
     int _purecall(void){
-        BugCheck(assert_failed);
+        bugcheck("pure virtual call");
     }
 
 }

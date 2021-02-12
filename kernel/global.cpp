@@ -12,6 +12,7 @@
 #include "process/include/process.hpp"
 #include "process/include/core_state.hpp"
 #include "cpu/include/apic.hpp"
+#include "dev/include/timer.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/ps_2.hpp"
@@ -41,8 +42,8 @@ namespace UOS{
 	scheduler ready_queue;
 
 	APIC apic;
+	basic_timer timer;
 	core_manager cores;
-	
 	// RTC rtc;
 	// Display display;
 	// Font text_font;

@@ -96,12 +96,12 @@ namespace UOS{
 		T& at(size_t index){
 			if (index < count)
 				return buffer[index];
-			THROW(this);
+			THROW("index %x out of range @ %p",index,this);
 		}
 		const T& at(size_t index) const{
 			if (index < count)
 				return buffer[index];
-			THROW(this);
+			THROW("index %x out of range @ %p",index,this);
 		}
 		T& operator[](size_t index){
 			return at(index);
@@ -112,36 +112,36 @@ namespace UOS{
 		T& front(void){
 			if (count)
 				return buffer[0];
-			THROW(this);
+			THROW("access empty vector @ %p",this);
 		}
 		const T& front(void) const{
 			if (count)
 				return buffer[0];
-			THROW(this);
+			THROW("access empty vector @ %p",this);
 		}
 		T& back(void){
 			if (count)
 				return buffer[count - 1];
-			THROW(this);
+			THROW("access empty vector @ %p",this);
 		}
 		const T& back(void) const{
 			if (count)
 				return buffer[count - 1];
-			THROW(this);
+			THROW("access empty vector @ %p",this);
 		}
 		template<typename ... Arg>
 		void push_back(Arg&& ... args){
 			if (count == cap)
 				reserve(count ? 2*cap : max((size_t)0x40/sizeof(T),(size_t)2));
 			if (count >= cap)
-				THROW(this);
+				THROW("vector expand failed @ %p",this);
 			new (buffer + count) T(forward<Arg>(args)...);
 			++count;
 		}
 		void pop_back(void){
 			assert(count <= cap);
 			if (!count)
-				THROW(this);
+				THROW("access empty vector @ %p",this);
 			buffer[--count].~T();
 		}
 	};

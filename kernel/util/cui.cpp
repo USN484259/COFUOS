@@ -1,5 +1,4 @@
 #include "cui.hpp"
-#include "exception/include/kdb.hpp"
 
 using namespace UOS;
 

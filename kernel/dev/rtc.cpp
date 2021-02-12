@@ -12,7 +12,7 @@ RTC::RTC(void){
 	interrupt_guard<void> guard;
 	if (acpi.get_version() && acpi.get_fadt().BootArchitectureFlags & 0x20){
 		//RTC not present
-		BugCheck(hardware_fault,this);
+		bugcheck("RTC not present");
 	}
 	apic.set(APIC::IRQ_RTC,on_irq,this);
 	out_byte(0x70,0x8A);  //RTC Status Register A & disable NMI

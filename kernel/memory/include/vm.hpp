@@ -2,7 +2,6 @@
 #include "types.hpp"
 #include "sync/include/spin_lock.hpp"
 #include "image/include/pe.hpp"
-//#include "queue.hpp"
 #include "pm.hpp"
 #include "constant.hpp"
 
@@ -109,18 +108,13 @@ namespace UOS{
 			virtual bool commit(qword addr,size_t page_count) = 0;
 			virtual bool protect(qword addr,size_t page_count,qword attrib) = 0;
 			virtual bool release(qword addr,size_t page_count) = 0;
-			virtual size_t peek(void* dst,qword addr,size_t count) = 0;
+			virtual PT peek(qword va) = 0;
 		protected:
-			//enum PAGE_STATE {FREE,PRESERVE,COMMIT_KRNL,COMMIT_USER};
 			typedef bool (*PTE_CALLBACK)(PT& pt,qword addr,qword data);
 		protected:
 			qword imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word count);
 			bool imp_reserve_fixed(PDT& pdt,PT* table,word index,word count);
-			//void imp_commit(PDT& pdt,word index,word count,byte = UOS::PM::default_tag);
-			//void imp_protect(PDT& pdt,word index,size_t word,qword attrib);
-			//void imp_decommit(PDT& pdt,word index,word count);
 			void imp_release(PDT& pdt,PT* table,qword base_addr,word count);
-			//bool imp_check(PT const* table,word index,word count,PAGE_STATE expect) const;
 			size_t imp_iterate(const PDPT* pdpt,qword base_addr,size_t page_count,PTE_CALLBACK callback,qword data = 0);
 
 			struct BLOCK{	//see struct PT
@@ -152,7 +146,7 @@ namespace UOS{
 			bool commit(qword addr,size_t page_count) override;
 			bool protect(qword addr,size_t page_count,qword attrib) override;
 			bool release(qword addr,size_t page_count) override;
-			size_t peek(void* dst,qword addr,size_t count) override;
+			PT peek(qword va) override;
 			bool assign(qword va,qword pa,size_t page_count);
 		private:
 			static bool common_check(qword addr,size_t page_count);
@@ -163,41 +157,6 @@ namespace UOS{
 			qword reserve_big(size_t page_count);
 			void locked_release(qword addr,size_t page_count);
 		};
-
-		/*
-		class kernel_vspace{
-			spin_lock lock;
-		public:
-			kernel_vspace(void);	//set up reserve-able range
-			qword reserve(qword addr,size_t page_count);
-			void commit(qword addr,size_t page_count);
-			void protect(qword addr,size_t page_count,qword attrib);
-			void decommit(qword addr,size_t page_count);
-			void release(qword addr,size_t page_count);
-
-			bool peek(void* dst,qword addr,size_t count);
-		};
-
-
-		class virtual_space{
-			volatile qword* view_pl4t;
-			volatile qword* view_pdpt_user;
-		public:
-			virtual_space(qword cr3);
-			virtual_space(volatile qword* pl4t_view);
-			~virtual_space(void);
-			void switch_to_user(void);
-			qword reserve(qword addr,size_t page_count);
-			void commit(qword va,size_t page_count);
-			void protect(qword va,size_t page_count,qword attrib);
-			void decommit(qword base,size_t page_count);
-			void release(qword addr,size_t page_count);
-
-			bool peek(void* dst,qword va,size_t len);
-
-		};
-		
-		*/
 	}
 	extern VM::kernel_vspace vm;
 	
