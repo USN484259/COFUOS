@@ -182,10 +182,10 @@ mov [rbp+CONX_OFF+0x58],r12
 mov [rbp+CONX_OFF+0x60],r13
 mov [rbp+CONX_OFF+0x68],r14
 mov [rbp+CONX_OFF+0x70],r15
-shr edx,3
-rep movsq
 mov ds,ax
 mov es,ax
+shr edx,3
+rep movsq
 
 mov ecx,edx		;id
 call dispatch_irq
@@ -302,7 +302,8 @@ memset:
 test edx,edx
 jnz memset_val
 mov rdx,r8
-nop DWORD [eax + eax*1 + 00000000h]
+;NOP DWORD ptr [EAX + EAX*1 + 00000000H]
+db 0Fh,1Fh,84h,00h,00h,00h,00h,00h
 
 align 16
 zeromemory:		;rcx dst	rdx size

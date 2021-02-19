@@ -30,8 +30,3 @@ void spin_lock::unlock(void) {
 	assert(1 == tmp);
 	
 }
-
-bool spin_lock::is_locked(void) const {
-	return state ? true : false;
-	
-}

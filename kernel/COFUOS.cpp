@@ -15,6 +15,7 @@
 #include "dev/include/ps_2.hpp"
 //#include "cui.hpp"
 #include "lang.hpp"
+#include "sync/include/mutex.hpp"
 
 using namespace UOS;
 
@@ -186,14 +187,33 @@ void vm_test(void){
 	int_trap<3>();
 }
 
-void thread_test(void*){
-	word cnt = 0;
-	while(++cnt){
-		halt();
+void thread_test(void* ptr){
+	auto m = (mutex*)ptr;
+	this_core core;
+	auto this_thread = core.this_thread();
+	
+	while(true){
+		{
+			lock_guard<mutex> guard(*m);
+			dbgprint("thread %d",this_thread->get_id());
+			thread::sleep(rand()%(1000*1000));
+		}
+		thread::sleep(rand()%(1000*1000));
 	}
-	bugcheck("bugcheck_test with cnt = %d",cnt);
+	//bugcheck("bugcheck_test with cnt = %d",cnt);
 }
 
+void thread_spawner(void* ptr){
+	this_core core;
+	thread* this_thread = core.this_thread();
+	auto& ps = this_thread->get_process();
+	dbgprint("thread_spawner #%d",this_thread->get_id());
+	for (auto i = 0;i < 0x10;++i){
+		auto th = ps.spawn(thread_test,ptr);
+		dbgprint("spawned thread %d",th->get_id());
+	}
+	thread::exit();
+}
 
 typedef void (*global_constructor)(void);
 
@@ -244,10 +264,12 @@ void krnlentry(void* module_base){
 
 	//TODO spawn startup thread
 	this_core core;
-	core.this_thread()->get_process().spawn(thread_test,nullptr);
+	auto& ps = core.this_thread()->get_process();
+	mutex* m = new mutex();
+	ps.spawn(thread_spawner,m);
 
 
-	//as idle thread
+	//as idle thread & core service
 	while(true){
 		halt();
 	}

@@ -6,6 +6,7 @@
 #include "memory/include/pm.hpp"
 #include "memory/include/vm.hpp"
 #include "dev/include/acpi.hpp"
+#include "sync/include/lock_guard.hpp"
 #include "util.hpp"
 #include "lang.hpp"
 
@@ -635,6 +636,7 @@ void dbgprint(const char* fmt,...){
 	
 	va_list args;
 	auto port = debug_stub.get().get_port();
+	interrupt_guard<void> guard;
 	do{
 		serial_put(port,'$');
 		serial_put(port,'O');
@@ -711,6 +713,7 @@ void dbgprint(const char* fmt,...){
 			chksum += put_hex_char(port,ch);
 		}
 		va_end(args);
+		chksum += put_hex_char(port,'\n');
 		serial_put(port,'#');
 		put_hex_char(port,chksum);
 

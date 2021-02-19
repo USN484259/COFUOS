@@ -40,48 +40,68 @@ thread* thread_queue::get(void){
 	}
 }
 
+thread*& thread_queue::next(thread* th){
+	return th->next;
+}
+
 void thread_queue::clear(void){
 	head = tail = nullptr;
 }
 
 waitable::~waitable(void){
-	lock.lock();
-	imp_notify(wait_queue.head);
+	notify(ABANDONED);
 }
 
-void waitable::wait(qword us){
+size_t waitable::notify(REASON reason){
+	thread* ptr;
+	interrupt_guard<void> ig;
+	{
+		lock_guard<spin_lock> guard(lock);
+		ptr = wait_queue.head;
+		wait_queue.clear();
+	}
+	return imp_notify(ptr,reason);
+}
+
+waitable::REASON waitable::imp_wait(qword us){
+	IF_assert;
+	assert(lock.is_locked());
 	this_core core;
 	thread* this_thread = core.this_thread();
-	if (us){
-		this_thread->timer_ticket = timer.wait(us,on_timer,this_thread);
-	}
-	else
-		this_thread->timer_ticket = 0;
+	qword ticket = 0;
+	if (us)
+		ticket = timer.wait(us,on_timer,this_thread);
+	this_thread->set_state(thread::WAITING,ticket,this);
+	wait_queue.put(this_thread);
 
-	this_thread->wait_for = this;
-	this_thread->set_state(thread::WAITING);
-	{
-		interrupt_guard<spin_lock> guard(lock);
-		wait_queue.put(this_thread);
-	}
+	lock.unlock();
 	core.switch_to(ready_queue.get());
+	return this_thread->get_reason();
+}
+
+waitable::REASON waitable::wait(qword us){
+	interrupt_guard<void> ig;
+	lock.lock();
+	return imp_wait(us);
 }
 
 void waitable::on_timer(qword ticket,void* ptr){
 	IF_assert;
 	auto th = (thread*)ptr;
-	if (th->timer_ticket != ticket)
+	if (th->get_ticket() != ticket)
 		return;
+	/*
 	assert(th->state == thread::WAITING);
 	if (th->wait_for)
 		th->wait_for->cancel(th);
 	
 	th->timer_ticket = 0;
 	th->set_state(thread::READY);
-	
+	*/
+	th->set_state(thread::READY,waitable::TIMEOUT);
 	this_core core;
 	auto this_thread = core.this_thread();
-	if (th->priority < this_thread->get_priority()){
+	if (th->get_priority() < this_thread->get_priority()){
 		this_thread->set_state(thread::READY);
 		ready_queue.put(this_thread);
 		core.switch_to(th);
@@ -93,8 +113,7 @@ void waitable::on_timer(qword ticket,void* ptr){
 
 //wait-timeout should happen less likely, currently O(n)
 void waitable::cancel(thread* th){
-	assert(th && th->wait_for == this);
-	th->wait_for = nullptr;
+	assert(th);
 	interrupt_guard<spin_lock> guard(lock);
 	auto prev = wait_queue.head;
 	if (prev == th){
@@ -102,17 +121,19 @@ void waitable::cancel(thread* th){
 		return;
 	}
 	while(prev){
-		if (prev->next == prev)
+		auto next = thread_queue::next(prev);
+		if (next == th)
 			break;
-		prev = prev->next;
+		prev = next;
 	}
 	if (prev){
-		if (th->next){
-			prev->next = th->next;
+		auto th_next = thread_queue::next(th);
+		if (th_next){
+			thread_queue::next(prev) = th_next;
 		}
 		else{
 			assert(th == wait_queue.tail);
-			prev->next = nullptr;
+			thread_queue::next(prev) = nullptr;
 			wait_queue.tail = prev;
 		}
 		return;
@@ -120,62 +141,43 @@ void waitable::cancel(thread* th){
 	bugcheck("wait_queue corrupted @ %p",&wait_queue);
 }
 
-size_t waitable::imp_notify(thread* th){
+size_t waitable::imp_notify(thread* th,REASON reason){
+	IF_assert;
 	if (!th)
 		return 0;
-	thread* next = nullptr;
+	thread* target = nullptr;
 	this_core core;
+	thread* this_thread = core.this_thread();
+	word cur_priority = this_thread->get_priority();
 	size_t count = 0;
-	word cur_priority = core.this_thread()->get_priority();
-
+	
 	while(th){
-		if (th->timer_ticket){
-			timer.cancel(th->timer_ticket);
-			th->timer_ticket = 0;
-		}
-		th->wait_for = nullptr;
-		th->set_state(thread::READY);
-		if (th->priority < cur_priority){
-			if (next){
-				if (th->priority < next->priority){
-					ready_queue.put(next);
-					next = th;
-				}
-				else{
-					ready_queue.put(th);
-				}
+		auto next = thread_queue::next(th);
+		th->set_state(thread::READY,reason);
+		auto th_priority = th->get_priority();
+		if (th_priority < cur_priority){
+			if (target){
+				ready_queue.put(target);
 			}
-			else
-				next = th;
+			target = th;
+			cur_priority = th_priority;
+		}
+		else{
+			ready_queue.put(th);
 		}
 		++count;
-		th = th->next;
+		th = next;
 	}
 
-	if (next){
-		thread* this_thread = core.this_thread();
-		this_thread->set_state(thread::READY);
-		ready_queue.put(this_thread);
-		core.switch_to(next);
-	}
-	return count;
-}
-
-size_t waitable::notify(void){
-	thread* ptr;
-	{
-		interrupt_guard<spin_lock> guard(lock);
-		ptr = wait_queue.head;
-		wait_queue.clear();
-	}
-#ifndef _NDEBUG
-	{
-		auto chk = ptr;
-		while(chk){
-			assert(chk->state == thread::WAITING && chk->wait_for == this);
-			chk = chk->next;
+	if (target){
+		if (this_thread->get_state() == thread::STOPPED){
+			ready_queue.put(target);
+		}
+		else{
+			this_thread->set_state(thread::READY);
+			ready_queue.put(this_thread);
+			core.switch_to(target);
 		}
 	}
-#endif
-	return imp_notify(ptr);
+	return count;
 }

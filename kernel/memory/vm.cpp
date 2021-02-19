@@ -225,7 +225,7 @@ void VM::virtual_space::shift_left(PDT& pdt,PT* table,BLOCK& block){
 			BLOCK prev_block;
 			prev_block.get(table + block.prev);
 			assert(prev_block.next_valid && prev_block.next == block.self);
-			max_size = prev_block.size;
+			max_size = max(max_size,prev_block.size);
 			prev_block.next = block.next;
 			prev_block.next_valid = block.next_valid;
 			prev_block.put(table + prev_block.self);
@@ -281,7 +281,7 @@ void VM::virtual_space::shift_right(PDT& pdt,PT* table,BLOCK& block){
 	put_max_size(pdt,max_size);
 }
 
-void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block,word hint){
+void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
 	if (0 == block.size)
 		return;
 	auto max_size = get_max_size(pdt);
@@ -297,7 +297,7 @@ void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block,word hint){
 	BLOCK prev_block;
 	BLOCK next_block;
 	prev_block.size = 0;
-	prev_block.next = hint;
+	prev_block.next = pdt.head;
 	do{
 		next_block.get(table + prev_block.next);
 		assert(prev_block.size || next_block.size >= block.size);
@@ -307,7 +307,18 @@ void VM::virtual_space::insert(PDT& pdt,PT* table,BLOCK& block,word hint){
 			break;
 		prev_block = next_block;
 	}while(prev_block.next_valid);
-	assert(prev_block.size);
+	if (0 == prev_block.size){
+		//insert before next_block (as head)
+		assert(!next_block.prev_valid && pdt.head == next_block.self);
+		next_block.prev = block.self;
+		next_block.prev_valid = 1;
+		block.prev_valid = 0;
+		block.next = next_block.self;
+		block.next_valid = 1;
+		block.put(table + block.self);
+		pdt.head = block.self;
+		return;
+	}
 	if (prev_block.next_valid){	//next_block valid
 		assert(next_block.prev == prev_block.self);
 		next_block.prev = block.self;
@@ -439,14 +450,15 @@ bool VM::virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word cou
 	blocks[1].self = index + count;
 	blocks[1].size -= blocks[1].self;
 	blocks[0].size = index - blocks[0].self;
-
+/*
+#error swap breaks link
 	if (!blocks[0].size || (blocks[1].size && blocks[0].size > blocks[1].size)){
 		swap(blocks[0].self,blocks[1].self);
 		swap(blocks[0].size,blocks[1].size);
 	}
-
+*/
 	shift_left(pdt,table,blocks[0]);
-	insert(pdt,table,blocks[1],blocks[0].self);
+	insert(pdt,table,blocks[1]);
 
 #ifndef NDEBUG
 	check_integrity(pdt,table);
@@ -477,6 +489,45 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 		addr += PAGE_SIZE;
 	}
 	BLOCK block;
+
+	if (index && !table[index - 1].present && !table[index - 1].preserve){
+		//prior block free
+		if (index + count < 0x200 && !table[index + count].present && !table[index + count].preserve){
+			//both prior & next are free
+			//remove next block first
+			block.get(table + index + count);
+			auto removed_size = block.size;
+			block.size = 0;
+			shift_left(pdt,table,block);
+			//then merge into prior block
+			block.get(table + index - 1);
+			block.size += removed_size + count;
+			shift_right(pdt,table,block);
+		}
+		else{
+			//only prior block free
+			block.get(table + index - 1);
+			block.size += count;
+			shift_right(pdt,table,block);
+		}
+	}
+	else{
+		word new_size = count;
+		if (index + count < 0x200 && !table[index + count].present && !table[index + count].preserve){
+			//only next block free
+			//remove next block
+			block.get(table + index + count);
+			new_size += block.size;
+			block.size = 0;
+			shift_left(pdt,table,block);
+		}
+		//else standalone, use count as size
+
+		block.self = index;
+		block.size = new_size;
+		insert(pdt,table,block);
+	}
+/*
 	block.size = 0;
 	//block.next_valid = block.prev_valid = 0;
 	if (index && !table[index - 1].present && !table[index - 1].preserve){
@@ -488,6 +539,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 			BLOCK remove_block;
 			remove_block.get(table + index + count);
 			//remove smaller block
+#error review again
 			if (remove_block.size > block.size){
 				swap(remove_block.next,block.next);
 				swap(remove_block.next_valid,block.next_valid);
@@ -498,6 +550,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 			remove_block.size = 0;
 			//remove the block
 			shift_left(pdt,table,remove_block);
+#error reload block ?
 		}
 		else{	//next only
 			block.get(table + index + count);
@@ -513,6 +566,7 @@ void VM::virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word coun
 		block.size = count;
 		insert(pdt,table,block,pdt.head);
 	}
+*/
 #ifndef NDEBUG
 	check_integrity(pdt,table);
 #endif

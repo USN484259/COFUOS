@@ -35,7 +35,7 @@ basic_timer::basic_timer(void) : base(nullptr){
 
 	qword state = *(base + 0x100/sizeof(qword));
 	dbgprint("comparator #0 : %x",state);
-	if (state & 0x30 != 0x30)
+	if ((state & 0x30) != 0x30)
 		bugcheck("64-bit periodic mode not supported");
 	state &= ~((1 << 14) | (1 << 8) | (1 << 6) | (1 << 1));	//64-bit, no-FSB, edge triggered
 	state |= (1 << 3) | (1 << 2);	//periodic, enable

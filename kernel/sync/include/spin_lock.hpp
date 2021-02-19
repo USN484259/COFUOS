@@ -10,7 +10,9 @@ namespace UOS{
         void lock(void);
         void unlock(void);
         bool try_lock(void);
-        bool is_locked(void) const;
+        inline bool is_locked(void) const{
+            return (state);
+        }
     };
     constexpr size_t spin_timeout = 0x04000000;
 }

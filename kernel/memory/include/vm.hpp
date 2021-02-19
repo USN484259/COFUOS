@@ -132,7 +132,7 @@ namespace UOS{
 			static void put_max_size(PDT& pdt,word new_value);
 			void shift_left(PDT& pdt,PT* table,BLOCK& block);
 			void shift_right(PDT& pdt,PT* table,BLOCK& block);
-			void insert(PDT& pdt,PT* table,BLOCK& block,word hint);
+			void insert(PDT& pdt,PT* table,BLOCK& block);
 #ifndef NDEBUG
 			void check_integrity(PDT& pdt,PT* table);
 #endif

@@ -45,7 +45,9 @@ namespace UOS{
 	class interrupt_guard<void>{
 		const qword state;
 	public:
-		interrupt_guard(void) : state(read_eflags() & 0x0200) {}
+		interrupt_guard(void) : state(read_eflags() & 0x0200) {
+			cli();
+		}
 		~interrupt_guard(void){
 			if (state)
 				sti();

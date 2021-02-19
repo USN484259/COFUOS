@@ -5,7 +5,7 @@
 namespace UOS{
 	template<typename T>
 	struct hash{
-		qword operator()(const T& val){
+		inline qword operator()(const T& val){
 			return fasthash64(&val,sizeof(T),0);
 		}
 	};

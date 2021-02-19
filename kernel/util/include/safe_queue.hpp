@@ -21,7 +21,7 @@ namespace UOS{
 			delete[] buffer;
 		}
 		bool put(const T& val){
-			lock_guard<spin_lock> guard(write_lock);
+			interrupt_guard<spin_lock> guard(write_lock);
 			assert(tail < buffer + SIZE);
 			T* original_tail = tail;
 			T* next = original_tail + 1;
@@ -35,7 +35,7 @@ namespace UOS{
 			return true;
 		}
 		bool get(T& val){
-			lock_guard<spin_lock> guard(read_lock);
+			interrupt_guard<spin_lock> guard(read_lock);
 			assert(head < buffer + SIZE);
 			T* original_head = head;
 			if (original_head == tail)
@@ -52,7 +52,7 @@ namespace UOS{
 			return head == tail;
 		}
 		void clear(void){
-			lock_guard<spin_lock> guard_w(write_lock);
+			interrupt_guard<spin_lock> guard_w(write_lock);
 			lock_guard<spin_lock> guard_r(read_lock);
 			tail = head;
 		}

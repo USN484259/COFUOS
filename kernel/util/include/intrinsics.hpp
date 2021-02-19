@@ -154,7 +154,7 @@ namespace UOS{
 	template<typename T>
 	inline T read_gs(qword offset){
 		T data;
-		ASM (
+		__asm__ (
 			"mov %0, gs:[%1]"
 			: "=r" (data)
 			: "ir" (offset)
@@ -165,10 +165,10 @@ namespace UOS{
 
 	template<typename T>
 	inline void write_gs(qword offset,T data){
-		ASM (
+		__asm__ (
 			"mov gs:[%0], %1"
 			:
-			: "ir" (offset), "ir" (data)
+			: "ir" (offset), "r" (data)
 			: "memory"
 		);
 	}
@@ -193,23 +193,26 @@ namespace UOS{
 	}
 
 	template<typename T>
-	T* cmpxchg_ptr(T* volatile* dst,T* xchg,T* cmp){
+	inline T* cmpxchg_ptr(T* volatile* dst,T* xchg,T* cmp){
 		return reinterpret_cast<T*>(
 			cmpxchg<qword>(
 				reinterpret_cast<qword volatile*>(dst),
-				reinterpret_cast<qword>(cmp),
-				reinterpret_cast<qword>(xchg)
+				reinterpret_cast<qword>(xchg),
+				reinterpret_cast<qword>(cmp)
 			)
 		);
 	}
 	template<typename T>
-	T* xchg_ptr(T* volatile* dst,T* val){
+	inline T* xchg_ptr(T* volatile* dst,T* val){
 		return reinterpret_cast<T*>(
 			xchg<qword>(
 				reinterpret_cast<qword volatile*>(dst),
 				reinterpret_cast<qword>(val)
 			)
 		);
+	}
+	inline void* return_address(void){
+		return __builtin_return_address(0);
 	}
 }
 

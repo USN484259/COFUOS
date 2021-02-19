@@ -18,6 +18,17 @@ thread* process::spawn(thread::procedure entry,void* arg,qword stk_size){
 	return &*it;
 }
 
+void process::kill(thread* th){
+	if (th->get_state() != thread::STOPPED){
+		bugcheck("killing other thread not implemented");
+	}
+	auto it = threads.find(th->id);
+	if (it == threads.end()){
+		bugcheck("cannot find thread %p in process %p",th,this);
+	}
+	threads.erase(it);
+}
+
 process_manager::process_manager(void){
 	//create initial thread & process
 	table.insert(process::initial_process_tag());

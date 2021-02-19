@@ -3,17 +3,19 @@
 #include "thread.hpp"
 #include "image/include/pe.hpp"
 #include "hash_set.hpp"
+#include "hash.hpp"
 
 namespace UOS{
 	constexpr dword initial_pid = 0;
 
 	class process : waitable{
 		struct hash{
+			UOS::hash<dword> h;
 			qword operator()(const process& obj){
-				return obj.id;
+				return h(obj.id);
 			}
-			qword operator()(qword id){
-				return id;
+			qword operator()(dword id){
+				return h(id);
 			}
 		};
 		struct equal{
@@ -26,7 +28,6 @@ namespace UOS{
 		friend class equal;
 
 		const dword id;
-		//enum : dword {READY,RUNNING,WAITING} state;
 		qword cr3;
 		PE64* image;
 		hash_set<thread, thread::hash, thread::equal> threads;
@@ -43,6 +44,7 @@ namespace UOS{
 		}
 
 		thread* spawn(thread::procedure entry,void* arg,qword stk_size = 0);
+		void kill(thread* th);
 	};
 
 	class process_manager{
@@ -52,6 +54,7 @@ namespace UOS{
 	public:
 		process_manager(void);
 		thread* get_initial_thread(void);
+
 	};
 	extern process_manager proc;
 	
