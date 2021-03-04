@@ -3,12 +3,10 @@
 #include "waitable.hpp"
 #include "context.hpp"
 #include "hash.hpp"
+#include "id_gen.hpp"
+#include "interface/include/loader.hpp"
 
 namespace UOS{
-	struct atomic_id {
-		volatile qword count = 0;
-		qword operator()(void);
-	};
 	class process;
 	class thread : waitable{
 		struct hash{
@@ -32,38 +30,36 @@ namespace UOS{
 		friend struct hash;
 		friend struct equal;
 		friend struct conx_off_check;
+		friend void ::UOS::userentry(void*);
 	public:
 		typedef void (*procedure)(void*);
 		enum STATE : byte {READY,RUNNING,STOPPED,WAITING};
-		
-	private:
+	public:
 		const dword id;
+	private:
 		STATE state = READY;
 		REASON reason = NONE;
-		word priority = 1;
-		process& ps;
+		word priority;
+		process* const ps;
 		thread* next = nullptr;
 		waitable* wait_for = nullptr;
 		qword timer_ticket = 0;
 
-		context gpr;
-		SSE_context* sse = nullptr;
-
 		qword krnl_stk_top;
 		qword krnl_stk_reserved;
 		
+		context gpr;
+		SSE_context* sse = nullptr;
+
 		qword user_stk_top = 0;
 		qword user_stk_reserved = 0;
 
 		struct initial_thread_tag {};
-		static atomic_id new_id;
+		static id_gen<dword> new_id;
 	public:
-		thread(initial_thread_tag, process&);
-		thread(process& owner,procedure entry,void* arg,qword stk_size);
+		thread(initial_thread_tag, process*);
+		thread(process* owner,procedure entry,void* arg,qword stk_size);
 		~thread(void);
-		inline dword get_id(void) const{
-			return id;
-		}
 		inline bool has_context(void) const{
 			return gpr.rflags != 0;
 		}
@@ -73,7 +69,7 @@ namespace UOS{
 		inline context const* get_context(void) const{
 			return &gpr;
 		}
-		inline process& get_process(void){
+		inline process* get_process(void){
 			return ps;
 		}
 		inline STATE get_state(void) const{
@@ -87,11 +83,13 @@ namespace UOS{
 		inline REASON get_reason(void) const{
 			return reason;
 		}
+		bool relax(void) override;
 		static void sleep(qword us);
 		[[ noreturn ]]
 		static void exit(void);
 	};
 	struct conx_off_check{
 		static_assert(offsetof(thread,gpr) == CONX_OFF,"CONX_OFF mismatch");
+		static_assert(offsetof(thread,krnl_stk_top) == KSP_OFF,"KSP_OFF mismatch");
 	};
 };

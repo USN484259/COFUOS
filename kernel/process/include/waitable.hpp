@@ -20,7 +20,7 @@ namespace UOS{
 		enum REASON : byte {NONE = 0, PASSED = 1, NOTIFY = 2, TIMEOUT = 3, ABANDONED = 4};
 	protected:
 		spin_lock lock;
-		dword ref_count;	//????
+		dword ref_count = 1;
 		thread_queue wait_queue;
 
 		static size_t imp_notify(thread*,REASON);
@@ -35,12 +35,13 @@ namespace UOS{
 		virtual ~waitable(void);
 		// (this_thread) waits for (this)
 		virtual REASON wait(qword us = 0);
-		// notify all in (this)'s queue
-		//virtual size_t notify(void);
 		void cancel(thread*);
-
-
-
+		void acquire(void);
+		//returns (if still has reference)
+		virtual bool relax(void);
+		inline dword get_reference_count(void) const{
+			return ref_count;
+		}
 	};
 	static_assert(sizeof(waitable) == 0x20,"waitable size mismatch");
 }

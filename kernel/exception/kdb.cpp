@@ -1,11 +1,12 @@
 #include "types.hpp"
 #include "kdb.hpp"
-#include "cpu/include/hal.hpp"
 #include "intrinsics.hpp"
 #include "sysinfo.hpp"
 #include "memory/include/pm.hpp"
 #include "memory/include/vm.hpp"
 #include "dev/include/acpi.hpp"
+#include "process/include/core_state.hpp"
+#include "process/include/process.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "util.hpp"
 #include "lang.hpp"
@@ -125,7 +126,7 @@ kdb_stub::kdb_stub(word pt) : port(pt) {
 
 	features.set(decltype(features)::GDB);
 
-	int_trap<3>();
+	int_trap(3);
 }
 
 void kdb_stub::recv(void) {
@@ -307,9 +308,17 @@ void kdb_stub::cmd_read_vm(void){
 		length = 0;
 		count = min((size_t)count,buffer_size);
 
+		virtual_space* vspace;
+		if (IS_HIGHADDR(va))
+			vspace = &vm;
+		else{
+			this_core core;
+			vspace = core.this_thread()->get_process()->vspace;
+		}
+
 		while(length < count){
 			assert(length == 0 || 0 == (va & PAGE_MASK));
-			auto pt = vm.peek(va);
+			auto pt = vspace->peek(va);
 			if (!pt.present)
 				break;
 			auto cur_size = min(count - length,PAGE_SIZE - (va & PAGE_MASK));
@@ -361,10 +370,19 @@ void kdb_stub::cmd_write_vm(void){
 			break;
 		
 		length = 0;
-		VM::map_view view;
+
+		virtual_space* vspace;
+		if (IS_HIGHADDR(va))
+			vspace = &vm;
+		else{
+			this_core core;
+			vspace = core.this_thread()->get_process()->vspace;
+		}
+
+		map_view view;
 		while(length < count){
 			assert(length == 0 || 0 == (va & PAGE_MASK));
-			auto pt = vm.peek(va);
+			auto pt = vspace->peek(va);
 			if (!pt.present)
 				break;
 			offset = va & PAGE_MASK;
@@ -387,7 +405,7 @@ bool modify_instruction(qword va,byte& data){
 		auto pt = vm.peek(va);
 		if (!pt.present || pt.xd)
 			break;
-		VM::map_view view(pt.page_addr << 12);
+		map_view view(pt.page_addr << 12);
 		auto offset = va & PAGE_MASK;
 		swap(*((byte*)view + offset),data);
 		return true;

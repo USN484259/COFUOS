@@ -7,17 +7,22 @@ namespace UOS{
 	struct core_state {
 		word uid;
 		word slice;
-		dword gc_count;
+		dword reserved;
 		thread* this_thread;
 		thread* fpu_owner;
-		qword gc_base;
+		thread* gc_ptr;
 	};
 
 	class scheduler{
 	public:
 		static constexpr qword slice_us = 4000;
 		static constexpr dword max_slice = 0x10;
-		static constexpr word max_priority = 4;
+		static constexpr word max_priority = 8;
+		// [0] [1..3] [4..6] [7]
+		static constexpr word realtime_priority = 0;
+		static constexpr word kernel_priority = 2;
+		static constexpr word user_priority = 5;
+		static constexpr word idle_priority = 7;
 	
 	private:
 		spin_lock lock;
@@ -78,7 +83,7 @@ namespace UOS{
 		}
 		void switch_to(thread*);
 		[[ noreturn ]]
-		void escape(bool,qword,dword);
+		void escape(void);
 	};
 
 	extern scheduler ready_queue;

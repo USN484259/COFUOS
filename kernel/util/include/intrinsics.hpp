@@ -110,12 +110,11 @@ namespace UOS{
 		);
 	}
 	*/
-	template<byte V> 
-	inline void int_trap(void){
+	inline void int_trap(byte v){
 		ASM (
 			"int %0"
 			:
-			: "i" (V)
+			: "i" (v)
 		);
 	}
 

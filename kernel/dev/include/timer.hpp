@@ -9,32 +9,9 @@ namespace UOS{
 	class basic_timer{
 	public:
 		static constexpr qword us2fs = (qword)1000*1000*1000;
-		static constexpr qword heartbeat_rate_us = 80;
+		static constexpr qword heartbeat_rate_us = 200;
 		typedef void (*CALLBACK)(qword,void*);
 	private:
-		/*
-		struct record_type{
-			waitable* ptr;
-			qword ticket;
-
-			record_type(waitable* p, qword t) : ptr(p), ticket(t) {}
-			
-			struct hash{
-				inline qword operator()(const record_type& obj){
-					return (qword)obj.ptr;
-				}
-				inline qword operator()(waitable const* ptr){
-					return (qword)ptr;
-				}
-			};
-			struct equal{
-				inline bool operator()(const record_type& obj,waitable const* cmp){
-					return obj.ptr == cmp;
-				}
-			};
-		};
-		*/
-
 		struct queue_type{
 			qword ticket;
 			qword diff_tick;

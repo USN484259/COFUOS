@@ -145,31 +145,33 @@ dd 1001_0010_0000_0000_b	;sys64 DS
 dw 0xFFFF
 dw 0
 db 0
-db 1111_1010_b
-db 1100_1111_b
-db 0		;user cs
-
-dw 0xFFFF
-dw 0
-db 0
 db 1111_0010_b
 db 1100_1111_b
 db 0		;user ds
 
+dw 0xFFFF
+dw 0
+db 0
+db 1111_1010_b
+db 1100_1111_b
+db 0		;user cs
 
-
-dd 0
-dd 0000_0000_0010_0000_1111_1000_0000_0000_b	;user64 CS
 
 dd 0
 dd 1111_0010_0000_0000_b	;user64 DS
 
+dd 0
+dd 0000_0000_0010_0000_1111_1000_0000_0000_b	;user64 CS
+
 
 dw TSS_LIM
 dw TSS_BASE
-dw 0x8900
-dw 0
-dq 0		;TSS
+db (TSS_BASE>>16)
+db 1000_1001_b
+db 1001_0000_b
+db (TSS_BASE>>24)
+dd (HIGHADDR>>32)
+dd 0		;TSS
 
 
 

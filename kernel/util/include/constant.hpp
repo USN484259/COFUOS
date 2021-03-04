@@ -1,12 +1,15 @@
 #pragma once
 
 #define MSR_APIC_BASE 0x1B
+#define MSR_STAR 0xC0000081
+#define MSR_LSTAR 0xC0000082
+#define MSR_SFMASK 0xC0000084
 #define MSR_GS_BASE 0xC0000101
 
 #define SEG_KRNL_CS 0x08
 #define SEG_KRNL_SS 0x10
-#define SEG_USER_CS 0x28
-#define SEG_USER_SS 0x30
+#define SEG_USER_CS 0x33
+#define SEG_USER_SS 0x2B
 
 #define HIGHADDR(x) ( (qword)0xFFFF800000000000ULL | (qword)(x) )
 #define LOWADDR(x) ( (qword)0x00007FFFFFFFFFFFULL & (qword)(x) )
@@ -20,6 +23,7 @@
 #define IDT_LIM ((qword)0x400)
 #define SYSINFO_BASE HIGHADDR(0x0C00)
 
+#define PL4T_PBASE ((qword)0x3000)
 #define PDPT0_PBASE ((qword)0x4000)
 #define PDPT8_PBASE ((qword)0x5000)
 #define PDT0_PBASE ((qword)0x6000)

@@ -1,7 +1,7 @@
 #include "timer.hpp"
 #include "constant.hpp"
 #include "acpi.hpp"
-#include "cpu/include/apic.hpp"
+#include "dev/include/apic.hpp"
 #include "memory/include/vm.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "intrinsics.hpp"

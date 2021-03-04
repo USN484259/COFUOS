@@ -1,13 +1,46 @@
 #pragma once
 #include "types.hpp"
 #include "thread.hpp"
-#include "image/include/pe.hpp"
+#include "memory/include/vm.hpp"
+#include "pe64.hpp"
+#include "filesystem/include/file.hpp"
+#include "assert.hpp"
+#include "vector.hpp"
+#include "string.hpp"
 #include "hash_set.hpp"
 #include "hash.hpp"
+#include "id_gen.hpp"
+#include "interface/include/loader.hpp"
 
 namespace UOS{
-	constexpr dword initial_pid = 0;
-
+	class handle_table{
+		spin_lock rwlock;
+		dword count = 0;
+		vector<waitable*> table;
+	public:
+		handle_table(void) = default;
+		handle_table(const handle_table&) = delete;
+		~handle_table(void);
+		dword add(waitable*);
+		waitable* erase(dword);
+		waitable* operator[](dword);
+		inline dword size(void) const{
+			return count;
+		}
+		inline bool try_lock(void){
+			return rwlock.try_lock(spin_lock::SHARED);
+		}
+		inline void lock(void){
+			rwlock.lock(spin_lock::SHARED);
+		}
+		inline void unlock(void){
+			assert(!rwlock.is_exclusive());
+			rwlock.unlock();
+		}
+		inline bool is_locked(void) const{
+			return rwlock.is_locked();
+		}
+	};
 	class process : waitable{
 		struct hash{
 			UOS::hash<dword> h;
@@ -23,28 +56,41 @@ namespace UOS{
 				return id == ps.id;
 			}
 		};
+		struct startup_info{
+			basic_file* file;
+			qword image_base;
+			dword image_size;
+			dword header_size;
+			size_t cmd_length;
+		};
 		friend class process_manager;
 		friend struct hash;
 		friend class equal;
-
+		friend void ::UOS::userentry(void*);
+	public:
 		const dword id;
-		qword cr3;
-		PE64* image;
+		virtual_space* const vspace;
+	private:
+		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
+		handle_table handles;
 
 		struct initial_process_tag {};
+		static id_gen<dword> new_id;
 	public:
-		process(initial_process_tag);
-		bool operator==(dword id) const{
+		process(initial_process_tag, kernel_vspace*);
+		process(startup_info* info);
+		~process(void) override;
+		inline bool operator==(dword id) const{
 			return id == this->id;
 		}
-		thread* get_thread(dword tid){
+		inline thread* get_thread(dword tid){
 			auto it = threads.find(tid);
 			return (it == threads.end()) ? nullptr : &(*it);
 		}
-
+		bool relax(void) override;
 		thread* spawn(thread::procedure entry,void* arg,qword stk_size = 0);
-		void kill(thread* th);
+		void erase(thread* th);
 	};
 
 	class process_manager{
@@ -54,7 +100,8 @@ namespace UOS{
 	public:
 		process_manager(void);
 		thread* get_initial_thread(void);
-
+		process* spawn(const string& command);
+		void erase(process* ps);
 	};
 	extern process_manager proc;
 	

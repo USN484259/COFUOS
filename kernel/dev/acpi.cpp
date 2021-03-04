@@ -40,7 +40,7 @@ ACPI::ACPI(void) {
 		dbgprint("Going through ACPI");
 		auto aligned_addr = align_down(rsdp.address,PAGE_SIZE);
 		auto offset = rsdp.address - aligned_addr;
-		VM::map_view rsdt_view(aligned_addr);
+		map_view rsdt_view(aligned_addr);
 		auto view = (dword const*)((byte const*)rsdt_view + offset);
 		if (!validate(view,PAGE_SIZE - offset))
 			break;
@@ -78,7 +78,7 @@ ACPI::ACPI(void) {
 void ACPI::parse_table(qword pbase){
 	auto aligned_pbase = align_down(pbase,PAGE_SIZE);
 	auto offset = pbase - aligned_pbase;
-	VM::map_view table_view(aligned_pbase);
+	map_view table_view(aligned_pbase);
 	auto view = (dword const*)((byte const*)table_view + offset);
 	if (!validate(view,PAGE_SIZE - offset))
 		return;

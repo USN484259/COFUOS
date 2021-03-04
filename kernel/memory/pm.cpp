@@ -1,8 +1,5 @@
 #include "pm.hpp"
 #include "sysinfo.hpp"
-#include "constant.hpp"
-#include "util.hpp"
-#include "assert.hpp"
 #include "vm.hpp"
 #include "lang.hpp"
 #include "sync/include/lock_guard.hpp"
@@ -17,7 +14,7 @@ struct PMMSCAN{
 };
 
 struct BLOCK{
-	byte tag	:	6;
+	byte 		:	6;
 	byte solid	:	1;		//0	-> pierce
 	byte free	:	1;		//0 -> used
 };
@@ -110,18 +107,18 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 	//auto pre_alloc_size = 0x0B + sysinfo->kernel_page;
 	for (i = 0;i < direct_map_count + pdt_count;++i){
 		pmm_bmp[i].free = 0;
-		pmm_bmp[i].tag = 0x3F;
+		//pmm_bmp[i].tag = 0x3F;
 	}
 
 	for (i = 0;i < sysinfo->kernel_page;++i){
 		assert(boot_area_count + i < bmp_size);
 		pmm_bmp[boot_area_count + i].free = 0;
-		pmm_bmp[boot_area_count + i].tag = 0x3F;
+		//pmm_bmp[boot_area_count + i].tag = 0x3F;
 	}
 	for (i = 0;i < page_count;++i){
 		assert((bmp_pbase >> 12) + i < bmp_size);
 		pmm_bmp[(bmp_pbase >> 12) + i].free = 0;
-		pmm_bmp[(bmp_pbase >> 12) + i].tag = 0x3F;
+		//pmm_bmp[(bmp_pbase >> 12) + i].tag = 0x3F;
 	}
 	used = direct_map_count + pdt_count + page_count + sysinfo->kernel_page;
 	assert(used < total);
@@ -136,10 +133,42 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 				break;
 		}
 	}
+
+	soft_critical_limit = min<dword>(max<dword>(total/64,0x10),0x1000);	// [ 64K -- (limit) -- 16M ]
+	hard_critical_limit = 0;
+	reserved = 0;
+	callback = nullptr;
 }
 
-qword PM::allocate(byte tag){
+void PM::set_mp_count(dword count){
 	interrupt_guard<spin_lock> guard(lock);
+	if (hard_critical_limit)
+		bugcheck("invalid PM::set_mp_count call from %p",return_address());
+	hard_critical_limit = 4*count;
+}
+
+void PM::set_critical_callback(critical_callback cb,void* ud){
+	interrupt_guard<spin_lock> guard(lock);
+	if (callback)
+		bugcheck("invalid PM::set_critical_callback call from %p",return_address());
+	callback = cb;
+	userdata = ud;
+}
+
+void PM::critical_check(void){
+	if (used + reserved + soft_critical_limit >= total){
+		if (callback)
+			callback(*this,userdata);
+	}
+}
+
+qword PM::allocate(MODE mode){
+	critical_check();
+	interrupt_guard<spin_lock> guard(lock);
+	if (mode == NONE && used + reserved + hard_critical_limit >= total){
+		return 0;
+	}
+
 	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	auto page_count = align_up(bmp_size,PAGE_SIZE) >> 12;
 	auto page = next;
@@ -155,8 +184,8 @@ qword PM::allocate(byte tag){
 		if (++page == page_count)
 			page = 0;
 		if (page == next){	//no free memory
-			assert(used == total);
-			return 0;
+			bugcheck("physical memory used up (%x,%x,%x)",total,used,reserved);
+			//return 0;
 		}
 	}while (true);
 	next = page;
@@ -188,7 +217,6 @@ qword PM::allocate(byte tag){
 	auto& res_stat = pmm_bmp[res_page];
 	assert(res_stat.solid && res_stat.free);
 	res_stat.free = 0;
-	res_stat.tag = tag;
 
 	while(head){
 		--head;
@@ -198,12 +226,26 @@ qword PM::allocate(byte tag){
 		if (cur.free)
 			break;
 	}
-	assert(used < total);
+	assert(used + reserved < total);
+	if (mode == TAKE){
+		assert(reserved);
+		--reserved;
+	}
 	++used;
 #ifndef NDEBUG
 	check_integrity();
 #endif
 	return res_page << 12;
+}
+
+bool PM::reserve(dword page_count){
+	critical_check();
+	interrupt_guard<spin_lock> guard(lock);
+	if (used + reserved + page_count + hard_critical_limit < total){
+		reserved += page_count;
+		return true;
+	}
+	return false;
 }
 
 void PM::release(qword pa){
@@ -235,23 +277,10 @@ void PM::release(qword pa){
 #endif
 }
 
-qword PM::capacity(void) const{
-	return total;
-}
-
-qword PM::available(void) const{
-	assert(total >= used);
-	return total - used;
-}
-
-qword PM::bmp_page_count(void) const{
-	return align_up(bmp_size,PAGE_SIZE) >> 12;
-}
-
 bool PM::peek(void* dest,qword paddr,size_t count){
 	qword off = paddr & PAGE_MASK;
 	qword page = paddr - off;
-	VM::map_view view;
+	map_view view;
 	while(count){
 		view.map(page);
 		qword len = min(PAGE_SIZE - off, count);

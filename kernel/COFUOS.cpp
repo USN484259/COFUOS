@@ -1,9 +1,9 @@
 #include "types.hpp"
 #include "assert.hpp"
-#include "cpu/include/hal.hpp"
 #include "constant.hpp"
 #include "sysinfo.hpp"
-#include "image/include/pe.hpp"
+#include "hal.hpp"
+#include "pe64.hpp"
 #include "memory/include/vm.hpp"
 #include "memory/include/pm.hpp"
 #include "memory/include/heap.hpp"
@@ -16,10 +16,11 @@
 //#include "cui.hpp"
 #include "lang.hpp"
 #include "sync/include/mutex.hpp"
+#include "sync/include/lock_guard.hpp"
 
 using namespace UOS;
 
-extern "C" const byte scancode_table;
+
 //[[ noreturn ]]
 //void AP_entry(word);
 
@@ -42,11 +43,11 @@ void print_sysinfo(void){
 void pm_test(void){
 	static byte unitest_buffer[PAGE_SIZE];
 	zeromemory(unitest_buffer,PAGE_SIZE);
-	int_trap<3>();
+	int_trap(3);
 	
 	size_t page_count = 0;
 	do{
-		qword addr = pm.allocate(0x0F);
+		qword addr = pm.allocate();
 		dbgprint("allocated %p, %d/%d",addr,pm.available(),pm.capacity());
 		if (0 == addr)
 			break;
@@ -54,7 +55,7 @@ void pm_test(void){
 		unitest_buffer[addr >> 3] |= (1 << (addr & 7));
 		++page_count;
 	}while(true);
-	int_trap<3>();
+	int_trap(3);
 
 	constexpr qword table[] = {0x316,0x315};
 	for (auto index : table){
@@ -62,7 +63,7 @@ void pm_test(void){
 		unitest_buffer[index >> 3] &= ~(1 << (index & 7));
 		pm.release(index << 12);
 	}
-	int_trap<3>();
+	int_trap(3);
 	while(page_count){
 		qword tsc = rdtsc();
 		dbgprint("random from TSC : %x",tsc);
@@ -83,11 +84,11 @@ void pm_test(void){
 
 
 	}
-	int_trap<3>();
+	int_trap(3);
 }
 
 void vm_test(void){
-	int_trap<3>();
+	int_trap(3);
 	constexpr qword fixed_addr = HIGHADDR(0x3FDFE000);
 	size_t fixed_size = 4*pm.capacity();
 	qword fixed_offset = PAGE_SIZE*(fixed_size/0x10);
@@ -138,14 +139,14 @@ void vm_test(void){
 	dbgprint("Committing 0x%x pages @ %p",committed,fixed_addr + fixed_offset);
 	res = vm.commit(fixed_addr + fixed_offset,committed);	//normal commit
 	assert(res);
-	int_trap<3>();
+	int_trap(3);
 	for (qword i = 0;i < committed;++i){
 		//probe every committed page
 		auto ptr = (qword*)(fixed_addr + fixed_offset + PAGE_SIZE*i);
 		dbgprint("Probing %p",ptr);
 		*ptr = i;
 	}
-	int_trap<3>();
+	int_trap(3);
 	res = vm.protect(fixed_addr + fixed_offset,committed/2,PAGE_USER);	//invalid attrib
 	assert(!res);
 
@@ -184,7 +185,7 @@ void vm_test(void){
 	res = vm.release(addr + PAGE_SIZE*0x10,0x1F0);
 	assert(res);
 
-	int_trap<3>();
+	int_trap(3);
 }
 
 void thread_test(void* ptr){
@@ -195,7 +196,7 @@ void thread_test(void* ptr){
 	while(true){
 		{
 			lock_guard<mutex> guard(*m);
-			dbgprint("thread %d",this_thread->get_id());
+			dbgprint("thread %d",this_thread->id);
 			thread::sleep(rand()%(1000*1000));
 		}
 		thread::sleep(rand()%(1000*1000));
@@ -206,11 +207,11 @@ void thread_test(void* ptr){
 void thread_spawner(void* ptr){
 	this_core core;
 	thread* this_thread = core.this_thread();
-	auto& ps = this_thread->get_process();
-	dbgprint("thread_spawner #%d",this_thread->get_id());
+	process* ps = this_thread->get_process();
+	dbgprint("thread_spawner #%d",this_thread->id);
 	for (auto i = 0;i < 0x10;++i){
-		auto th = ps.spawn(thread_test,ptr);
-		dbgprint("spawned thread %d",th->get_id());
+		auto th = ps->spawn(thread_test,ptr);
+		dbgprint("spawned thread %d",th->id);
 	}
 	thread::exit();
 }
@@ -223,14 +224,16 @@ global_constructor __CTOR_LIST__;
 extern "C"
 [[ noreturn ]]
 void krnlentry(void* module_base){
-	buildIDT();
+	build_IDT();
 	debug_stub.emplace(sysinfo->ports[0]);
+	assert(sysinfo->sig == 0x004F464E49535953ULL);	//'SYSINFO\0'
 	print_sysinfo();
 	fpu_init();
 	
-	pe_kernel = PE64::construct(module_base);
-
+	//kernel image properly formed, header should less than 0x400
+	pe_kernel = PE64::construct(module_base,0x400);
 	assert(pe_kernel->imgbase == (qword)module_base);
+	//since image has already loaded, it is safe to access section table
 	for (unsigned i = 0;i < pe_kernel->section_count;++i){
 		const auto section = pe_kernel->get_section(i);
 		assert(section);
@@ -259,69 +262,21 @@ void krnlentry(void* module_base){
 		}
 	}
 
-	int_trap<3>();
+	int_trap(3);
 	sti();
 
+	/*
 	//TODO spawn startup thread
 	this_core core;
-	auto& ps = core.this_thread()->get_process();
+	process* ps = core.this_thread()->get_process();
 	mutex* m = new mutex();
-	ps.spawn(thread_spawner,m);
-
-
+	ps->spawn(thread_spawner,m);
+	*/
+	proc.spawn("/test.exe aaa");
+	proc.spawn("/test.exe bbb");
+	proc.spawn("/test.exe ccc");
 	//as idle thread & core service
 	while(true){
 		halt();
 	}
-
-	/*
-	//pm_test();
-	//vm_test();
-
-	pair<qword,qword> timestamp(0,0);
-	rtc.set_handler([](qword tm,word ms,void* data){
-		if (tm){
-			auto& timestamp = *(pair<qword,qword>*)data;
-			timestamp = {tm,ms};
-
-		}
-	},&timestamp);
-
-	CUI console(Rect{0,0,display.get_width(),display.get_height()});
-	int_trap<3>();
-	console.print("COFUOS v0.0.1\tby USN484259\n");
-	console.print("https://github.com/USN484259/COFUOS");
-	console.put('\n');
-
-	ps2_device.set([](byte charcode,dword param,void* ptr){
-		if (param && charcode < 0x80){
-			charcode = *(&scancode_table + charcode);
-			if (charcode == 0)
-				return;
-			auto& console = *(CUI*)ptr;
-			if (charcode == 8)	//backspace
-				console.back();
-			else
-				console.put((char)charcode);
-		}
-	},&console);
-	int_trap<3>();
-	while(true){
-		halt();
-		
-		if (timestamp.first){
-			auto ms = timestamp.second;
-			timestamp.first = 0;
-			if (ms == 500){
-				//console.print("Hello World !\t");
-				console.set_color(rand());
-			}
-		}
-		
-		ps2_device.step(rtc.get_time());
-	}
-
-	int_trap<3>();
-	bugcheck(not_implemented,0);
-	*/
 }

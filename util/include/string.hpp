@@ -3,6 +3,7 @@
 #include "container.hpp"
 #include "util.hpp"
 #include "vector.hpp"
+#include "hash.hpp"
 #include "assert.hpp"
 
 
@@ -17,16 +18,44 @@ namespace UOS{
 			buffer.push_back((C)0);
 		}
 		basic_string(const char* str){
-			do{
-				buffer.push_back(*str);
-			}while(*str++);
+			if (str == nullptr){
+				buffer.push_back((C)0);
+			}
+			else{
+				do{
+					buffer.push_back(*str);
+				}while(*str++);
+			}
+			assert(buffer.back() == 0);
+		}
+		template<typename It>
+		basic_string(It head,It tail){
+			while(head != tail){
+				buffer.push_back(*head);
+				++head;
+			}
+			buffer.push_back((C)0);
 		}
 		basic_string(const basic_string& other) : buffer(other.buffer){}
 		basic_string(basic_string&& other) : buffer(move(other.buffer)){
-			assert(buffer.empty());
+			assert(other.buffer.empty());
 			other.buffer.push_back((C)0);
 		}
-
+		basic_string& operator=(const basic_string& other){
+			clear();
+			for (C ch : other){
+				buffer.push_back(ch);
+			}
+			buffer.push_back((C)0);
+			assert(size() == other.size());
+			return *this;
+		}
+		basic_string& operator=(basic_string&& other){
+			clear();
+			buffer.swap(other.buffer);
+			assert(other.size() == 0);
+			return *this;
+		}
 		size_t size(void) const{
 			assert(buffer.size());
 			return buffer.size() - 1;
@@ -118,6 +147,60 @@ namespace UOS{
 			}
 			THROW(this);
 		}
+		bool operator==(const char* str) const{
+			if (str == nullptr)
+				return false;
+			for (auto it = begin();it != end();++it,++str){
+				if (*str == 0)
+					return false;
+				if (*it != *str)
+					return false;
+			}
+			return (*str == 0);
+		}
+		bool operator==(const basic_string& str) const{
+			auto length = size();
+			if (length != str.size())
+				return false;
+			auto i = match(begin(),str.begin(),length);
+			return i == length;
+		}
+		template<typename T>
+		bool operator!=(const T& val) const{
+			return ! operator==(val);
+		}
+		const_iterator find_first_of(C ch) const{
+			for (auto it = begin();it != end();++it){
+				if (*it == ch)
+					return it;
+			}
+			return end();
+		}
+		const_iterator find_last_of(C ch) const{
+			auto it = end();
+			if (it != begin()){
+				assert(!empty());
+				do{
+					--it;
+					if (*it == ch)
+						return it;
+				}while(it != begin());
+			}
+			else{
+				assert(empty());
+			}
+			return end();
+		}
+		basic_string substr(const_iterator head,const_iterator tail) const{
+			return basic_string(head,tail);
+		}
 	};
 	typedef basic_string<char> string;
+	template<>
+	struct hash<string>
+	{
+		qword operator()(const string& str){
+			return fasthash64(str.c_str(),str.size(),0);
+		}
+	};
 }

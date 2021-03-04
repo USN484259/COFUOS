@@ -3,32 +3,24 @@
 #include "constant.hpp"
 #include "memory/include/vm.hpp"
 #include "process.hpp"
-#include "image/include/pe.hpp"
+#include "pe64.hpp"
 #include "dev/include/timer.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "assert.hpp"
 using namespace UOS;
 
-qword atomic_id::operator()(void){
-	do{
-		auto cur = count;
-		if (cur == cmpxchg(&count,cur + 1,cur)){
-			return cur;
-		}
-	}while(true);
-}
 
-atomic_id thread::new_id;
+id_gen<dword> thread::new_id;
 
 //initial thread
-thread::thread(initial_thread_tag, process& p) : id(new_id()), state(RUNNING), priority(scheduler::max_priority - 1), ps(p) {
-	assert(id == 0);
+thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), priority(scheduler::idle_priority), ps(p) {
+	assert(ps && id == 0);
 	krnl_stk_top = 0;	//???
 	krnl_stk_reserved = pe_kernel->stk_reserve;
 }
 
-thread::thread(process& p, procedure entry, void* arg, qword stk_size) : id(new_id()), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
-	assert(krnl_stk_reserved >= PAGE_SIZE);
+thread::thread(process* p, procedure entry, void* arg, qword stk_size) : id(new_id()), priority(scheduler::kernel_priority), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+	assert(ps && krnl_stk_reserved >= PAGE_SIZE);
 	auto va = vm.reserve(0,krnl_stk_reserved/PAGE_SIZE);
 	if (!va)
 		bugcheck("vm.reserve failed with 0x%x pages",krnl_stk_reserved);
@@ -36,7 +28,6 @@ thread::thread(process& p, procedure entry, void* arg, qword stk_size) : id(new_
 	auto res = vm.commit(krnl_stk_top - PAGE_SIZE,1);
 	if (!res)
 		bugcheck("vm.commit failed @ %p",krnl_stk_top - PAGE_SIZE);
-	dbgprint("krnl stack allocated @ %p, %d pages",va,krnl_stk_reserved/PAGE_SIZE);
 	gpr.rbp = krnl_stk_top;
 	gpr.rsp = krnl_stk_top - 0x20;
 	gpr.ss = SEG_KRNL_SS;
@@ -44,20 +35,24 @@ thread::thread(process& p, procedure entry, void* arg, qword stk_size) : id(new_
 	gpr.rip = reinterpret_cast<qword>(entry);
 	gpr.rflags = 0x202;		//IF
 	gpr.rcx = reinterpret_cast<qword>(arg);
-	dbgprint("new thread @ %p",this);
+	dbgprint("new thread $%d @ %p",id,this);
 	ready_queue.put(this);
 }
 
 thread::~thread(void){
 	if (state != STOPPED)
-		bugcheck("deleting non-stop thread %p",this);
-	dbgprint("delete thread %p",this);
+		bugcheck("deleting non-stop thread #%d @ %p",id,this);
+	dbgprint("delete thread #%d @ %p",id,this);
 	if (sse){
 		//TODO remove FPU context from all processor core
 		delete sse;
 	}
-	//kernel stack released in gc (see thread::exit)
-	//TODO release user stack
+	if (user_stk_top){
+		if (!get_process()->vspace->release(user_stk_top - user_stk_reserved,user_stk_reserved/PAGE_SIZE))
+			bugcheck("vspace->release failed @ %p",user_stk_top - user_stk_reserved);
+	}
+	if (!vm.release(krnl_stk_top - krnl_stk_reserved,krnl_stk_reserved/PAGE_SIZE))
+		bugcheck("vm.release failed @ %p",krnl_stk_top - krnl_stk_reserved);
 }
 
 void thread::set_priority(word val){
@@ -110,6 +105,14 @@ void thread::set_state(thread::STATE st, qword arg, waitable* obj){
 	state = st;
 }
 
+bool thread::relax(void){
+	auto res = waitable::relax();
+	if (!res){
+		ps->erase(this);
+	}
+	return res;
+}
+
 void thread::sleep(qword us){
 	this_core core;
 	thread* this_thread = core.this_thread();
@@ -130,12 +133,6 @@ void thread::exit(void){
 	thread* this_thread = core.this_thread();
 	cli();
 	this_thread->set_state(STOPPED);
-
 	assert(this_thread->krnl_stk_top && this_thread->krnl_stk_reserved);
-	bool has_context = this_thread->has_context();
-	qword stk_base = this_thread->krnl_stk_top - this_thread->krnl_stk_reserved;
-	dword stk_cnt = this_thread->krnl_stk_reserved/PAGE_SIZE;
-
-	this_thread->get_process().kill(this_thread);
-	core.escape(has_context,stk_base,stk_cnt);
+	core.escape();
 }

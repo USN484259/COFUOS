@@ -75,7 +75,13 @@ extern "C" {
         return 0;
     }
 
-    int _purecall(void){
+    int 
+#ifdef __GNUC__
+	__cxa_pure_virtual
+#else
+	_purecall
+#endif
+	(void){
         bugcheck("pure virtual call");
     }
 

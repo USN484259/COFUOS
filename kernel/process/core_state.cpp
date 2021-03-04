@@ -1,8 +1,8 @@
 #include "core_state.hpp"
 #include "util.hpp"
-//#include "hal.hpp"
+#include "hal.hpp"
 #include "dev/include/acpi.hpp"
-#include "cpu/include/apic.hpp"
+#include "dev/include/apic.hpp"
 #include "memory/include/vm.hpp"
 #include "process.hpp"
 #include "dev/include/timer.hpp"
@@ -41,16 +41,23 @@ core_manager::core_manager(void){
 	auto& madt = acpi.get_madt();
 	count = madt.processors.size();
 	assert(count);
+	pm.set_mp_count(count);
 	core_list = new core_state[count];
+	//set up core_state for BSP
 	auto& self = core_list[0];
 	self.uid = apic.id();
 	self.slice = 0;
-	self.gc_count = 0;
 	auto th = proc.get_initial_thread();
 	self.this_thread = th;
 	self.fpu_owner = th;
-	self.gc_base = 0;
+	self.gc_ptr = nullptr;
 	wrmsr(MSR_GS_BASE,(qword)(core_list + 0));
+	//set up SYSCALL for BSP
+	qword STAR_value = (qword)(((SEG_USER_CS - 16) << 16) | (SEG_KRNL_CS)) << 32;
+	qword SFMASK_value = 0x700;	//masks IF & DF & TF (to protect GSBASE)
+	wrmsr(MSR_STAR,STAR_value);
+	wrmsr(MSR_LSTAR,(qword)service_entry);
+	wrmsr(MSR_SFMASK,SFMASK_value);
 
 	apic.set(APIC::IRQ_CONTEXT_TRAP,this_core::irq_switch_to,nullptr);
 
@@ -100,18 +107,24 @@ this_core::this_core(void){
 #endif
 
 void this_core::irq_switch_to(byte,void* data){
-	qword target;
+	thread* cur_thread = reinterpret_cast<thread*>(
+			read_gs<qword>(offsetof(core_state,this_thread))
+	);
+	assert(cur_thread->has_context());
+
+	thread* target;
 	if (data){
-		target = reinterpret_cast<qword>(data);
+		target = reinterpret_cast<thread*>(data);
 	}
 	else{
-		thread* th = reinterpret_cast<thread*>(
-			read_gs<qword>(offsetof(core_state,this_thread))
-		);
-		assert(th->has_context());
-		target = th->get_context()->rcx;
+		target = reinterpret_cast<thread*>(cur_thread->get_context()->rcx);
 	}
-	write_gs(offsetof(core_state,this_thread),target);
+	process* ps = target->get_process();
+	if (cur_thread->get_process() != ps){
+		//change CR3
+		write_cr3(ps->vspace->get_cr3());
+	}
+	write_gs(offsetof(core_state,this_thread),reinterpret_cast<qword>(target));
 }
 
 inline void context_trap(qword data){
@@ -123,14 +136,13 @@ inline void context_trap(qword data){
 }
 
 void this_core::gc_service(void){
-	qword vbase = read_gs<qword>(offsetof(core_state,gc_base));
-	if (vbase){
-		dword pagecount = read_gs<dword>(offsetof(core_state,gc_count));
-		auto res = vm.release(vbase,pagecount);
-		if (!res)
-			bugcheck("gc failed @ %p with %d pages",vbase,pagecount);
-		dbgprint("gc released %p",vbase);
-		write_gs<qword>(offsetof(core_state,gc_base),0);
+	auto gc_thread = reinterpret_cast<thread*>(
+			read_gs<qword>(offsetof(core_state,gc_ptr))
+		);
+	if (gc_thread){
+		gc_thread->relax();
+		dbgprint("gc relaxed %p",gc_thread);
+		write_gs<qword>(offsetof(core_state,gc_ptr),0);
 	}
 }
 
@@ -150,16 +162,15 @@ void this_core::switch_to(thread* th){
 	}
 }
 
-void this_core::escape(bool has_context,qword vbase,dword pagecount){
+void this_core::escape(void){
 	IF_assert;
 	gc_service();
 	thread* th = ready_queue.get();
 	assert(th && th->has_context());
 	th->set_state(thread::RUNNING);
 	slice(scheduler::max_slice);
-	write_gs(offsetof(core_state,gc_base),vbase);
-	write_gs(offsetof(core_state,gc_count),pagecount);
-	if (has_context){
+	write_gs(offsetof(core_state,gc_ptr),this_thread());
+	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}
 	else{

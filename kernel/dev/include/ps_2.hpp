@@ -1,37 +1,40 @@
 #pragma once
 #include "types.hpp"
+#include "process/include/waitable.hpp"
 #include "sync/include/spin_lock.hpp"
-#include "safe_queue.hpp"
 
 namespace UOS{
 	class PS_2{
-	public:
-		typedef void (*CALLBACK)(byte keycode,dword param,void* ud);
-	private:
-		//spin_lock lock;
-		enum STATE : byte {BAD = 0, NONE, INIT, ID_ACK, ID, ID_K, MODE_M, ID_M, KEYBD_I, MOUSE_I, KEYBD, MOUSE};
-		struct CHANNEL{
-			STATE state = BAD;
-			byte data[7];
-			safe_queue<byte,0x40> queue;
+		class safe_queue : public waitable{
+			static constexpr dword QUEUE_SIZE = 0x100;
+			byte* const buffer;
+			dword head;
+			dword tail;
+		public:
+			safe_queue(void);
+			safe_queue(const safe_queue&) = delete;
+			~safe_queue(void);
+			byte get(void);
+			void put(byte);
+			void clear(void);
+			REASON wait(qword = 0) override;
 		};
-		static_assert(sizeof(CHANNEL) == 8 + sizeof(safe_queue<byte,0x40>),"CHANNEL size mismatch");
-		CHANNEL channels[2];
-		size_t timestamp = 0;
-		CALLBACK callback = nullptr;
-		void* userdata = nullptr;
+
+		spin_lock lock;
+		struct CHANNEL{
+			thread* th = nullptr;
+			safe_queue queue;
+		}channel[2];
 
 		static void on_irq(byte,void*);
-		void command(byte);
-		byte read(void);
-		void write(byte);
-		void step_keybd(CHANNEL&);
-		void step_mouse(CHANNEL&);
-		byte translate(byte code,byte stat);
+		static void thread_ps2(void*);
+		static bool device_keybd(PS_2&,byte);
+		static bool device_mouse(PS_2&,byte,byte);
 	public:
 		PS_2(void);
-		void step(size_t);
-		void set(CALLBACK callback,void* data = nullptr);
+		PS_2(const PS_2&) = delete;
 	};
-	//extern PS_2 ps2_device;
+	extern PS_2 ps2_device;
 }
+
+extern "C" const byte scancode_table;

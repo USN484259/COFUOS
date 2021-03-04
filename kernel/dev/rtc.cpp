@@ -2,7 +2,7 @@
 #include "intrinsics.hpp"
 #include "assert.hpp"
 #include "exception/include/kdb.hpp"
-#include "cpu/include/apic.hpp"
+#include "dev/include/apic.hpp"
 #include "acpi.hpp"
 #include "sync/include/lock_guard.hpp"
 

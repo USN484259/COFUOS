@@ -1,16 +1,124 @@
 #include "ps_2.hpp"
-#include "cpu/include/apic.hpp"
-#include "intrinsics.hpp"
+#include "dev/include/apic.hpp"
 #include "acpi.hpp"
+#include "sync/include/lock_guard.hpp"
+#include "intrinsics.hpp"
+#include "process/include/core_state.hpp"
+#include "process/include/process.hpp"
 
 using namespace UOS;
 
-PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
+/* references :
+https://wiki.osdev.org/%228042%22_PS/2_Controller
+https://wiki.osdev.org/Keyboard
+https://wiki.osdev.org/Mouse_Input
+*/
+
+inline void command(byte cmd){
+	dword cnt = 0;
+	while(true){
+		byte stat = in_byte(0x64);
+		if (0 == (stat & 2))
+			break;
+		if (++cnt > spin_timeout)
+			bugcheck("spin timeout %x",cnt);
+		mm_pause();
+	}
+	out_byte(0x64,cmd);
+}
+
+inline byte read(void){
+	dword cnt = 0;
+	while(true){
+		byte stat = in_byte(0x64);
+		if (stat & 1)
+			break;
+		if (++cnt > spin_timeout)
+			bugcheck("spin timeout %x",cnt);
+		mm_pause();
+	}
+	byte data = in_byte(0x60);
+	return data;
+}
+
+inline void write(byte data){
+	dword cnt = 0;
+	while (true){
+		byte stat = in_byte(0x64);
+		if (0 == (stat & 2))
+			break;
+		if (++cnt > spin_timeout)
+			bugcheck("spin timeout %x",cnt);
+		mm_pause();
+	}
+	out_byte(0x60,data);
+}
+
+inline byte translate(byte code,byte stat){
+	auto ext = (stat == 0xC0 || stat == 0xE0);
+	if (code == 0x83 && !ext)
+		return code;	//treat F7 as 'ext'
+	if (code == 0x12 && ext)
+		return 0;	//simplify PrtScr, so PrtScr -> (0x7C | 0x80)
+	if (code < 0x80)	//ext -> bit7 set
+		return code | (ext ? 0x80 : 0);
+	return 0;
+}
+
+PS_2::safe_queue::safe_queue(void) : buffer(new byte[QUEUE_SIZE]), head(0),tail(0) {}
+PS_2::safe_queue::~safe_queue(void){
+	delete[] buffer;
+}
+
+byte PS_2::safe_queue::get(void){
+	interrupt_guard<void> ig;
+	if (head == tail)
+		bugcheck("PS_2::safe_queue get empty queue @ %p",this);
+	byte val = buffer[head];
+	head = (head + 1) % QUEUE_SIZE;
+	return val;
+}
+
+void PS_2::safe_queue::put(byte val){
+	interrupt_guard<void> ig;
+
+	{
+		lock_guard<spin_lock> guard(lock);
+		auto new_tail = (tail + 1) % QUEUE_SIZE;
+		if (new_tail != head){
+			buffer[tail] = val;
+			tail = new_tail;
+		}
+		else
+			dbgprint("WARNING PS_2::safe_queue overflow");
+	}
+	notify();
+}
+
+void PS_2::safe_queue::clear(void){
+	interrupt_guard<spin_lock> guard(lock);
+	head = tail;
+}
+
+waitable::REASON PS_2::safe_queue::wait(qword us){
+	interrupt_guard<void> ig;
+	lock.lock();
+	if (head != tail){
+		lock.unlock();
+		return PASSED;
+	}
+	return imp_wait(us);
+}
+
+PS_2::PS_2(void){
 	if (acpi.get_version() && 0 == (acpi.get_fadt().BootArchitectureFlags & 2)){
 		// 8042 not present
 		bugcheck("8042 not present");
 	}
 	bool dual_channel = false;
+	bool channel_ok[2] = {0};
+
+	interrupt_guard<void> ig;
 
 	command(0xAD);
 	command(0xA7);
@@ -37,13 +145,13 @@ PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
 	command(0xAB);
 	data = read();
 	if (0 == data){
-		channels[0].state = NONE;
+		channel_ok[0] = true;
 	}
 	if (dual_channel){
 		command(0xA9);
 		data = read();
 		if (0 == data){
-			channels[1].state = NONE;
+			channel_ok[1] = true;
 		}
 		else{
 			dual_channel = false;
@@ -62,283 +170,257 @@ PS_2::PS_2(void){	//see https://wiki.osdev.org/%228042%22_PS/2_Controller
 
 	dbgprint("PS_2 %s channel : {%s,%s}",\
 		dual_channel ? "dual" : "uni",\
-		channels[0].state == NONE ? "OK" : "BAD",\
-		channels[1].state == NONE ? "OK" : "BAD");
+		channel_ok[0] ? "OK" : "BAD",\
+		channel_ok[1] ? "OK" : "BAD");
 	
-	interrupt_guard<void> guard;
 	apic.set(APIC::IRQ_KEYBOARD,on_irq,this);
 	apic.set(APIC::IRQ_MOUSE,on_irq,this);
 
-	command(0xAE);
-	write(0xFF);
-	if (dual_channel){
-		command(0xA8);
-		command(0xD4);
-		write(0xFF);
+	process* ps = this_core().this_thread()->get_process();
+	for (unsigned i = 0;i < 2;++i){
+		if (channel_ok[i]){
+			switch(i){
+				case 0:
+					command(0xAE);
+					break;
+				case 1:
+					command(0xA8);
+					command(0xD4);
+					break;
+			}
+			write(0xFF);
+			auto th = ps->spawn(thread_ps2,this);
+			th->set_priority(scheduler::realtime_priority);
+			channel[i].th = th;
+		}
 	}
 }
 
-void PS_2::command(byte cmd){
-	dword cnt = 0;
-	while(true){
-		byte stat = in_byte(0x64);
-		if (0 == (stat & 2))
-			break;
-		if (++cnt > spin_timeout)
-			bugcheck("spin timeout %x",cnt);
-		mm_pause();
-	}
-	out_byte(0x64,cmd);
-}
-
-byte PS_2::read(void){
-	dword cnt = 0;
-	while(true){
-		byte stat = in_byte(0x64);
-		if (stat & 1)
-			break;
-		if (++cnt > spin_timeout)
-			bugcheck("spin timeout %x",cnt);
-		mm_pause();
-	}
-	byte data = in_byte(0x60);
-	return data;
-}
-
-void PS_2::write(byte data){
-	dword cnt = 0;
-	while (true){
-		byte stat = in_byte(0x64);
-		if (0 == (stat & 2))
-			break;
-		if (++cnt > spin_timeout)
-			bugcheck("spin timeout %x",cnt);
-		mm_pause();
-	}
-	out_byte(0x60,data);
-}
 
 void PS_2::on_irq(byte irq,void* ptr){
 	IF_assert;
-	auto& self = *(PS_2*)ptr;
-	byte data = self.read();
-	if (irq == APIC::IRQ_KEYBOARD || irq == APIC::IRQ_MOUSE)
-		;
-	else{
-		bugcheck("invalid IRQ#%d",irq);
-	}
-	auto& channel = self.channels[irq == APIC::IRQ_MOUSE ? 1 : 0];
-	//TODO more robust state machine
-	switch (channel.state){
-	case NONE:
-		if (data == 0xAA){
-			channel.state = INIT;
-		}
-		break;
-	case ID_ACK:
-		if (data == 0xFA){
-			channel.state = ID;
-			break;
-		}
-		if (--channel.data[0] == 0)
-			channel.state = NONE;
-		break;
-	case ID:
-		switch (data){
-		case 0:
-			if (channel.data[0]){
-				channel.state = MODE_M;
-				channel.data[0] = 200;
-				break;
-			}
-		case 3:
-		case 4:
-			channel.state = MOUSE_I;
-			channel.queue.clear();
-			channel.data[0] = data;
-			break;
-		case 0xAB:
-			channel.state = ID_K;
-			break;
-		case 0xFA:
+	//assume all IRQs handled on the same core, not locked
+	switch(irq){
+		case APIC::IRQ_KEYBOARD:
+		case APIC::IRQ_MOUSE:
 			break;
 		default:
-			channel.state = NONE;
+			bugcheck("invalid IRQ#%d",irq);
+	}
+	byte data = read();
+	//dbgprint("data %x from IRQ%d",data,irq);
+	auto& channel = ((PS_2*)ptr)->channel[irq == APIC::IRQ_MOUSE ? 1 : 0];
+	if (channel.th)
+		channel.queue.put(data);
+}
+
+static constexpr qword ps2_wait_timeout = 1000*40;	//40ms
+static constexpr qword ps2_idle_timeout = 1000*1000;	//1s
+
+#define DEV_CMD(cmd) \
+	do{ \
+		{ \
+			interrupt_guard<spin_lock> guard(self.lock); \
+			if (index) command(0xD4); \
+			write(cmd); \
+		} \
+		if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout)) \
+			goto restart; \
+		data = queue.get(); \
+		if (data == 0xFA) \
+			break; \
+		if (data == 0xFE) \
+			continue; \
+		goto restart; \
+	}while(true)
+
+void PS_2::thread_ps2(void* ptr){
+	auto& self = *(PS_2*)ptr;
+	byte index;
+	{
+		this_core core;
+		for (index = 0;index < 2;++index){
+			if (self.channel[index].th == core.this_thread())
+				break;
 		}
-		break;
-	case ID_K:
-		if (data == 0x83){
-			channel.state = KEYBD_I;
-			channel.queue.clear();
-			channel.data[0] = 0;
-		}
-		else
-			channel.state = NONE;
-		break;
-	case ID_M:
-		if (data == 0xFA){
-			switch (channel.data[0]){
-			case 200:
-				channel.state = MODE_M;
-				channel.data[0] = 100;
+		if (index >= 2)
+			bugcheck("PS_2 invalid channel index %d",index);
+	}
+	safe_queue& queue = self.channel[index].queue;
+	unsigned fail_count = 0;
+	while(true){
+		byte data;
+		//wait forever for device hot-plug
+		do{
+			queue.wait();
+			data = queue.get();
+			if (data == 0xAA)
 				break;
-			case 100:
-				channel.state = MODE_M;
-				channel.data[0] = 80;
-				break;
-			case 80:
-				channel.state = MODE_M;
-				channel.data[0] = 0;
-				break;
+		}while(true);
+		//device detected
+		//mouse may send 00 after AA, discard that
+		if (waitable::TIMEOUT != queue.wait(ps2_wait_timeout))
+			queue.get();
+		//disable scanning first
+		DEV_CMD(0xF5);
+		//then query identity
+		DEV_CMD(0xF2);
+		if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout))
+			goto restart;
+		switch(queue.get()){
 			case 0:
-				channel.state = ID;
-				break;
-			default:
-				channel.state = NONE;
+			{
+				//magic sequence to enable scroll wheel
+				DEV_CMD(0xF3);
+				DEV_CMD(200);
+				DEV_CMD(0xF3);
+				DEV_CMD(100);
+				DEV_CMD(0xF3);
+				DEV_CMD(80);
+				//query identity again
+				DEV_CMD(0xF2);
+				if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout))
+					goto restart;
+				byte mode = queue.get();
+				if (mode == 0 || mode == 3)
+					;
+				else
+					goto restart;
+				//mouse
+				//set sample rate to 40
+				DEV_CMD(0xF3);
+				DEV_CMD(40);
+				//enable scanning
+				DEV_CMD(0xF4);
+				dbgprint("mouse ready %d",mode);
+				if (device_mouse(self,index,mode))
+					fail_count = 0;
+				continue;
 			}
+			case 0xAB:
+				if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout))
+					goto restart;
+				if (queue.get() != 0x83)
+					goto restart;
+				//keyboard
+				//scancode set 2
+				DEV_CMD(0xF0);
+				DEV_CMD(2);
+				//repeat 2Hz, delay 1000ms
+				DEV_CMD(0xF3);
+				DEV_CMD(0x7F);
+				//enable scanning
+				DEV_CMD(0xF4);
+				dbgprint("keyboard ready");
+				if (device_keybd(self,index))
+					fail_count = 0;
+				continue;
+			//default:
+			//	goto restart;
+		}
+	restart:
+		queue.clear();
+		if (++fail_count < 5){
+			//reset device and start over
+			if (index)
+				command(0xD4);
+			write(0xFF);
 		}
 		else{
-			channel.state = NONE;
+			dbgprint("faulty PS2 device %d",index);
 		}
-		break;
-	case MOUSE:
-	case KEYBD:
-		channel.queue.put(data);
-		break;
 	}
 }
 
-void PS_2::set(PS_2::CALLBACK cb,void* data){
-	callback = cb;
-	userdata = data;
-}
-
-void PS_2::step(size_t cur_time){
-	for (auto i = 0;i < 2;++i){
-		auto& channel = channels[i];
-		switch (channel.state){
-		case INIT:
-			channel.state = ID_ACK;
-			channel.data[0] = 4;
-			if (i)
+bool PS_2::device_keybd(PS_2& self,byte index){
+	assert(index < 2);
+	auto& queue = self.channel[index].queue;
+	byte state = 0;
+	bool probe = false;
+	while(true){
+		if (waitable::TIMEOUT == queue.wait(ps2_idle_timeout)){
+			if (probe)	//device disconnected
+				return true;
+			probe = true;
+			//send echo
+			interrupt_guard<spin_lock> guard(self.lock);
+			if (index)
 				command(0xD4);
-			write(0xF5);
-			if (i)
-				command(0xD4);
-			write(0xF2);
-			break;
-		case MODE_M:
-			switch (channel.data[0])
-			{
-			case 200:
-			case 100:
-			case 80:
-				if (i)
-					command(0xD4);
-				write(0xF3);
-				if (i)
-					command(0xD4);
-				write(channel.data[0]);
-				channel.state = ID_M;
-				break;
+			write(0xEE);
+			continue;
+		}
+		probe = false;
+		byte data = queue.get();
+		switch(data){
 			case 0:
-				if (i)
-					command(0xD4);
-				write(0xF2);
-				channel.state = ID_M;
+			case 0xAA:
+			case 0xFC:
+			case 0xFD:
+			case 0xFE:
+			case 0xFF:
+				return false;
+			case 0xEE:
+			case 0xFA:
+				continue;
+		}
+		switch(state){
+			case 0:
+				if (data == 0xE0 || data == 0xF0){
+					state = data;
+					continue;
+				}
+				break;
+			case 0xE0:
+				if (data == 0xF0){
+					state = 0xC0;
+					continue;
+				}
+				break;
+			case 0xC0:
+			case 0xF0:
 				break;
 			default:
-				channel.state = NONE;
-			}
-			break;
-		case KEYBD_I:
-			if (i)
-				command(0xD4);
-			write(0xF4);
-			dbgprint("PS_2 Keyboard ready");
-			channel.state = KEYBD;
-			break;
-		case MOUSE_I:
-			if (i)
-				command(0xD4);
-			write(0xF3);
-			if (i)
-				command(0xD4);
-			write(40);
-			if (i)
-				command(0xD4);
-			write(0xF4);
-			dbgprint("PS_2 Mouse %d ready",channel.data[0]);
-			channel.state = MOUSE;
-			break;
-		case KEYBD:
-			step_keybd(channel);
-			break;
-		case MOUSE:
-			step_mouse(channel);
-			break;
+				state = 0;
+				continue;
 		}
-		if (channel.state == KEYBD || channel.state == MOUSE){
-			if (timestamp != cur_time){
-				if (i)
-					command(0xD4);
-				write(0xEE);
-			}
-		}
+		auto keycode = translate(data,state);
+		auto keychar = (keycode < 0x80) ? (&scancode_table)[keycode] : ' ';
+		dbgprint("key %c (%x) %s",keychar ? keychar : ' ',keycode,\
+			(state == 0xC0 || state == 0xF0) ? "released" : "pressed");
+		//TODO dispatch keyboard event
+		state = 0;
 	}
-	timestamp = cur_time;
 }
 
-void PS_2::step_keybd(PS_2::CHANNEL& channel){
-	if (channel.queue.empty())
-		return;
-	byte& stat = channel.data[0];
-	do{
-		byte data;
-		if (!channel.queue.get(data))
-			return;
-		if (data == 0xEE)
-			continue;
-		switch(stat){
-		case 0:
-			if (data == 0xE0 || data == 0xF0){
-				stat = data;
+bool PS_2::device_mouse(PS_2& self,byte index,byte mode){
+	assert(index < 2);
+	byte length = mode ? 4 : 3;
+	bool probe = false;
+	auto& queue = self.channel[index].queue;
+	byte packet[4];
+	while(true){
+		byte it = 0;
+		while(it < length){
+			if (waitable::TIMEOUT == queue.wait(ps2_idle_timeout)){
+				if (probe)	//device disconnected
+					return true;
+				probe = true;
+				//request a packet
+				interrupt_guard<spin_lock> guard(self.lock);
+				if (index)
+					command(0xD4);
+				write(0xEB);
+			}
+			byte data = queue.get();
+			if (probe && data == 0xFA){
+				probe = false;
 				continue;
 			}
-			break;
-		case 0xE0:
-			if (data == 0xF0){
-				stat = 0xC0;
-				continue;
+			if (it || (data & 0x08)){
+				packet[it++] = data;
 			}
-			break;
-		case 0xC0:
-		case 0xF0:
-			break;
-		default:
-			stat = 0;
-			continue;
 		}
-		auto keycode = translate(data,stat);
-		if (keycode && callback)
-			callback(keycode,(stat == 0xC0 || stat == 0xF0),userdata);
-		stat = 0;
-	}while(true);
-}
-
-void PS_2::step_mouse(PS_2::CHANNEL& channel){
-	//TODO
-}
-
-
-
-byte PS_2::translate(byte code,byte stat){
-	auto ext = (stat == 0xC0 || stat == 0xE0);
-	if (code == 0x83 && !ext)
-		return code;	//treat F7 as 'ext'
-	if (code == 0x12 && ext)
-		return 0;	//simplify PrtScr, so PrtScr -> (0x7C | 0x80)
-	if (code < 0x80)	//ext -> bit7 set
-		return code | (ext ? 0x80 : 0);
-	return 0;
+		dbgprint("mouse %x,%x,%x,%x",packet[0],packet[1],packet[2],mode ? packet[3] : 0);
+		//TODO translate & dispatch mouse event
+	}
 }

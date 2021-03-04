@@ -49,6 +49,9 @@ void thread_queue::clear(void){
 }
 
 waitable::~waitable(void){
+	if(ref_count){
+		bugcheck("deleting object %p with ref_count %d",this,ref_count);
+	}
 	notify(ABANDONED);
 }
 
@@ -180,4 +183,16 @@ size_t waitable::imp_notify(thread* th,REASON reason){
 		}
 	}
 	return count;
+}
+
+void waitable::acquire(void){
+	interrupt_guard<spin_lock> guard(lock);
+	assert(ref_count);
+	++ref_count;
+}
+
+bool waitable::relax(void){
+	interrupt_guard<spin_lock> guard(lock);
+	assert(ref_count);
+	return (--ref_count);
 }

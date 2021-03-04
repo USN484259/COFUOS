@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include "util.hpp"
 #include "intrinsics.hpp"
 
 namespace UOS{
@@ -8,8 +9,9 @@ namespace UOS{
 	class lock_guard{
 		M& mutex;
 	public:
-		lock_guard(M& m) : mutex(m){
-			m.lock();
+		template<typename ... Arg>
+		lock_guard(M& m,Arg&& ... args) : mutex(m){
+			m.lock(forward<Arg>(args)...);
 		}
 				
 		~lock_guard(void){
@@ -23,10 +25,11 @@ namespace UOS{
 		const qword state;
 		M& mutex;
 	public:
-		interrupt_guard(M& m) : state(read_eflags() & 0x0200), mutex(m){
+		template<typename ... Arg>
+		interrupt_guard(M& m,Arg&& ... args) : state(read_eflags() & 0x0200), mutex(m){
 			do{
 				cli();
-				if (m.try_lock())
+				if (m.try_lock(forward<Arg>(args)...))
 					break;
 				if (state){
 					sti();
