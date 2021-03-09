@@ -8,6 +8,9 @@ namespace UOS{
 	
 	public:
 		event(bool initial_state = false);
+		TYPE type(void) const override{
+			return EVENT;
+		}
 		REASON wait(qword us = 0) override;
 		bool signal_one(void);
 		size_t signal_all(void);

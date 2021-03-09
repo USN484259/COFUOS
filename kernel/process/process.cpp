@@ -3,6 +3,7 @@
 #include "memory/include/vm.hpp"
 #include "interface/include/loader.hpp"
 #include "intrinsics.hpp"
+#include "core_state.hpp"
 
 using namespace UOS;
 
@@ -10,6 +11,13 @@ id_gen<dword> process::new_id;
 
 handle_table::~handle_table(void){
 	rwlock.lock();
+	if (count)
+		bugcheck("deleting non-empty handle_table @ %p",this);
+	//clear();
+}
+
+void handle_table::clear(void){
+	interrupt_guard<spin_lock> guard(rwlock);
 	for (auto ptr : table){
 		if (ptr){
 			assert(count);
@@ -20,7 +28,7 @@ handle_table::~handle_table(void){
 	assert(count == 0);
 }
 
-dword handle_table::add(waitable* ptr){
+dword handle_table::put(waitable* ptr){
 	interrupt_guard<spin_lock> guard(rwlock);
 	if (table.size() == count){
 		table.push_back(ptr);
@@ -38,18 +46,22 @@ dword handle_table::add(waitable* ptr){
 	}
 }
 
-waitable* handle_table::erase(dword index){
-	interrupt_guard<spin_lock> guard(rwlock);
-	if (index >= table.size())
-		return nullptr;
-	auto& ref = table.at(index);
-	if (ref == nullptr)
-		return nullptr;
-	assert(count);
-	auto ptr = ref;
-	--count;
-	ref = nullptr;
-	return ptr;
+bool handle_table::close(dword index){
+	waitable* ptr;
+	{
+		interrupt_guard<spin_lock> guard(rwlock);
+		if (index >= table.size())
+			return false;
+		auto& ref = table.at(index);
+		if (ref == nullptr)
+			return false;
+		assert(count);
+		ptr = ref;
+		--count;
+		ref = nullptr;
+	}
+	ptr->relax();
+	return true;
 }
 
 waitable* handle_table::operator[](dword index){
@@ -67,6 +79,7 @@ process::process(initial_process_tag, kernel_vspace* v) : id (new_id()), vspace(
 process::process(startup_info* info) : id(new_id()),vspace(new user_vspace()){
 	//WARNING: header may be incomplete
 	assert(info && info->file && info->image_base && info->image_size && info->header_size && info->cmd_length);
+	dbgprint("spawned new process $%d @ %p",id,this);
 	spawn(userentry,info);
 }
 
@@ -74,11 +87,14 @@ process::~process(void){
 	if (!threads.empty()){
 		bugcheck("deleting non-stop process #%d @ %p",id,this);
 	}
+	dbgprint("deleted process $%d @ %p",id,this);
 	delete vspace;
 }
 
 thread* process::spawn(thread::procedure entry,void* arg,qword stk_size){
-	interrupt_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(rwlock);
+	if (state == STOPPED)
+		return nullptr;
 	if (stk_size)
 		stk_size = max(stk_size,PAGE_SIZE);
 	else
@@ -87,12 +103,32 @@ thread* process::spawn(thread::procedure entry,void* arg,qword stk_size){
 	return &*it;
 }
 
+void process::kill(dword ret_val){
+	this_core core;
+	auto this_thread = core.this_thread();
+	bool kill_self = false;
+	{
+		interrupt_guard<spin_lock> guard(rwlock);
+		state = STOPPED;
+		result = ret_val;
+		for (auto& th : threads){
+			if (&th == this_thread){
+				kill_self = true;
+				continue;
+			}
+			thread::kill(&th);
+		}
+	}
+	if (kill_self)
+		thread::kill(this_thread);
+}
+
 void process::erase(thread* th){
 	if (th->get_state() != thread::STOPPED){
 		bugcheck("killing other thread not implemented");
 	}
 	{
-		interrupt_guard<spin_lock> guard(lock);
+		interrupt_guard<spin_lock> guard(rwlock);
 		auto it = threads.find(th->id);
 		if (it == threads.end()){
 			bugcheck("cannot find thread %p in process %p",th,this);
@@ -101,6 +137,8 @@ void process::erase(thread* th){
 		if (!threads.empty())
 			return;
 	}
+	handles.clear();
+	notify();
 	relax();
 }
 
@@ -182,4 +220,13 @@ void process_manager::erase(process* ps){
 		bugcheck("cannot find process %p",ps);
 	}
 	table.erase(it);
+}
+
+process* process_manager::get(dword id){
+	interrupt_guard<spin_lock> guard(lock);
+	auto it = table.find(id);
+	if (it == table.end())
+		return nullptr;
+	it->acquire();
+	return &*it;
 }

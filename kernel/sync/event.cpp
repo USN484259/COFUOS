@@ -9,7 +9,7 @@ waitable::REASON event::wait(qword us){
 	interrupt_guard<void> ig;
 	if (state)
 		return PASSED;
-	lock.lock();
+	rwlock.lock();
 	return imp_wait(us);
 }
 
@@ -17,10 +17,10 @@ bool event::signal_one(void){
 	thread* ptr;
 	interrupt_guard<void> ig;
 	{
-		lock_guard<spin_lock> guard(lock);
+		lock_guard<spin_lock> guard(rwlock);
 		ptr = wait_queue.get();
 	}
-	return imp_notify(ptr,NOTIFY);
+	return imp_notify(ptr);
 }
 
 size_t event::signal_all(void){

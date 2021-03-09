@@ -213,7 +213,7 @@ void thread_spawner(void* ptr){
 		auto th = ps->spawn(thread_test,ptr);
 		dbgprint("spawned thread %d",th->id);
 	}
-	thread::exit();
+	thread::kill(this_thread);
 }
 
 typedef void (*global_constructor)(void);
@@ -272,9 +272,15 @@ void krnlentry(void* module_base){
 	mutex* m = new mutex();
 	ps->spawn(thread_spawner,m);
 	*/
-	proc.spawn("/test.exe aaa");
-	proc.spawn("/test.exe bbb");
-	proc.spawn("/test.exe ccc");
+	auto pid = proc.spawn("/test.exe p")->id;
+	proc.spawn("/test.exe");
+	proc.spawn("/test.exe l");
+	proc.spawn("/test.exe f");
+	proc.spawn("/test.exe y");
+	string str("/test.exe ");
+	str.push_back('0' + pid);
+	proc.spawn(str);
+	proc.spawn("/test.exe v");
 	//as idle thread & core service
 	while(true){
 		halt();

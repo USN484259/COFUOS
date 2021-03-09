@@ -12,7 +12,7 @@ extern dispatch_irq
 extern kernel_service
 
 global build_IDT
-global fpu_init
+;global fpu_init
 global service_entry
 global service_exit
 
@@ -265,10 +265,9 @@ align 16
 ; r8  commandline
 ; r9  stack_top
 service_exit:
-sub r9,0x20
 cli
 mov r11d,0x202	;IF
-mov rsp,r9
+lea rsp,[r9 - 0x20]
 swapgs
 o64 sysret
 
@@ -318,12 +317,12 @@ mov rdi,[rsp+0x10]
 mov rsi,[rsp+0x08]
 ret
 
-align 16
-fpu_init:
-mov DWORD [rsp+8],0x1F80
-fninit
-ldmxcsr [rsp+8]
-ret
+; align 16
+; fpu_init:
+; mov DWORD [rsp+8],0x1F80
+; fninit
+; ldmxcsr [rsp+8]
+; ret
 
 align 16
 memset_val:

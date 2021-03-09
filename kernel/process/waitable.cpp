@@ -49,42 +49,72 @@ void thread_queue::clear(void){
 }
 
 waitable::~waitable(void){
+	rwlock.lock();
 	if(ref_count){
 		bugcheck("deleting object %p with ref_count %d",this,ref_count);
 	}
-	notify(ABANDONED);
+	if (wait_queue.head){
+		bugcheck("deleting object %p while thread %p is waiting",this,wait_queue.head);
+	}
 }
 
-size_t waitable::notify(REASON reason){
+size_t waitable::notify(void){
 	thread* ptr;
 	interrupt_guard<void> ig;
 	{
-		lock_guard<spin_lock> guard(lock);
+		lock_guard<spin_lock> guard(rwlock);
 		ptr = wait_queue.head;
 		wait_queue.clear();
 	}
-	return imp_notify(ptr,reason);
+	return imp_notify(ptr);
 }
 
 waitable::REASON waitable::imp_wait(qword us){
 	IF_assert;
-	assert(lock.is_locked());
+	assert(rwlock.is_locked());
 	this_core core;
 	thread* this_thread = core.this_thread();
+	{
+		if (this_thread->has_context())
+			bugcheck("wait called in IRQ @ %p",this);
+		if (this_thread == this)
+			bugcheck("waiting on self @ %p",this);
+	}
+	thread* next_thread;
+	do{
+		next_thread = ready_queue.get();
+		if (!next_thread)
+			bugcheck("no ready thread");
+		next_thread->lock();
+		if (next_thread->set_state(thread::RUNNING))
+			break;
+		next_thread->unlock();
+		next_thread->on_stop();
+	}while(true);
 	qword ticket = 0;
+	this_thread->lock();
 	if (us)
 		ticket = timer.wait(us,on_timer,this_thread);
-	this_thread->set_state(thread::WAITING,ticket,this);
-	wait_queue.put(this_thread);
-
-	lock.unlock();
-	core.switch_to(ready_queue.get());
-	return this_thread->get_reason();
+	if (this_thread->set_state(thread::WAITING,ticket,this)){
+		wait_queue.put(this_thread);
+		this_thread->unlock();
+		rwlock.unlock();
+		core.switch_to(next_thread);
+		return this_thread->get_reason();
+	}
+	else{
+		if (ticket)
+			timer.cancel(ticket);
+		this_thread->unlock();
+		rwlock.unlock();
+		core.escape(next_thread);
+		bugcheck("escape in imp_wait failed @ %p",this);
+	}
 }
 
 waitable::REASON waitable::wait(qword us){
 	interrupt_guard<void> ig;
-	lock.lock();
+	rwlock.lock();
 	return imp_wait(us);
 }
 
@@ -93,31 +123,38 @@ void waitable::on_timer(qword ticket,void* ptr){
 	auto th = (thread*)ptr;
 	if (th->get_ticket() != ticket)
 		return;
-	/*
-	assert(th->state == thread::WAITING);
-	if (th->wait_for)
-		th->wait_for->cancel(th);
-	
-	th->timer_ticket = 0;
-	th->set_state(thread::READY);
-	*/
-	th->set_state(thread::READY,waitable::TIMEOUT);
+	th->lock();
+	if (!th->set_state(thread::READY,waitable::TIMEOUT)){
+		th->unlock();
+		th->on_stop();
+		return;
+	}
 	this_core core;
 	auto this_thread = core.this_thread();
 	if (th->get_priority() < this_thread->get_priority()){
-		this_thread->set_state(thread::READY);
-		ready_queue.put(this_thread);
-		core.switch_to(th);
+		if (!th->set_state(thread::RUNNING))
+			bugcheck("thread state corrupted @ %p",th);
+		this_thread->lock();
+		if (this_thread->set_state(thread::READY)){
+			ready_queue.put(this_thread);
+			this_thread->unlock();
+			core.switch_to(th);
+		}
+		else{
+			this_thread->unlock();
+			core.escape(th);
+		}
 	}
 	else{
 		ready_queue.put(th);
+		th->unlock();
 	}
 }
 
 //wait-timeout should happen less likely, currently O(n)
 void waitable::cancel(thread* th){
 	assert(th);
-	interrupt_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(rwlock);
 	auto prev = wait_queue.head;
 	if (prev == th){
 		wait_queue.get();
@@ -144,55 +181,39 @@ void waitable::cancel(thread* th){
 	bugcheck("wait_queue corrupted @ %p",&wait_queue);
 }
 
-size_t waitable::imp_notify(thread* th,REASON reason){
+size_t waitable::imp_notify(thread* th){
 	IF_assert;
 	if (!th)
 		return 0;
-	thread* target = nullptr;
-	this_core core;
-	thread* this_thread = core.this_thread();
-	word cur_priority = this_thread->get_priority();
+
 	size_t count = 0;
 	
 	while(th){
 		auto next = thread_queue::next(th);
-		th->set_state(thread::READY,reason);
-		auto th_priority = th->get_priority();
-		if (th_priority < cur_priority){
-			if (target){
-				ready_queue.put(target);
-			}
-			target = th;
-			cur_priority = th_priority;
+		th->lock();
+		if (th->set_state(thread::READY,NOTIFY)){
+			ready_queue.put(th);
+			th->unlock();
 		}
 		else{
-			ready_queue.put(th);
+			th->unlock();
+			th->on_stop();
 		}
 		++count;
 		th = next;
 	}
-
-	if (target){
-		if (this_thread->get_state() == thread::STOPPED){
-			ready_queue.put(target);
-		}
-		else{
-			this_thread->set_state(thread::READY);
-			ready_queue.put(this_thread);
-			core.switch_to(target);
-		}
-	}
+	core_manager::preempt();
 	return count;
 }
 
 void waitable::acquire(void){
-	interrupt_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(rwlock);
 	assert(ref_count);
 	++ref_count;
 }
 
 bool waitable::relax(void){
-	interrupt_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(rwlock);
 	assert(ref_count);
 	return (--ref_count);
 }

@@ -8,7 +8,7 @@
 
 namespace UOS{
 	class process;
-	class thread : waitable{
+	class thread : public waitable{
 		struct hash{
 			UOS::hash<dword> h;
 			qword operator()(const thread& obj){
@@ -33,13 +33,14 @@ namespace UOS{
 		friend void ::UOS::userentry(void*);
 	public:
 		typedef void (*procedure)(void*);
-		enum STATE : byte {READY,RUNNING,STOPPED,WAITING};
+		enum STATE : byte {READY,RUNNING,WAITING,STOPPED};
 	public:
 		const dword id;
 	private:
-		STATE state = READY;
-		REASON reason = NONE;
-		word priority;
+		volatile STATE state : 4;
+		REASON reason : 4;
+		byte priority;
+		word slice;
 		process* const ps;
 		thread* next = nullptr;
 		waitable* wait_for = nullptr;
@@ -53,17 +54,23 @@ namespace UOS{
 
 		qword user_stk_top = 0;
 		qword user_stk_reserved = 0;
-
+	public:
+		qword user_handler = 0;
+		
+	private:
 		struct initial_thread_tag {};
 		static id_gen<dword> new_id;
 	public:
 		thread(initial_thread_tag, process*);
 		thread(process* owner,procedure entry,void* arg,qword stk_size);
 		~thread(void);
+		TYPE type(void) const override{
+			return THREAD;
+		}
 		inline bool has_context(void) const{
 			return gpr.rflags != 0;
 		}
-		inline word get_priority(void) const{
+		inline byte get_priority(void) const{
 			return priority;
 		}
 		inline context const* get_context(void) const{
@@ -72,21 +79,45 @@ namespace UOS{
 		inline process* get_process(void){
 			return ps;
 		}
+		inline word get_slice(void) const{
+			return slice;
+		}
+		inline void put_slice(word val){
+			slice = val;
+		}
 		inline STATE get_state(void) const{
 			return state;
 		}
-		void set_priority(word);
-		void set_state(STATE,qword arg = 0,waitable* obj = nullptr);
+		void set_priority(byte);
+		//locked before calling
+		bool set_state(STATE,qword arg = 0,waitable* obj = nullptr);
 		inline qword get_ticket(void) const{
 			return timer_ticket;
 		}
 		inline REASON get_reason(void) const{
 			return reason;
 		}
+		inline void lock(void){
+			rwlock.lock();
+		}
+		inline bool try_lock(void){
+			return rwlock.try_lock();
+		}
+		inline void unlock(void){
+			rwlock.unlock();
+		}
+		inline bool is_locked(void) const{
+			return rwlock.is_locked();
+		}
+		REASON wait(qword us = 0) override;
 		bool relax(void) override;
+		void on_stop(void);
+		void save_sse(void);
+		void load_sse(void);
 		static void sleep(qword us);
-		[[ noreturn ]]
-		static void exit(void);
+		static void kill(thread*);
+		//[[ noreturn ]]
+		//static void exit(void);
 	};
 	struct conx_off_check{
 		static_assert(offsetof(thread,gpr) == CONX_OFF,"CONX_OFF mismatch");

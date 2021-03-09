@@ -12,6 +12,7 @@ namespace UOS{
         void lock(MODE = EXCLUSIVE);
         void unlock(void);
         bool try_lock(MODE = EXCLUSIVE);
+        void upgrade(void);
         inline bool is_locked(void) const{
             return (state);
         }
@@ -19,5 +20,9 @@ namespace UOS{
             return (state >= x_value);
         }
     };
+#ifdef NDEBUG
     constexpr size_t spin_timeout = 0x04000000;
+#else
+    constexpr size_t spin_timeout = 0x4000;
+#endif
 }

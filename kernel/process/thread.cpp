@@ -7,20 +7,23 @@
 #include "dev/include/timer.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "assert.hpp"
+#include "hal.hpp"
+
 using namespace UOS;
 
 
 id_gen<dword> thread::new_id;
 
 //initial thread
-thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), priority(scheduler::idle_priority), ps(p) {
+thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), priority(scheduler::idle_priority), slice(scheduler::max_slice), ps(p) {
 	assert(ps && id == 0);
 	krnl_stk_top = 0;	//???
 	krnl_stk_reserved = pe_kernel->stk_reserve;
 }
 
-thread::thread(process* p, procedure entry, void* arg, qword stk_size) : id(new_id()), priority(scheduler::kernel_priority), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+thread::thread(process* p, procedure entry, void* arg, qword stk_size) : id(new_id()), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
 	assert(ps && krnl_stk_reserved >= PAGE_SIZE);
+	lock_guard<spin_lock> guard(rwlock);
 	auto va = vm.reserve(0,krnl_stk_reserved/PAGE_SIZE);
 	if (!va)
 		bugcheck("vm.reserve failed with 0x%x pages",krnl_stk_reserved);
@@ -42,8 +45,13 @@ thread::thread(process* p, procedure entry, void* arg, qword stk_size) : id(new_
 thread::~thread(void){
 	if (state != STOPPED)
 		bugcheck("deleting non-stop thread #%d @ %p",id,this);
-	dbgprint("delete thread #%d @ %p",id,this);
+	dbgprint("deleted thread #%d @ %p",id,this);
 	if (sse){
+		//flush FPU state from this core
+		this_core core;
+		if (core.fpu_owner() == this){
+			core.fpu_owner(nullptr);
+		}
 		//TODO remove FPU context from all processor core
 		delete sse;
 	}
@@ -55,21 +63,33 @@ thread::~thread(void){
 		bugcheck("vm.release failed @ %p",krnl_stk_top - krnl_stk_reserved);
 }
 
-void thread::set_priority(word val){
+waitable::REASON thread::wait(qword us){
+	interrupt_guard<void> ig;
+	rwlock.lock();
+	if (state == STOPPED){
+		rwlock.unlock();
+		return PASSED;
+	}
+	return waitable::imp_wait(us);
+}
+
+void thread::set_priority(byte val){
 	assert(val < scheduler::max_priority);
 	priority = val;
 }
 
-void thread::set_state(thread::STATE st, qword arg, waitable* obj){
+bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
 	IF_assert;
+	assert(rwlock.is_locked());
+	if (state == STOPPED){
+		return false;
+	}
 	switch(st){
-	case READY:	
-		assert(state != STOPPED);
+	case READY:
 		if (state == WAITING){
 			//arg as reason
 			switch(arg){
 			case REASON::NOTIFY:
-			case REASON::ABANDONED:
 				assert(wait_for);
 				if (timer_ticket)
 					timer.cancel(timer_ticket);
@@ -87,7 +107,7 @@ void thread::set_state(thread::STATE st, qword arg, waitable* obj){
 			timer_ticket = 0;
 		}
 		break;
-	case RUNNING:	//calls from switch_to
+	case RUNNING:
 		assert(state == READY);
 		break;
 	case WAITING:
@@ -99,10 +119,10 @@ void thread::set_state(thread::STATE st, qword arg, waitable* obj){
 		timer_ticket = arg;
 		break;
 	case STOPPED:
-		assert(state == RUNNING);
 		break;
 	}
 	state = st;
+	return true;
 }
 
 bool thread::relax(void){
@@ -113,26 +133,75 @@ bool thread::relax(void){
 	return res;
 }
 
+void thread::on_stop(void){
+	assert(state == thread::STOPPED);
+	notify();
+	relax();
+}
+
+void thread::save_sse(void){
+	if (!sse){
+		sse = new SSE_context;
+	}
+	fxsave(sse);
+}
+
+void thread::load_sse(void){
+	if (sse){
+		fxrstor(sse);
+	}
+	else{
+		fpu_init();
+	}
+}
+
 void thread::sleep(qword us){
 	this_core core;
 	thread* this_thread = core.this_thread();
+	thread* next_thread;
 	interrupt_guard<void> ig;
-	if (us){
-		auto ticket = timer.wait(us,on_timer,this_thread);
-		this_thread->set_state(thread::WAITING,ticket,nullptr);
+	do{
+		next_thread = ready_queue.get();
+		if (!next_thread)
+			bugcheck("no ready thread");
+		next_thread->lock();
+		if (next_thread->set_state(thread::RUNNING))
+			break;
+		next_thread->unlock();
+		next_thread->on_stop();
+	}while(true);
+	bool esc = false;
+	{
+		lock_guard<thread> guard(*this_thread);
+		if (us){
+			auto ticket = timer.wait(us,on_timer,this_thread);
+			if (!this_thread->set_state(thread::WAITING,ticket,nullptr)){
+				timer.cancel(ticket);
+				esc = true;
+			}
+		}
+		else{
+			if (this_thread->set_state(thread::READY))
+				ready_queue.put(this_thread);
+			else
+				esc = true;
+		}
 	}
-	else{
-		this_thread->set_state(thread::READY);
-		ready_queue.put(this_thread);
-	}
-	core.switch_to(ready_queue.get());
+	if (esc)
+		core.escape(next_thread);
+	else
+		core.switch_to(next_thread);
 }
 
-void thread::exit(void){
+void thread::kill(thread* th){
 	this_core core;
 	thread* this_thread = core.this_thread();
-	cli();
-	this_thread->set_state(STOPPED);
-	assert(this_thread->krnl_stk_top && this_thread->krnl_stk_reserved);
-	core.escape();
+	interrupt_guard<void> ig;
+	{
+		lock_guard<thread> guard(*th);
+		th->set_state(STOPPED);
+	}
+	if (this_thread == th){
+		core_manager::preempt();
+	}
 }

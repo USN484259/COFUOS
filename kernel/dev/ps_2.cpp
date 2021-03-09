@@ -83,7 +83,7 @@ void PS_2::safe_queue::put(byte val){
 	interrupt_guard<void> ig;
 
 	{
-		lock_guard<spin_lock> guard(lock);
+		lock_guard<spin_lock> guard(rwlock);
 		auto new_tail = (tail + 1) % QUEUE_SIZE;
 		if (new_tail != head){
 			buffer[tail] = val;
@@ -96,15 +96,15 @@ void PS_2::safe_queue::put(byte val){
 }
 
 void PS_2::safe_queue::clear(void){
-	interrupt_guard<spin_lock> guard(lock);
+	interrupt_guard<spin_lock> guard(rwlock);
 	head = tail;
 }
 
 waitable::REASON PS_2::safe_queue::wait(qword us){
 	interrupt_guard<void> ig;
-	lock.lock();
+	rwlock.lock();
 	if (head != tail){
-		lock.unlock();
+		rwlock.unlock();
 		return PASSED;
 	}
 	return imp_wait(us);

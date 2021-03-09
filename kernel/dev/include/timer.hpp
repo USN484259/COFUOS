@@ -9,7 +9,7 @@ namespace UOS{
 	class basic_timer{
 	public:
 		static constexpr qword us2fs = (qword)1000*1000*1000;
-		static constexpr qword heartbeat_rate_us = 200;
+		static constexpr qword heartbeat_rate_us = 400;
 		typedef void (*CALLBACK)(qword,void*);
 	private:
 		struct queue_type{
@@ -27,15 +27,16 @@ namespace UOS{
 		spin_lock lock;
 		qword volatile* base;
 		dword tick_fs;
-		byte channel_index;
-
-		//qword tick_count;
+		volatile dword beat_counter;
+		
 		qword conductor;
 		hash_set<qword,UOS::hash<qword>,UOS::equal_to<qword> > record;
 		linked_list<queue_type> delta_queue;
 
 		static void irq_timer(byte,void*);
 		void on_timer(void);
+		void on_second(void);
+		void set_timer(unsigned,qword);
 	public:
 		basic_timer(void);
 		basic_timer(const basic_timer&) = delete;

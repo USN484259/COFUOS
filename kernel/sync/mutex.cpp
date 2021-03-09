@@ -39,22 +39,22 @@ waitable::REASON mutex::wait(qword){
 	REASON reason = PASSED;
 	interrupt_guard<void> ig;
 	do{
-		waitable::lock.lock();
+		rwlock.lock();
 		if (cmpxchg_ptr(&owner,this_thread,(thread*)nullptr) == nullptr){
 			assert(owner == this_thread);
-			waitable::lock.unlock();
+			rwlock.unlock();
 			return reason;
 		}
 		reason = imp_wait(0);
 	}while(true);
 }
 
-size_t mutex::notify(REASON){
+size_t mutex::notify(void){
 	thread* ptr;
 	interrupt_guard<void> ig;
 	{
-		lock_guard<spin_lock> guard(waitable::lock);
+		lock_guard<spin_lock> guard(rwlock);
 		ptr = wait_queue.get();
 	}
-	return imp_notify(ptr,NOTIFY);
+	return imp_notify(ptr);
 }

@@ -6,23 +6,23 @@
 namespace UOS{
 	struct core_state {
 		word uid;
-		word slice;
-		dword reserved;
 		thread* this_thread;
 		thread* fpu_owner;
 		thread* gc_ptr;
 	};
+	static_assert(offsetof(core_state,this_thread) == 8,"core_state::this_thread mismatch");
 
 	class scheduler{
 	public:
-		static constexpr qword slice_us = 4000;
-		static constexpr dword max_slice = 0x10;
-		static constexpr word max_priority = 8;
+		static constexpr qword slice_us = 1000;
+		static constexpr word min_slice = 1;
+		static constexpr word max_slice = 4;
+		static constexpr byte max_priority = 8;
 		// [0] [1..3] [4..6] [7]
-		static constexpr word realtime_priority = 0;
-		static constexpr word kernel_priority = 2;
-		static constexpr word user_priority = 5;
-		static constexpr word idle_priority = 7;
+		static constexpr byte realtime_priority = 0;
+		static constexpr byte kernel_priority = 2;
+		static constexpr byte user_priority = 5;
+		static constexpr byte idle_priority = 7;
 	
 	private:
 		spin_lock lock;
@@ -30,7 +30,7 @@ namespace UOS{
 
 	public:
 		void put(thread*);
-		thread* get(word level = max_priority);
+		thread* get(byte level = max_priority);
 	};
 
 	class core_manager{
@@ -42,7 +42,7 @@ namespace UOS{
 	public:
 		core_manager(void);
 		core_state* get(void);
-
+		static void preempt(void);
 	};
 
 	class this_core{
@@ -60,12 +60,6 @@ namespace UOS{
 		inline word id(void){
 			return read_gs<word>(offsetof(core_state,uid));
 		}
-		inline word slice(void){
-			return read_gs<word>(offsetof(core_state,slice));
-		}
-		inline void slice(word val){
-			write_gs(offsetof(core_state,slice),val);
-		}
 		inline thread* this_thread(void){
 			return reinterpret_cast<thread*>(
 				read_gs<qword>(offsetof(core_state,this_thread))
@@ -81,9 +75,10 @@ namespace UOS{
 				reinterpret_cast<qword>(th)
 			);
 		}
-		void switch_to(thread*);
-		[[ noreturn ]]
-		void escape(void);
+		//locks 'th' before calling, unlocks inside
+		void switch_to(thread* th);
+		//locks 'th' before calling, unlocks inside
+		void escape(thread* th);
 	};
 
 	extern scheduler ready_queue;

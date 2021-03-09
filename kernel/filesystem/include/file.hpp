@@ -6,7 +6,7 @@
 namespace UOS{
 	class basic_file : public waitable{
 	public:
-		enum TYPE {UNKNOWN,FILE,DIRECTORY};
+		enum FILETYPE {UNKNOWN,FILE,DIRECTORY};
 		enum ATTRIB : qword {READONLY = 1, HIDDEN = 2, SYSTEM = 4};
 	private:
 		struct hash{
@@ -29,13 +29,16 @@ namespace UOS{
 		basic_file(const basic_file&) = delete;
 		//TODO send 'kill' to file-manager when closing
 		virtual ~basic_file(void) = default;
+		TYPE type(void) const override{
+			return waitable::FILE;
+		}
 		inline const string& full_name(void) const{
 			return name;
 		}
 		string file_name(void) const;
 		string path_name(void) const;
 
-		virtual TYPE type(void) const = 0;
+		virtual FILETYPE file_type(void) const = 0;
 		virtual qword attribute(void) const = 0;
 		virtual size_t size(void) const = 0;
 		virtual bool seek(size_t off) = 0;
@@ -48,7 +51,7 @@ namespace UOS{
 		size_t offset = 0;
 	public:
 		file_stub(void);
-		TYPE type(void) const override;
+		FILETYPE file_type(void) const override;
 		qword attribute(void) const override;
 		size_t size(void) const override;
 		bool seek(size_t off) override;

@@ -16,7 +16,7 @@ void UOS::userentry(void* ptr){
 
 	do{
 		//image file handle as handle 0, user not accessible
-		if (0 != self->handles.add(info->file))
+		if (0 != self->handles.put(info->file))
 			break;
 		//reserve image region
 		auto image_page_count = align_up(info->image_size,PAGE_SIZE)/PAGE_SIZE;
@@ -121,6 +121,7 @@ void UOS::userentry(void* ptr){
 		assert(info == nullptr);
 	}
 	//all user resource should be released on destruction
-	thread::exit();
+	thread::kill(this_thread);
+	bugcheck("userentry failed to exit");
 }
 

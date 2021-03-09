@@ -1,5 +1,6 @@
 #pragma once
 #include "types.hpp"
+#include "process/include/context.hpp"
 
 #define ASM __asm__ volatile
 
@@ -98,18 +99,43 @@ namespace UOS{
 		);
 	}
 
+	inline void clts(void){
+		ASM (
+			"clts"
+		);
+	}
+
+	inline void fpu_init(void){
+		const dword val = 0x1F80;
+		ASM (
+			"fninit\n\
+			ldmxcsr %0"
+			:
+			: "m" (val)
+		);
+	}
+
+	inline void fxsave(SSE_context* ptr){
+		ASM (
+			"FXSAVE64 %0"
+			: "=m" (*ptr)
+		);
+	}
+
+	inline void fxrstor(const SSE_context* ptr){
+		ASM (
+			"FXRSTOR64 %0"
+			:
+			: "m" (*ptr)
+		);
+	}
+
 	inline void swapgs(void){
 		ASM (
 			"swapgs"
 		);
 	}
-	/*
-	inline void int3(void){
-		ASM (
-			"int 3"
-		);
-	}
-	*/
+
 	inline void int_trap(byte v){
 		ASM (
 			"int %0"
@@ -121,6 +147,23 @@ namespace UOS{
 	inline void mm_pause(void){
 		ASM (
 			"pause"
+		);
+	}
+
+	inline qword read_cr0(void){
+		qword data;
+		ASM (
+			"mov %0,cr0"
+			: "=r" (data)
+		);
+		return data;
+	}
+
+	inline void write_cr0(qword data){
+		ASM (
+			"mov cr0,%0"
+			:
+			: "r" (data)
 		);
 	}
 
@@ -210,6 +253,7 @@ namespace UOS{
 			)
 		);
 	}
+
 	inline void* return_address(void){
 		return __builtin_return_address(0);
 	}

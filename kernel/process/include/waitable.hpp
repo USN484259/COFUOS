@@ -17,27 +17,29 @@ namespace UOS{
 
 	class waitable{
 	public:
-		enum REASON : byte {NONE = 0, PASSED = 1, NOTIFY = 2, TIMEOUT = 3, ABANDONED = 4};
+		enum REASON : byte {NONE = 0, PASSED = 1, NOTIFY = 2, TIMEOUT = 3};
+		enum TYPE {UNKNOWN,THREAD,PROCESS,FILE,MUTEX,EVENT};
 	protected:
-		spin_lock lock;
+		spin_lock rwlock;
 		dword ref_count = 1;
 		thread_queue wait_queue;
 
-		static size_t imp_notify(thread*,REASON);
+		static size_t imp_notify(thread*);
 		static void on_timer(qword,void*);
 
 		//locked before calling, unlock inside
 		waitable::REASON imp_wait(qword);
-		virtual size_t notify(REASON = NOTIFY);
+		virtual size_t notify(void);
 	public:
 		waitable(void) = default;
 		waitable(const waitable&) = delete;
 		virtual ~waitable(void);
+		virtual TYPE type(void) const = 0;
 		// (this_thread) waits for (this)
 		virtual REASON wait(qword us = 0);
 		void cancel(thread*);
 		void acquire(void);
-		//returns (if still has reference)
+		//return true if still have reference
 		virtual bool relax(void);
 		inline dword get_reference_count(void) const{
 			return ref_count;

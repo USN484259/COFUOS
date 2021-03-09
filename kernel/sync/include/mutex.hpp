@@ -6,9 +6,12 @@ namespace UOS{
 	class mutex : public waitable{
 		thread* volatile owner = nullptr;
 	protected:
-		size_t notify(REASON = NONE) override;
+		size_t notify(void) override;
 	public:
-		virtual ~mutex(void);
+		~mutex(void);
+		TYPE type(void) const override{
+			return MUTEX;
+		}
 		REASON wait(qword = 0) override;
 		void lock(void);
 		void unlock(void);

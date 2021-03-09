@@ -51,14 +51,14 @@ namespace UOS{
 			iterator_base(const iterator_base&) = default;
 
 			iterator_base& operator++(void){
-				if (!container || bucket == container.end())
+				if (!container || bucket == container->end())
 					THROW("iterator move past the end @ %p",this);
 				assert(chain != bucket->end());
 				++chain;
 				//points to a valid position
-				while (bucket != container.end() && chain == bucket->end()){
+				while (bucket != container->end() && chain == bucket->end()){
 					++bucket;
-					chain = bucket.begin();
+					chain = bucket->begin();
 				}
 				return *this;
 			}

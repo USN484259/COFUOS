@@ -12,10 +12,10 @@
 
 using namespace UOS;
 
-constexpr dword scheduler::max_slice;
-constexpr word scheduler::max_priority;
+constexpr word scheduler::max_slice;
+constexpr byte scheduler::max_priority;
 
-thread* scheduler::get(word level){
+thread* scheduler::get(byte level){
 	level = min(level,max_priority);
 	interrupt_guard<spin_lock> guard(lock);
 	for (unsigned i = 0;i < level;++i){
@@ -30,6 +30,7 @@ thread* scheduler::get(word level){
 }
 
 void scheduler::put(thread* th){
+	assert(th && th->is_locked());
 	word index = th->priority;
 	assert(index < max_priority);
 	interrupt_guard<spin_lock> guard(lock);
@@ -46,7 +47,6 @@ core_manager::core_manager(void){
 	//set up core_state for BSP
 	auto& self = core_list[0];
 	self.uid = apic.id();
-	self.slice = 0;
 	auto th = proc.get_initial_thread();
 	self.this_thread = th;
 	self.fpu_owner = th;
@@ -80,22 +80,63 @@ void core_manager::on_timer(qword ticket,void* ptr){
 	if (self->timer_ticket != ticket)
 		bugcheck("core_manager ticket mismatch (%x,%x)",ticket,self->timer_ticket);
 	this_core core;
-	auto slice = core.slice();
-	if (slice){
-		core.slice(slice - 1);
-		return;
-	}
 	auto this_thread = core.this_thread();
 	assert(this_thread->has_context());
-	auto next_thread = ready_queue.get(this_thread->get_priority() + 1);
+	if (this_thread->get_state() != thread::STOPPED){
+		auto slice = this_thread->get_slice();
+		assert(slice <= scheduler::max_slice);
+		if (slice){
+			this_thread->put_slice(slice - 1);
+			return;
+		}
+		else{
+			this_thread->put_slice(scheduler::max_slice);
+		}
+	}
+	preempt();
+}
+
+void core_manager::preempt(void){
+	IF_assert;
+	this_core core;
+	auto this_thread = core.this_thread();
+	thread* next_thread;
+	do{
+		next_thread = ready_queue.get(this_thread->get_priority() + 1);
+		if (!next_thread)
+			break;
+		next_thread->lock();
+		if (next_thread->set_state(thread::RUNNING))
+			break;
+		next_thread->unlock();
+		next_thread->on_stop();
+	}while(true);
 	//dbgprint("%d --> %d", this_thread->get_id(), next_thread ? next_thread->get_id() : this_thread->get_id());
 	if (next_thread){
-		this_thread->set_state(thread::READY);
-		ready_queue.put(this_thread);
-		core.switch_to(next_thread);
+		assert(next_thread->is_locked());
+		this_thread->lock();
+		if (this_thread->set_state(thread::READY)){
+			ready_queue.put(this_thread);
+			this_thread->unlock();
+			core.switch_to(next_thread);
+		}
+		else{
+			this_thread->unlock();
+			core.escape(next_thread);
+		}
 	}
-	else{
-		core.slice(scheduler::max_slice);
+	else if (this_thread->get_state() == thread::STOPPED){
+		do{
+			next_thread = ready_queue.get();
+			if (!next_thread)
+				bugcheck("no ready thread");
+			next_thread->lock();
+			if (next_thread->set_state(thread::RUNNING))
+				break;
+			next_thread->unlock();
+			next_thread->on_stop();
+		}while(true);
+		core.escape(next_thread);
 	}
 }
 
@@ -119,12 +160,17 @@ void this_core::irq_switch_to(byte,void* data){
 	else{
 		target = reinterpret_cast<thread*>(cur_thread->get_context()->rcx);
 	}
+	assert(target->is_locked());
 	process* ps = target->get_process();
 	if (cur_thread->get_process() != ps){
+		//set CR0.TS
+		auto cr0 = read_cr0();
+		write_cr0(cr0 | 0x08);
 		//change CR3
 		write_cr3(ps->vspace->get_cr3());
 	}
 	write_gs(offsetof(core_state,this_thread),reinterpret_cast<qword>(target));
+	target->unlock();
 }
 
 inline void context_trap(qword data){
@@ -140,7 +186,7 @@ void this_core::gc_service(void){
 			read_gs<qword>(offsetof(core_state,gc_ptr))
 		);
 	if (gc_thread){
-		gc_thread->relax();
+		gc_thread->on_stop();
 		dbgprint("gc relaxed %p",gc_thread);
 		write_gs<qword>(offsetof(core_state,gc_ptr),0);
 	}
@@ -150,10 +196,12 @@ void this_core::switch_to(thread* th){
 	IF_assert;
 	gc_service();
 	assert(th && th->has_context());
+	assert(th->get_state() == thread::RUNNING);
 	assert(this_thread()->get_state() != thread::RUNNING);
 	//dbgprint("%d --> %d from %p",this_thread()->get_id(),th->get_id(),return_address());
-	th->set_state(thread::RUNNING);
-	slice(scheduler::max_slice);
+	//th->set_state(thread::RUNNING);
+	if (th->get_slice() < scheduler::min_slice)
+		th->put_slice(scheduler::max_slice);
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}
@@ -162,19 +210,20 @@ void this_core::switch_to(thread* th){
 	}
 }
 
-void this_core::escape(void){
+void this_core::escape(thread* th){
 	IF_assert;
 	gc_service();
-	thread* th = ready_queue.get();
 	assert(th && th->has_context());
-	th->set_state(thread::RUNNING);
-	slice(scheduler::max_slice);
+	assert(th->get_state() == thread::RUNNING);
+	assert(this_thread()->get_state() == thread::STOPPED);
+	//th->set_state(thread::RUNNING);
 	write_gs(offsetof(core_state,gc_ptr),this_thread());
+	if (th->get_slice() < scheduler::min_slice)
+		th->put_slice(scheduler::max_slice);
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}
 	else{
 		context_trap(reinterpret_cast<qword>(th));
 	}
-	bugcheck("this_core::escape failed");
 }

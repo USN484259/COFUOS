@@ -10,6 +10,19 @@
 
 using namespace UOS;
 
+void basic_timer::set_timer(unsigned index,qword us){
+	qword state = *(base + (0x100 + 0x20*index)/sizeof(qword));
+	dbgprint("comparator #%d : %x",index,state);
+	if ((state & 0x30) != 0x30)
+		bugcheck("64-bit periodic mode not supported");
+	state &= ~((1 << 14) | (1 << 8) | (1 << 6) | (1 << 1));	//64-bit, no-FSB, edge triggered
+	state |= (1 << 3) | (1 << 2);	//periodic, enable
+	*(base + (0x100 + 0x20*index)/sizeof(qword)) = state;
+	auto count = us*us2fs/tick_fs;
+	*(base + (0x108 + 0x20*index)/sizeof(qword)) = count;	//tick count
+	dbgprint("comparator #%d : (%x,%d)",index,state,count);
+}
+
 
 basic_timer::basic_timer(void) : base(nullptr){
 	dbgprint("Timer using HPET");
@@ -33,65 +46,22 @@ basic_timer::basic_timer(void) : base(nullptr){
 	*(base + 0x10/sizeof(qword)) = main_switch;	//halt the counter
 	*(base + 0xF0/sizeof(qword)) = 0;	//reset counter
 
-	qword state = *(base + 0x100/sizeof(qword));
-	dbgprint("comparator #0 : %x",state);
-	if ((state & 0x30) != 0x30)
-		bugcheck("64-bit periodic mode not supported");
-	state &= ~((1 << 14) | (1 << 8) | (1 << 6) | (1 << 1));	//64-bit, no-FSB, edge triggered
-	state |= (1 << 3) | (1 << 2);	//periodic, enable
-	*(base + 0x100/sizeof(qword)) = state;
-	//*(base + 0x108/sizeof(qword)) = 0;	//reset comparator
-	auto count = heartbeat_rate_us*us2fs/tick_fs;
-	*(base + 0x108/sizeof(qword)) = count;	//tick count
-	//apic.allocate(APIC::IRQ_PIT,false);
-	channel_index = 0;
+	//channel 0 as heat beat
+	set_timer(0,heartbeat_rate_us);
 	apic.set(APIC::IRQ_PIT, irq_timer,this);
 
+	//channel 1 as second
+	set_timer(1,1000*1000);
+	apic.set(APIC::IRQ_RTC,irq_timer,this);
 
-#if false
-	channel_index = 0xFF;
-	for (unsigned i = 0;i < comarator_count;++i){
-		qword state = *(base + (0x100 + i*0x20)/sizeof(qword));
-		dbgprint("comparator #%d : %x",i,state);
-		if (channel_index >= comarator_count && (state & 0x30) == 0x30){	//64-bit & periodic
-			//use this channel, allocate IRQ slot for it
-			for (unsigned irq = 20;irq < 24;++irq){
-				if (state & (0x100000000 << irq) && apic.available(irq)){
-					//use this IRQ line
-					state &= ~((1 << 14) | (1 << 8) | (1 << 1));	//64-bit, no-FSB, edge triggered
-					state |= (1 << 6) | (1 << 3) | (1 << 2);	//periodic, enable
-					state |= (irq << 9);	//set IRQ line
-					*(base + (0x100 + i*0x20)/sizeof(qword)) = state;	//write back state
-					*(base + (0x100 + i*0x20 + 8)/sizeof(qword)) = 0;	//reset value
-					auto count = heartbeat_rate_us*(1000*1000*1000)/tick_fs;
-					*(base + (0x100 + i*0x20 + 8)/sizeof(qword)) = count;	//tick count
-					dbgprint("IRQ line %d, periodic %d ticks",irq,count);
-					state = *(base + (0x100 + i*0x20)/sizeof(qword));	//read back state
-					res = apic.allocate(irq,false);
-					if (!res || ((state >> 9) & 0x1F) != irq)		//check IRQ line
-						bugcheck(hardware_fault,irq);
-					channel_index = i;
-					apic.set(APIC::IRQ_OFFSET + irq, irq_timer,this);
 
-					break;
-				}
-			}
-			if (channel_index < comarator_count)
-				continue;
-		}
-		state &= ~(1 << 2);		//disable interrupt
-		*(base + (0x100 + i*0x20)/sizeof(qword)) = state;
-	}
-	if (channel_index >= comarator_count)
-		bugcheck(not_implemented,this);
-#endif
 	for (unsigned i = 0;i < comarator_count;++i){
 		qword state = *(base + (0x100 + i*0x20)/sizeof(qword));
 		dbgprint("comparator #%d : %x",i,state);
 	}
 
 	conductor = 0;
-
+	beat_counter = 0;
 	*(base + 0x10/sizeof(qword)) = main_switch | 3;	//enable counter in legacy-replacement mode
 }
 
@@ -125,9 +95,15 @@ bool basic_timer::cancel(qword ticket){
 	return true;
 }
 
+void basic_timer::on_second(void){
+	auto val = beat_counter;
+	beat_counter = 0;
+	dbgprint("beat = %d",val);
+}
+
 void basic_timer::on_timer(void){
 	IF_assert;
-
+	++beat_counter;
 	struct callback_context {
 		CALLBACK func;
 		qword ticket;
@@ -189,7 +165,7 @@ void basic_timer::on_timer(void){
 	}
 }
 
-void basic_timer::irq_timer(byte,void* ptr){
+void basic_timer::irq_timer(byte irq,void* ptr){
 	auto self = (basic_timer*)ptr;
 	//auto stat = *(self->base + (0x20/sizeof(qword)));
 	//auto mask = (qword)1 << self->channel_index;
@@ -197,8 +173,16 @@ void basic_timer::irq_timer(byte,void* ptr){
 	//check IRQ source
 	//if (0 == (stat & mask))
 	//	bugcheck(hardware_fault,stat);
-
-	self->on_timer();
+	switch(irq){
+		case APIC::IRQ_PIT:
+			self->on_timer();
+			break;
+		case APIC::IRQ_RTC:
+			self->on_second();
+			break;
+		default:
+			bugcheck("invalid IRQ#%d",irq);
+	}
 
 	//allow further interrupts
 	//*(self->base + (0x20/sizeof(qword))) = mask;

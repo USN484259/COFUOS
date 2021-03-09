@@ -21,8 +21,9 @@ namespace UOS{
 		handle_table(void) = default;
 		handle_table(const handle_table&) = delete;
 		~handle_table(void);
-		dword add(waitable*);
-		waitable* erase(dword);
+		void clear(void);
+		dword put(waitable*);
+		bool close(dword);
 		waitable* operator[](dword);
 		inline dword size(void) const{
 			return count;
@@ -41,7 +42,7 @@ namespace UOS{
 			return rwlock.is_locked();
 		}
 	};
-	class process : waitable{
+	class process : public waitable{
 		struct hash{
 			UOS::hash<dword> h;
 			qword operator()(const process& obj){
@@ -63,24 +64,32 @@ namespace UOS{
 			dword header_size;
 			size_t cmd_length;
 		};
+		enum STATE : byte {RUNNING,STOPPED};
 		friend class process_manager;
 		friend struct hash;
 		friend class equal;
 		friend void ::UOS::userentry(void*);
 	public:
 		const dword id;
+		dword result = 0;
 		virtual_space* const vspace;
 	private:
 		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
+	public:
 		handle_table handles;
+	private:
+		volatile STATE state = RUNNING;
 
 		struct initial_process_tag {};
 		static id_gen<dword> new_id;
 	public:
 		process(initial_process_tag, kernel_vspace*);
 		process(startup_info* info);
-		~process(void) override;
+		~process(void);
+		TYPE type(void) const override{
+			return PROCESS;
+		}
 		inline bool operator==(dword id) const{
 			return id == this->id;
 		}
@@ -90,6 +99,7 @@ namespace UOS{
 		}
 		bool relax(void) override;
 		thread* spawn(thread::procedure entry,void* arg,qword stk_size = 0);
+		void kill(dword ret_val);
 		void erase(thread* th);
 	};
 
@@ -102,6 +112,8 @@ namespace UOS{
 		thread* get_initial_thread(void);
 		process* spawn(const string& command);
 		void erase(process* ps);
+		//ref_count incremented
+		process* get(dword id);
 	};
 	extern process_manager proc;
 	

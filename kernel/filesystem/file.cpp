@@ -23,7 +23,7 @@ extern "C" byte test_file_base;
 
 file_stub::file_stub(void) : basic_file("/test.exe") {}
 
-basic_file::TYPE file_stub::type(void) const{
+basic_file::FILETYPE file_stub::file_type(void) const{
 	return FILE;
 }
 
