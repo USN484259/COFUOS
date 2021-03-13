@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "process/include/context.hpp"
 
 #define ASM __asm__ volatile
@@ -191,6 +191,14 @@ namespace UOS{
 			: "=r" (data)
 		);
 		return data;
+	}
+
+	inline void ltr(word sel){
+		ASM (
+			"ltr %0"
+			:
+			: "rm" (sel)
+		);
 	}
 
 	template<typename T>

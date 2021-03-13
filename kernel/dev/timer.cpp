@@ -10,59 +10,72 @@
 
 using namespace UOS;
 
-void basic_timer::set_timer(unsigned index,qword us){
+qword basic_timer::set_timer(unsigned index,byte sel,qword us){
 	qword state = *(base + (0x100 + 0x20*index)/sizeof(qword));
 	dbgprint("comparator #%d : %x",index,state);
 	if ((state & 0x30) != 0x30)
 		bugcheck("64-bit periodic mode not supported");
 	state &= ~((1 << 14) | (1 << 8) | (1 << 6) | (1 << 1));	//64-bit, no-FSB, edge triggered
 	state |= (1 << 3) | (1 << 2);	//periodic, enable
+	state |= (sel & 0x1F) << 9;		//channel selection
 	*(base + (0x100 + 0x20*index)/sizeof(qword)) = state;
 	auto count = us*us2fs/tick_fs;
 	*(base + (0x108 + 0x20*index)/sizeof(qword)) = count;	//tick count
 	dbgprint("comparator #%d : (%x,%d)",index,state,count);
+	return count;
 }
 
 
 basic_timer::basic_timer(void) : base(nullptr){
-	dbgprint("Timer using HPET");
-	auto& hpet = acpi.get_hpet();
-	auto phy_page = align_down(hpet.address.Address,PAGE_SIZE);
-	auto res = vm.assign(HPET_VBASE,phy_page,1);
-	if (!res)
-		bugcheck("vm.assign failed @ %p",phy_page);
-	base = ((qword volatile*)(HPET_VBASE + hpet.address.Address - phy_page));
-	qword capability = *base;
-	tick_fs = capability >> 32;
-	auto comarator_count = ((capability >> 8) & 0x1F) + 1;
-	dbgprint("HPET %s-bit with %d counters, tick = %dns",\
-		capability & (1 << 13) ? "64" : "32", comarator_count, tick_fs / (1000*1000));
-	
-	if (!hpet.legacy_replacement)
-		bugcheck("legacy replacement not supported");
-	
-	auto main_switch = *(base + 0x10/sizeof(qword));
-	main_switch &= ~(qword)(0x01);
-	*(base + 0x10/sizeof(qword)) = main_switch;	//halt the counter
-	*(base + 0xF0/sizeof(qword)) = 0;	//reset counter
-
-	//channel 0 as heat beat
-	set_timer(0,heartbeat_rate_us);
-	apic.set(APIC::IRQ_PIT, irq_timer,this);
-
-	//channel 1 as second
-	set_timer(1,1000*1000);
-	apic.set(APIC::IRQ_RTC,irq_timer,this);
-
-
-	for (unsigned i = 0;i < comarator_count;++i){
-		qword state = *(base + (0x100 + i*0x20)/sizeof(qword));
-		dbgprint("comparator #%d : %x",i,state);
+	auto hpet = acpi.get_hpet();
+	if (hpet == nullptr){
+		//fallback to 8254
+		static constexpr dword frequency = 1193182;
+		dword count = frequency*heartbeat_rate_us/(1000*1000);	// frequency/(1000*1000/heartbeat_rate_us)
+		if (count >= 0x10000)
+			bugcheck("invalid 8254 count %d",count);
+		out_byte(0x43,0x34);
+		out_byte(0x40,(byte)count);
+		out_byte(0x40,(byte)(count >> 8));
+		dbgprint("Timer using 8254 with count = %d",count);
 	}
+	else{
+		//disable 8254
+		out_byte(0x43,0x32);
+		out_byte(0x40,0);
+		out_byte(0x40,0);
 
+		auto phy_page = align_down(hpet->address.Address,PAGE_SIZE);
+		auto res = vm.assign(HPET_VBASE,phy_page,1);
+		if (!res)
+			bugcheck("vm.assign failed @ %p",phy_page);
+		base = ((qword volatile*)(HPET_VBASE + hpet->address.Address - phy_page));
+		qword capability = *base;
+		tick_fs = capability >> 32;
+		auto comarator_count = ((capability >> 8) & 0x1F) + 1;
+		dbgprint("HPET %s-bit with %d counters, tick = %dns",\
+			capability & (1 << 13) ? "64" : "32", comarator_count, tick_fs / (1000*1000));
+		
+		auto main_switch = *(base + 0x10/sizeof(qword));
+		main_switch &= ~(qword)(0x03);	//disable legacy replacement
+		*(base + 0x10/sizeof(qword)) = main_switch;	//halt the counter
+		*(base + 0xF0/sizeof(qword)) = 0;	//reset counter
+
+		//channel 0 as heat beat
+		auto count = set_timer(0,2,heartbeat_rate_us);
+
+
+		for (unsigned i = 0;i < comarator_count;++i){
+			qword state = *(base + (0x100 + i*0x20)/sizeof(qword));
+			dbgprint("comparator #%d : %x",i,state);
+		}
+
+		*(base + 0x10/sizeof(qword)) = main_switch | 1;	//enable counter
+		dbgprint("Timer using HPET with count = %d",count);
+	}
 	conductor = 0;
 	beat_counter = 0;
-	*(base + 0x10/sizeof(qword)) = main_switch | 3;	//enable counter in legacy-replacement mode
+	apic.set(APIC::IRQ_PIT, irq_timer,this);
 }
 
 qword basic_timer::wait(qword us, CALLBACK func, void* arg, bool repeat){
@@ -99,6 +112,7 @@ void basic_timer::on_second(void){
 	auto val = beat_counter;
 	beat_counter = 0;
 	dbgprint("beat = %d",val);
+	//TODO adjust ticks
 }
 
 void basic_timer::on_timer(void){
@@ -166,24 +180,8 @@ void basic_timer::on_timer(void){
 }
 
 void basic_timer::irq_timer(byte irq,void* ptr){
+	IF_assert;
+	assert(irq == APIC::IRQ_PIT);
 	auto self = (basic_timer*)ptr;
-	//auto stat = *(self->base + (0x20/sizeof(qword)));
-	//auto mask = (qword)1 << self->channel_index;
-	
-	//check IRQ source
-	//if (0 == (stat & mask))
-	//	bugcheck(hardware_fault,stat);
-	switch(irq){
-		case APIC::IRQ_PIT:
-			self->on_timer();
-			break;
-		case APIC::IRQ_RTC:
-			self->on_second();
-			break;
-		default:
-			bugcheck("invalid IRQ#%d",irq);
-	}
-
-	//allow further interrupts
-	//*(self->base + (0x20/sizeof(qword))) = mask;
+	self->on_timer();
 }

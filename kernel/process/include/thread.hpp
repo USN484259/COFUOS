@@ -1,10 +1,10 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "waitable.hpp"
 #include "context.hpp"
 #include "hash.hpp"
 #include "id_gen.hpp"
-#include "interface/include/loader.hpp"
+#include "interface/include/bridge.hpp"
 
 namespace UOS{
 	class process;
@@ -30,9 +30,10 @@ namespace UOS{
 		friend struct hash;
 		friend struct equal;
 		friend struct conx_off_check;
-		friend void ::UOS::userentry(void*);
+		friend void ::UOS::process_loader(qword,qword,qword,qword);
+		friend void ::UOS::user_entry(qword,qword,qword,qword);
 	public:
-		typedef void (*procedure)(void*);
+		typedef void (*procedure)(qword,qword,qword,qword);
 		enum STATE : byte {READY,RUNNING,WAITING,STOPPED};
 	public:
 		const dword id;
@@ -62,10 +63,13 @@ namespace UOS{
 		static id_gen<dword> new_id;
 	public:
 		thread(initial_thread_tag, process*);
-		thread(process* owner,procedure entry,void* arg,qword stk_size);
+		thread(process* owner,procedure entry,const qword* args,qword stk_size);
 		~thread(void);
-		TYPE type(void) const override{
+		OBJTYPE type(void) const override{
 			return THREAD;
+		}
+		bool check(void) const override{
+			return state == STOPPED;
 		}
 		inline bool has_context(void) const{
 			return gpr.rflags != 0;
@@ -88,7 +92,7 @@ namespace UOS{
 		inline STATE get_state(void) const{
 			return state;
 		}
-		void set_priority(byte);
+		bool set_priority(byte);
 		//locked before calling
 		bool set_state(STATE,qword arg = 0,waitable* obj = nullptr);
 		inline qword get_ticket(void) const{
@@ -109,7 +113,7 @@ namespace UOS{
 		inline bool is_locked(void) const{
 			return rwlock.is_locked();
 		}
-		REASON wait(qword us = 0) override;
+		REASON wait(qword us = 0,handle_table* = nullptr) override;
 		bool relax(void) override;
 		void on_stop(void);
 		void save_sse(void);

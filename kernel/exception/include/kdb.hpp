@@ -1,8 +1,6 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "process/include/context.hpp"
-#include "exception.hpp"
-#include "optional.hpp"
 
 namespace UOS{
 	class kdb_stub{
@@ -48,6 +46,6 @@ namespace UOS{
 		
 		//void print(const char*,...);
 	};
-	extern optional<kdb_stub> debug_stub;
+	extern kdb_stub debug_stub;
 
 }

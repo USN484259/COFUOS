@@ -21,7 +21,7 @@ font: bin/font.o
 
 bin/font.o: bin/font.bin font.asm
 	$(NASM) -f win64 font.asm -o bin/font.o
-	$(CP) bin/font.o ../../kernel/bin/
+	#$(CP) bin/font.o ../../kernel/bin/
 
 bin/font.bin: bin/font_maker
 	./bin/font_maker $(FONT_NAME).fnt bin/font.bin

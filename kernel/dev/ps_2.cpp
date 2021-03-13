@@ -65,9 +65,9 @@ inline byte translate(byte code,byte stat){
 	return 0;
 }
 
-PS_2::safe_queue::safe_queue(void) : buffer(new byte[QUEUE_SIZE]), head(0),tail(0) {}
+PS_2::safe_queue::safe_queue(void) : buffer((byte*)operator new(QUEUE_SIZE)), head(0),tail(0) {}
 PS_2::safe_queue::~safe_queue(void){
-	delete[] buffer;
+	operator delete(buffer,QUEUE_SIZE);
 }
 
 byte PS_2::safe_queue::get(void){
@@ -100,7 +100,8 @@ void PS_2::safe_queue::clear(void){
 	head = tail;
 }
 
-waitable::REASON PS_2::safe_queue::wait(qword us){
+REASON PS_2::safe_queue::wait(qword us,handle_table* ht){
+	assert(ht == nullptr);
 	interrupt_guard<void> ig;
 	rwlock.lock();
 	if (head != tail){
@@ -111,7 +112,7 @@ waitable::REASON PS_2::safe_queue::wait(qword us){
 }
 
 PS_2::PS_2(void){
-	if (acpi.get_version() && 0 == (acpi.get_fadt().BootArchitectureFlags & 2)){
+	if (acpi.get_version() && 0 == (acpi.get_fadt()->BootArchitectureFlags & 2)){
 		// 8042 not present
 		bugcheck("8042 not present");
 	}
@@ -189,8 +190,9 @@ PS_2::PS_2(void){
 					break;
 			}
 			write(0xFF);
-			auto th = ps->spawn(thread_ps2,this);
-			th->set_priority(scheduler::realtime_priority);
+			qword args[4] = {reinterpret_cast<qword>(this)};
+			auto th = ps->spawn(thread_ps2,args);
+			//th->set_priority(scheduler::realtime_priority);
 			channel[i].th = th;
 		}
 	}
@@ -224,7 +226,7 @@ static constexpr qword ps2_idle_timeout = 1000*1000;	//1s
 			if (index) command(0xD4); \
 			write(cmd); \
 		} \
-		if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout)) \
+		if (TIMEOUT == queue.wait(ps2_wait_timeout)) \
 			goto restart; \
 		data = queue.get(); \
 		if (data == 0xFA) \
@@ -234,8 +236,8 @@ static constexpr qword ps2_idle_timeout = 1000*1000;	//1s
 		goto restart; \
 	}while(true)
 
-void PS_2::thread_ps2(void* ptr){
-	auto& self = *(PS_2*)ptr;
+void PS_2::thread_ps2(qword ptr,qword,qword,qword){
+	auto& self = *reinterpret_cast<PS_2*>(ptr);
 	byte index;
 	{
 		this_core core;
@@ -259,13 +261,13 @@ void PS_2::thread_ps2(void* ptr){
 		}while(true);
 		//device detected
 		//mouse may send 00 after AA, discard that
-		if (waitable::TIMEOUT != queue.wait(ps2_wait_timeout))
+		if (TIMEOUT != queue.wait(ps2_wait_timeout))
 			queue.get();
 		//disable scanning first
 		DEV_CMD(0xF5);
 		//then query identity
 		DEV_CMD(0xF2);
-		if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout))
+		if (TIMEOUT == queue.wait(ps2_wait_timeout))
 			goto restart;
 		switch(queue.get()){
 			case 0:
@@ -279,7 +281,7 @@ void PS_2::thread_ps2(void* ptr){
 				DEV_CMD(80);
 				//query identity again
 				DEV_CMD(0xF2);
-				if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout))
+				if (TIMEOUT == queue.wait(ps2_wait_timeout))
 					goto restart;
 				byte mode = queue.get();
 				if (mode == 0 || mode == 3)
@@ -298,7 +300,7 @@ void PS_2::thread_ps2(void* ptr){
 				continue;
 			}
 			case 0xAB:
-				if (waitable::TIMEOUT == queue.wait(ps2_wait_timeout))
+				if (TIMEOUT == queue.wait(ps2_wait_timeout))
 					goto restart;
 				if (queue.get() != 0x83)
 					goto restart;
@@ -338,7 +340,7 @@ bool PS_2::device_keybd(PS_2& self,byte index){
 	byte state = 0;
 	bool probe = false;
 	while(true){
-		if (waitable::TIMEOUT == queue.wait(ps2_idle_timeout)){
+		if (TIMEOUT == queue.wait(ps2_idle_timeout)){
 			if (probe)	//device disconnected
 				return true;
 			probe = true;
@@ -384,9 +386,8 @@ bool PS_2::device_keybd(PS_2& self,byte index){
 				continue;
 		}
 		auto keycode = translate(data,state);
-		auto keychar = (keycode < 0x80) ? (&scancode_table)[keycode] : ' ';
-		dbgprint("key %c (%x) %s",keychar ? keychar : ' ',keycode,\
-			(state == 0xC0 || state == 0xF0) ? "released" : "pressed");
+		//auto keychar = (keycode < 0x80) ? (&scancode_table)[keycode] : ' ';
+		dbgprint("key (%x) %s",keycode,(state == 0xC0 || state == 0xF0) ? "released" : "pressed");
 		//TODO dispatch keyboard event
 		state = 0;
 	}
@@ -401,7 +402,7 @@ bool PS_2::device_mouse(PS_2& self,byte index,byte mode){
 	while(true){
 		byte it = 0;
 		while(it < length){
-			if (waitable::TIMEOUT == queue.wait(ps2_idle_timeout)){
+			if (TIMEOUT == queue.wait(ps2_idle_timeout)){
 				if (probe)	//device disconnected
 					return true;
 				probe = true;

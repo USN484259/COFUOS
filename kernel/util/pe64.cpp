@@ -28,6 +28,10 @@ PE64 const* PE64::construct(void const* module_base,size_t length){
 			break;
 		if (pe->size_optheader != 0xF0 || pe->machine != 0x8664 || pe->magic != 0x20B)
 			break;
+		if (((byte const*)(pe + 1) - (byte const*)module_base) + \
+			pe->dir_count*sizeof(directory) + \
+			pe->section_count*sizeof(section) > pe->header_size)
+				break;
 		return pe;
 	}while(false);
 	return nullptr;

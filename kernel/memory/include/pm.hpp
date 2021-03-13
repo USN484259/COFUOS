@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "util.hpp"
 #include "constant.hpp"
 #include "sync/include/spin_lock.hpp"
@@ -42,6 +42,9 @@ namespace UOS{
 		inline qword available(void) const{
 			assert(used + reserved <= total);
 			return total - used - reserved;
+		}
+		inline word get_critical_limit(void) const{
+			return soft_critical_limit;
 		}
 		inline qword bmp_page_count(void) const{
 			return align_up(bmp_size,PAGE_SIZE) >> 12;

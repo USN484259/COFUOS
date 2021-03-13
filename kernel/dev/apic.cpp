@@ -48,8 +48,8 @@ APIC::APIC(void) : table{0}{
 
 	//maps local APIC
 	auto madt = acpi.get_madt();
-	if (madt.local_apic_pbase != base){
-		bugcheck("ACPI base mismatch (%p,%p)",madt.local_apic_pbase,base);
+	if (madt->local_apic_pbase != base){
+		bugcheck("ACPI base mismatch (%p,%p)",madt->local_apic_pbase,base);
 	}
 	auto res = vm.assign(LOCAL_APIC_VBASE,base,1);
 	if (!res)
@@ -61,7 +61,7 @@ APIC::APIC(void) : table{0}{
 	res = false;
 	byte apic_id = id();
 	byte uid;
-	for (auto& p : madt.processors){
+	for (auto& p : madt->processors){
 		if (p.apic_id == apic_id){
 			uid = p.uid;
 			res = true;
@@ -83,7 +83,7 @@ APIC::APIC(void) : table{0}{
 	//NMI info
 	dword lint[2] = {0x00010000,0x00010000};
 
-	for (auto& p : madt.nmi_pins){
+	for (auto& p : madt->nmi_pins){
 		if (p.uid == 0xFF || p.uid == uid){
 			//	15 : LEVEL
 			//	13 : LOW_ACTIVE
@@ -119,9 +119,9 @@ APIC::APIC(void) : table{0}{
 	out_byte(0xA1,0xFF);
 
 	//IO APIC init
-	if (!madt.io_apic_pbase || (madt.io_apic_pbase & PAGE_MASK))
-		bugcheck("invalid IOAPIC base %p",madt.io_apic_pbase);
-	vm.assign(IO_APIC_VBASE,madt.io_apic_pbase,1);
+	if (!madt->io_apic_pbase || (madt->io_apic_pbase & PAGE_MASK))
+		bugcheck("invalid IOAPIC base %p",madt->io_apic_pbase);
+	vm.assign(IO_APIC_VBASE,madt->io_apic_pbase,1);
 
 	//Redirection table
 	io_apic_entries = (byte)(1 + (io_apic_read(1) >> 16));
@@ -130,22 +130,21 @@ APIC::APIC(void) : table{0}{
 	qword destination = (qword)apic_id << 56;
 
 	for (unsigned i = 0;i < 15;++i){
-		if (i >= madt.gsi_base)
-			rte[i - madt.gsi_base] = destination | (IRQ_OFFSET + i);
+		if (i >= madt->gsi_base)
+			rte[i - madt->gsi_base] = destination | (IRQ_OFFSET + i);
 	}
-	auto& fadt = acpi.get_fadt();
-	byte sci_irq = (byte)fadt.SCI_Interrupt;
-	if (madt.pic_present){
-		if (sci_irq < madt.gsi_base)
-			bugcheck("invalid SCI#%d with GSI = %d",sci_irq,madt.gsi_base);
-		sci_irq -= (byte)madt.gsi_base;
+	byte sci_irq = (byte)acpi.get_fadt()->SCI_Interrupt;
+	if (madt->pic_present){
+		if (sci_irq < madt->gsi_base)
+			bugcheck("invalid SCI#%d with GSI = %d",sci_irq,madt->gsi_base);
+		sci_irq -= (byte)madt->gsi_base;
 	}
 
 	//OSPM is required to treat the ACPI SCI interrupt as a sharable, level, active low interrupt.
 	rte[sci_irq] = destination | 0xA000 | IRQ_SCI;
 
 	//IRQ redirect
-	for (auto& redirect : madt.redirects){
+	for (auto& redirect : madt->redirects){
 		if (redirect.gsi > io_apic_entries || redirect.irq >= 16)
 			bugcheck("invalid IRQ#%d",redirect.gsi);
 		qword new_value = destination | 0x2000;
@@ -153,10 +152,10 @@ APIC::APIC(void) : table{0}{
 			new_value |= 0x400;
 		else{
 			new_value |= (IRQ_OFFSET + redirect.irq);
-			if (redirect.irq >= madt.gsi_base \
-				&& (rte[redirect.irq - madt.gsi_base] & 0xFF) == (IRQ_OFFSET + redirect.irq) )
+			if (redirect.irq >= madt->gsi_base \
+				&& (rte[redirect.irq - madt->gsi_base] & 0xFF) == (IRQ_OFFSET + redirect.irq) )
 			{	//clear origin IRQ vector if exists
-				rte[redirect.irq - madt.gsi_base] = 0x00010000;
+				rte[redirect.irq - madt->gsi_base] = 0x00010000;
 			}
 		}
 		if (1 == (redirect.mode & 0x03))	//high active

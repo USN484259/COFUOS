@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 
 #define BITMASK(i) ( ( (qword)1<<(qword)(i) ) - 1 )
 #define BIT(i) ( (qword)1 << ( (qword)(i)  ) )
@@ -58,7 +58,6 @@ namespace UOS{
 		
 	};
 	
-	
 	template<typename T>
 	reference_wrapper<T> ref(T& t){
 		return reference_wrapper<T>(t);
@@ -81,11 +80,7 @@ namespace UOS{
 	template<typename T>
 	void cref(const T&&) = delete;
 	
-	
-	//qword rdseed(void);
-	//qword rdrand(void);
-	
-	
+		
 	template<typename A,typename B>
 	struct pair{
 		A first;
@@ -186,18 +181,4 @@ namespace UOS{
 	constexpr T align_up(T value,size_t align){
 		return align_down((T)(value + align - 1),align);
 	}
-	
-	struct Point{
-		int x;
-		int y;
-	};
-
-	struct Rect{
-		int left;
-		int top;
-		int right;
-		int bottom;
-	};
-
-
 };

@@ -1,4 +1,4 @@
-all:	bin/apic.o bin/acpi.o bin/timer.o bin/rtc.o bin/display.o bin/ps_2.o
+all:	bin/cpu.o bin/apic.o bin/acpi.o bin/timer.o bin/rtc.o bin/display.o bin/ps_2.o
 
 bin/%.o:	%.cpp
 	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@

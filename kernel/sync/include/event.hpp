@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "process/include/waitable.hpp"
 
 namespace UOS{
@@ -8,10 +8,13 @@ namespace UOS{
 	
 	public:
 		event(bool initial_state = false);
-		TYPE type(void) const override{
+		OBJTYPE type(void) const override{
 			return EVENT;
 		}
-		REASON wait(qword us = 0) override;
+		bool check(void) const override{
+			return state;
+		}
+		REASON wait(qword us = 0,handle_table* = nullptr) override;
 		bool signal_one(void);
 		size_t signal_all(void);
 		void reset(void);

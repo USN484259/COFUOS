@@ -1,28 +1,25 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 
 namespace UOS{
-    class RTC{
-    public:
-        typedef void (*CALLBACK)(qword,word,void*);
-    private:
-        qword time = 0;
-        word ms_count = 0;
-        byte mode;
-        bool reset = true;
+	class RTC{
+		qword time = 0;
+		byte mode;
+		byte century_index = 0;
+		bool reset = true;
 
-        CALLBACK handler = nullptr;
-        void* handler_data = nullptr;
-
-        static void on_irq(byte id,void* data);
-        void convert(byte&);
-        void update(void);
-    public:
-        RTC(void);
-        qword get_time(void) const;
-        word get_ms(void) const;
-        void set_handler(CALLBACK,void* = nullptr);
-        void reload(void);
-    };
-    //extern RTC rtc;
+		static void on_irq(byte id,void* data);
+		//could handle 'overflowed' BCD
+		void convert(byte&);
+		void update(void);
+	public:
+		RTC(void);
+		inline qword get_time(void) const{
+			return time;
+		}
+		inline void reload(void){
+			reset = true;
+		}
+	};
+	extern RTC rtc;
 }

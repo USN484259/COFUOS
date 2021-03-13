@@ -53,7 +53,7 @@ void operator delete(void* p,size_t len){
 		vm.release((qword)p,page_count);
 	}
 }
-
+/*
 void* operator new[](size_t len){
 	qword* p=(qword*)operator new(len+sizeof(qword));
 	*p=(qword)len;	//place size in the first qword of block
@@ -67,7 +67,7 @@ void operator delete[](void* p){
 	--b;	//point back to the block head
 	operator delete(b,*b);	//block size at head
 }
-
+*/
 extern "C" {
     //__chkstk in hal.asm
 

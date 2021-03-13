@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "sysinfo.hpp"
 
 #include "vector.hpp"
@@ -139,9 +139,17 @@ namespace UOS{
 		ACPI(void);
 		ACPI(const ACPI&) = delete;
 		byte get_version(void) const;
-		const MADT& get_madt(void) const;
-		const FADT& get_fadt(void) const;
-		const HPET& get_hpet(void) const;
+		inline const MADT* get_madt(void) const{
+			assert(madt);
+			return madt;
+		}
+		inline const FADT* get_fadt(void) const{
+			assert(fadt);
+			return fadt;
+		}
+		inline const HPET* get_hpet(void) const{
+			return hpet;
+		}
 	};
 	extern ACPI acpi;
 }

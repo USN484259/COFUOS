@@ -7,7 +7,6 @@
 #include "dev/include/timer.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "assert.hpp"
-#include "hal.hpp"
 
 using namespace UOS;
 
@@ -21,13 +20,15 @@ thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), p
 	krnl_stk_reserved = pe_kernel->stk_reserve;
 }
 
-thread::thread(process* p, procedure entry, void* arg, qword stk_size) : id(new_id()), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+	IF_assert;
 	assert(ps && krnl_stk_reserved >= PAGE_SIZE);
+	acquire();
 	lock_guard<spin_lock> guard(rwlock);
-	auto va = vm.reserve(0,krnl_stk_reserved/PAGE_SIZE);
+	auto va = vm.reserve(0,2 + krnl_stk_reserved/PAGE_SIZE);
 	if (!va)
 		bugcheck("vm.reserve failed with 0x%x pages",krnl_stk_reserved);
-	krnl_stk_top = va + krnl_stk_reserved;
+	krnl_stk_top = va + PAGE_SIZE + krnl_stk_reserved;
 	auto res = vm.commit(krnl_stk_top - PAGE_SIZE,1);
 	if (!res)
 		bugcheck("vm.commit failed @ %p",krnl_stk_top - PAGE_SIZE);
@@ -37,9 +38,13 @@ thread::thread(process* p, procedure entry, void* arg, qword stk_size) : id(new_
 	gpr.cs = SEG_KRNL_CS;
 	gpr.rip = reinterpret_cast<qword>(entry);
 	gpr.rflags = 0x202;		//IF
-	gpr.rcx = reinterpret_cast<qword>(arg);
+	gpr.rcx = args[0];
+	gpr.rdx = args[1];
+	gpr.r8 = args[2];
+	gpr.r9 = args[3];
 	dbgprint("new thread $%d @ %p",id,this);
 	ready_queue.put(this);
+
 }
 
 thread::~thread(void){
@@ -56,26 +61,27 @@ thread::~thread(void){
 		delete sse;
 	}
 	if (user_stk_top){
-		if (!get_process()->vspace->release(user_stk_top - user_stk_reserved,user_stk_reserved/PAGE_SIZE))
+		if (!get_process()->vspace->release(user_stk_top - user_stk_reserved - PAGE_SIZE,1 + user_stk_reserved/PAGE_SIZE))
 			bugcheck("vspace->release failed @ %p",user_stk_top - user_stk_reserved);
 	}
-	if (!vm.release(krnl_stk_top - krnl_stk_reserved,krnl_stk_reserved/PAGE_SIZE))
+	if (!vm.release(krnl_stk_top - krnl_stk_reserved - PAGE_SIZE,2 + krnl_stk_reserved/PAGE_SIZE))
 		bugcheck("vm.release failed @ %p",krnl_stk_top - krnl_stk_reserved);
 }
 
-waitable::REASON thread::wait(qword us){
-	interrupt_guard<void> ig;
-	rwlock.lock();
+REASON thread::wait(qword us,handle_table* ht){
 	if (state == STOPPED){
-		rwlock.unlock();
+		if (ht)
+			ht->unlock();
 		return PASSED;
 	}
-	return waitable::imp_wait(us);
+	return waitable::wait(us,ht);
 }
 
-void thread::set_priority(byte val){
-	assert(val < scheduler::max_priority);
+bool thread::set_priority(byte val){
+	if (val >= scheduler::max_priority)
+		return false;
 	priority = val;
+	return true;
 }
 
 bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
@@ -170,27 +176,29 @@ void thread::sleep(qword us){
 		next_thread->unlock();
 		next_thread->on_stop();
 	}while(true);
-	bool esc = false;
-	{
-		lock_guard<thread> guard(*this_thread);
-		if (us){
-			auto ticket = timer.wait(us,on_timer,this_thread);
-			if (!this_thread->set_state(thread::WAITING,ticket,nullptr)){
-				timer.cancel(ticket);
-				esc = true;
-			}
-		}
-		else{
-			if (this_thread->set_state(thread::READY))
-				ready_queue.put(this_thread);
-			else
-				esc = true;
+	bool res;
+	this_thread->lock();
+	if (us){
+		auto ticket = timer.wait(us,on_timer,this_thread);
+		res = this_thread->set_state(thread::WAITING,ticket,nullptr);
+		if (!res){
+			timer.cancel(ticket);
 		}
 	}
-	if (esc)
-		core.escape(next_thread);
-	else
+	else{
+		res = this_thread->set_state(thread::READY);
+		if (res){
+			this_thread->put_slice(scheduler::max_slice);
+			ready_queue.put(this_thread);
+		}
+	}
+	this_thread->unlock();
+	if (res){
 		core.switch_to(next_thread);
+	}
+	else{
+		core.escape(next_thread);
+	}	
 }
 
 void thread::kill(thread* th){

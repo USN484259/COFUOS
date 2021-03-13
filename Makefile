@@ -2,18 +2,20 @@ export COFUOS_ROOT:=$(CURDIR)
 
 export MINGW_CC=mingw-gcc
 export MINGW_LD=mingw-ld
+export MINGW_AR=mingw-ar
 export CC=g++
 export NASM=nasm
 export OBJCOPY=objcopy
 export STRIP=strip
 export CP=cp
 
+
 all: boot font FAT32_editor COFUOS app
 
 boot:
 	@cd boot && $(MAKE) $@
 	
-COFUOS: font FAT32_editor app
+COFUOS: FAT32_editor app
 	@cd kernel && $(MAKE) $@
 
 font:

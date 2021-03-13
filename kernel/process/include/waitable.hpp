@@ -1,10 +1,11 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
+#include "interface/include/interface.h"
 #include "sync/include/spin_lock.hpp"
 
 namespace UOS{
 	class thread;
-
+	class handle_table;
 	struct thread_queue{
 		thread* head = nullptr;
 		thread* tail = nullptr;
@@ -16,11 +17,8 @@ namespace UOS{
 	};
 
 	class waitable{
-	public:
-		enum REASON : byte {NONE = 0, PASSED = 1, NOTIFY = 2, TIMEOUT = 3};
-		enum TYPE {UNKNOWN,THREAD,PROCESS,FILE,MUTEX,EVENT};
 	protected:
-		spin_lock rwlock;
+		mutable spin_lock rwlock;
 		dword ref_count = 1;
 		thread_queue wait_queue;
 
@@ -28,17 +26,19 @@ namespace UOS{
 		static void on_timer(qword,void*);
 
 		//locked before calling, unlock inside
-		waitable::REASON imp_wait(qword);
+		REASON imp_wait(qword);
 		virtual size_t notify(void);
 	public:
 		waitable(void) = default;
 		waitable(const waitable&) = delete;
 		virtual ~waitable(void);
-		virtual TYPE type(void) const = 0;
+		virtual OBJTYPE type(void) const = 0;
+		//returns true if signaled (aka PASSED on wait)
+		virtual bool check(void) const = 0;
 		// (this_thread) waits for (this)
-		virtual REASON wait(qword us = 0);
+		virtual REASON wait(qword us = 0,handle_table* ht = nullptr);
 		void cancel(thread*);
-		void acquire(void);
+		bool acquire(void);
 		//return true if still have reference
 		virtual bool relax(void);
 		inline dword get_reference_count(void) const{

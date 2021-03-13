@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "container.hpp"
 #include "util.hpp"
 #include "constant.hpp"
@@ -52,8 +52,8 @@ namespace UOS{
 			assert(count <= cap);
 			while(count)
 				pop_back();
+			operator delete(buffer,cap*sizeof(T));
 			cap = 0;
-			delete[] (byte*)buffer;
 			buffer = nullptr;
 		}
 		void swap(vector& other){
@@ -66,12 +66,12 @@ namespace UOS{
 			assert(count <= cap);
 			if (new_size <= cap)
 				return;
-			T* new_buffer = (T*)new byte[new_size*sizeof(T)];
+			T* new_buffer = (T*)operator new(new_size*sizeof(T));
 			for (size_t i = 0;i < count;++i){
 				new (new_buffer + i) T(move(buffer[i]));
 				buffer[i].~T();
 			}
-			delete[] (byte*)buffer;
+			operator delete(buffer,cap*sizeof(T));
 			buffer = new_buffer;
 			cap = new_size;
 		}

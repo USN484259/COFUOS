@@ -3,6 +3,7 @@
 #include "core_state.hpp"
 #include "dev/include/timer.hpp"
 #include "sync/include/lock_guard.hpp"
+#include "process.hpp"
 #include "assert.hpp"
 
 using namespace UOS;
@@ -69,7 +70,7 @@ size_t waitable::notify(void){
 	return imp_notify(ptr);
 }
 
-waitable::REASON waitable::imp_wait(qword us){
+REASON waitable::imp_wait(qword us){
 	IF_assert;
 	assert(rwlock.is_locked());
 	this_core core;
@@ -91,11 +92,13 @@ waitable::REASON waitable::imp_wait(qword us){
 		next_thread->unlock();
 		next_thread->on_stop();
 	}while(true);
+	next_thread->put_slice(scheduler::max_slice);
 	qword ticket = 0;
 	this_thread->lock();
 	if (us)
 		ticket = timer.wait(us,on_timer,this_thread);
 	if (this_thread->set_state(thread::WAITING,ticket,this)){
+		this_thread->put_slice(scheduler::max_slice);
 		wait_queue.put(this_thread);
 		this_thread->unlock();
 		rwlock.unlock();
@@ -112,9 +115,11 @@ waitable::REASON waitable::imp_wait(qword us){
 	}
 }
 
-waitable::REASON waitable::wait(qword us){
+REASON waitable::wait(qword us,handle_table* ht){
 	interrupt_guard<void> ig;
 	rwlock.lock();
+	if (ht)
+		ht->unlock();
 	return imp_wait(us);
 }
 
@@ -124,7 +129,7 @@ void waitable::on_timer(qword ticket,void* ptr){
 	if (th->get_ticket() != ticket)
 		return;
 	th->lock();
-	if (!th->set_state(thread::READY,waitable::TIMEOUT)){
+	if (!th->set_state(thread::READY,TIMEOUT)){
 		th->unlock();
 		th->on_stop();
 		return;
@@ -136,6 +141,7 @@ void waitable::on_timer(qword ticket,void* ptr){
 			bugcheck("thread state corrupted @ %p",th);
 		this_thread->lock();
 		if (this_thread->set_state(thread::READY)){
+			this_thread->put_slice(scheduler::max_slice);
 			ready_queue.put(this_thread);
 			this_thread->unlock();
 			core.switch_to(th);
@@ -206,10 +212,12 @@ size_t waitable::imp_notify(thread* th){
 	return count;
 }
 
-void waitable::acquire(void){
+bool waitable::acquire(void){
 	interrupt_guard<spin_lock> guard(rwlock);
-	assert(ref_count);
+	if (!ref_count)
+		return false;
 	++ref_count;
+	return true;
 }
 
 bool waitable::relax(void){

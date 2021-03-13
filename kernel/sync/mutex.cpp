@@ -4,6 +4,7 @@
 #include "lock_guard.hpp"
 #include "assert.hpp"
 #include "intrinsics.hpp"
+#include "process/include/process.hpp"
 
 using namespace UOS;
 
@@ -33,20 +34,25 @@ void mutex::unlock(void){
 	notify();
 }
 
-waitable::REASON mutex::wait(qword){
+REASON mutex::wait(qword us,handle_table* ht){
 	this_core core;
 	thread* this_thread = core.this_thread();
 	REASON reason = PASSED;
 	interrupt_guard<void> ig;
 	do{
 		rwlock.lock();
+		if (ht){
+			ht->unlock();
+			ht = nullptr;
+		}
 		if (cmpxchg_ptr(&owner,this_thread,(thread*)nullptr) == nullptr){
 			assert(owner == this_thread);
 			rwlock.unlock();
-			return reason;
+			break;
 		}
-		reason = imp_wait(0);
-	}while(true);
+		reason = imp_wait(us);
+	}while(reason == NOTIFY);
+	return reason;
 }
 
 size_t mutex::notify(void){

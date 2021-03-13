@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "process/include/waitable.hpp"
 #include "string.hpp"
 
@@ -29,8 +29,11 @@ namespace UOS{
 		basic_file(const basic_file&) = delete;
 		//TODO send 'kill' to file-manager when closing
 		virtual ~basic_file(void) = default;
-		TYPE type(void) const override{
-			return waitable::FILE;
+		OBJTYPE type(void) const override{
+			return OBJTYPE::FILE;
+		}
+		bool check(void) const override{
+			return false;
 		}
 		inline const string& full_name(void) const{
 			return name;

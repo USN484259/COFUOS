@@ -4,20 +4,18 @@ IA32_APIC_BASE equ 0x1B
 HIGHADDR equ 0xFFFF_8000_0000_0000
 
 GDT_BASE equ 0x0600
-GDT_LIM equ 0x100	;16 entries
-TSS_BASE equ 0x0700
-TSS_LIM equ 0x80
+GDT_LIM equ 0x600	;96 entries
 
-SYSINFO_BASE equ 0x0C00
-SYSINFO_LEN equ (0x1000-SYSINFO_BASE)
-
-IDT_BASE equ 0x0800
+IDT_BASE equ 0x0C00
 IDT_LIM equ 0x400	;64 entries
+
+SYSINFO_BASE equ 0x0500
+SYSINFO_LEN equ 0x100
 
 PAGE_SIZE equ 0x1000
 SECTOR_SIZE equ 0x200
 
-ISR_STK equ 0x02000
+LDR_STK equ 0x02000
 
 PL4T equ 0x03000
 PDPT0 equ 0x4000
@@ -37,9 +35,9 @@ PMMSCAN_LEN equ 0x0F00
 
 ;	physical Memory layout
 
-;	000000		001000		RW	TSS & GDT & IDT & sysinfo
-;	001000		002000		RW	PMMSCAN & VBE_scan & ISR stack
-;	002000		003000		RX	loader & MP entry
+;	000000		001000		RW	GDT & IDT
+;	001000		002000		RW	PMMSCAN & VBE_scan & fatal ISR & loader stk
+;	002000		003000		RX	loader & MP entry & sysinfo
 ;	003000		004000		RW	PL4T
 ;	004000		005000		RW	PDPT low
 ;	005000		006000		RW	PDPT high
@@ -105,8 +103,8 @@ align 4
 strvberr db 'No proper video mode',0
 align 4
 strnoacpi db 'ACPI not found',0
-align 4
-strnopci db 'PCI not found',0
+; align 4
+; strnopci db 'PCI not found',0
 
 align 16
 
@@ -163,46 +161,13 @@ dd 1111_0010_0000_0000_b	;user64 DS
 dd 0
 dd 0000_0000_0010_0000_1111_1000_0000_0000_b	;user64 CS
 
-
-dw TSS_LIM
-dw TSS_BASE
-db (TSS_BASE>>16)
-db 1000_1001_b
-db 1001_0000_b
-db (TSS_BASE>>24)
-dd (HIGHADDR>>32)
-dd 0		;TSS
-
-
-
 gdt64_len equ ($-gdt64_base)
 
-GDT_TSS equ 7*8
-GDT_SYS_CS equ 1*8
-GDT_SYS_DS equ 2*8
+GDT_SYS_CS equ 0x08
+GDT_SYS_DS equ 0x10
 
 
 align 16
-
-
-tss64_base:
-
-dd 0
-dq HIGHADDR+ISR_STK
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dq 0
-dd 0
-
-tss64_len equ ($-tss64_base)
 
 print16:
 
@@ -344,7 +309,7 @@ ret
 
 BSP_entry:
 mov ss,cx
-mov sp,ISR_STK
+mov sp,LDR_STK
 
 ;	ds	->	cur code segment
 ;	es	->	flat address
@@ -377,20 +342,19 @@ mov di,SYSINFO_BASE+sysinfo.FAT_header
 mov cx,7
 es rep movsw
 
-PCI_scan:
-mov ax,0xB101
-int 0x1A
-jc .fail
-and al,1
-cmp edx,0x20494350
-jnz .fail
-cmp ax,1
-jz .end
-.fail:
-mov si,strnopci
-jmp abort16
-
-.end:
+; PCI_scan:
+; mov ax,0xB101
+; int 0x1A
+; jc .fail
+; and al,1
+; cmp edx,0x20494350
+; jnz .fail
+; cmp ax,1
+; jz .end
+; .fail:
+; mov si,strnopci
+; jmp abort16
+; .end:
 
 ACPI_scan:
 
@@ -657,7 +621,7 @@ mov es,ax
 mov fs,ax
 mov gs,ax
 mov ss,ax
-mov esp,ISR_STK
+mov esp,LDR_STK
 mov ebp,esp		;stack frame
 
 
@@ -761,13 +725,6 @@ call zeromemory
 mov esi,gdt64_base
 mov edi,GDT_BASE+8
 mov ecx,gdt64_len/4
-rep movsd
-
-;init TSS
-mov edi,TSS_BASE
-
-mov esi,tss64_base
-mov ecx,tss64_len/4
 rep movsd
 
 ;paging init
@@ -944,7 +901,7 @@ LM_entry:
 
 ;reload GDT to HIGHADDR
 mov rdx,HIGHADDR+GDT_BASE
-mov rcx,(GDT_LIM-1)<<(16+32)
+mov rcx,(GDT_LIM-1) << 48
 push rdx
 push rcx
 lgdt [rsp+6]
@@ -955,7 +912,7 @@ mov es,ax
 mov fs,ax
 mov gs,ax
 mov ss,ax
-mov rsp,HIGHADDR+ISR_STK
+mov rsp,HIGHADDR+LDR_STK
 
 mov ecx,8
 mov eax,.cs_reload
@@ -975,22 +932,12 @@ CODE64OFF equ ($-$$)
 
 section codehigh vstart=0xFFFF8000_00002000+CODE64OFF
 
-
-TR_selector:
-dw GDT_TSS
-
-align 4
-
 strkrnl db 'COFUOS',0x20,0x20,'SYS',0
 
 align 8
 
 LM_high:
 mov r12,HIGHADDR+SYSINFO_BASE
-
-;load TR
-mov rdx,TR_selector
-ltr [rdx]
 
 ;init IDT
 mov rdi,HIGHADDR+IDT_BASE

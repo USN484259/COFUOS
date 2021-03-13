@@ -2,7 +2,9 @@
 
 HIGHADDR equ 0xFFFF8000_00000000
 
-IDT_BASE equ 0x0800
+GDT_BASE equ (HIGHADDR+0x0600)
+GDT_LIM equ 0x600	;96 entries
+IDT_BASE equ (HIGHADDR+0x0C00)
 IDT_LIM equ 0x400	;64 entries
 
 ;WARNING: according to x64 calling convention 0x20 space on stack needed before calling C functions
@@ -11,8 +13,9 @@ extern dispatch_exception
 extern dispatch_irq
 extern kernel_service
 
-global build_IDT
-;global fpu_init
+global ISR_exception
+global ISR_irq
+
 global service_entry
 global service_exit
 
@@ -25,11 +28,7 @@ global zeromemory
 global memcpy
 
 global bugcheck_raise
-;global __C_specific_handler
 global __chkstk
-
-;global handler_push
-;global handler_pop
 
 section .text
 
@@ -40,7 +39,7 @@ section .text
 %if %1 == 8 || %1 == 17 || (%1 >= 10 && %1 <= 14)
 ;
 %else
-push rax
+push 0
 %endif
 call near exception_entry
 align 8, db 0xCC
@@ -240,20 +239,24 @@ iretq
 ;TODO watch out NMI
 service_entry:
 swapgs
-mov r8,rsp	;user rsp as context
+bt r11d,8	;TF
 mov r10,[gs:8]
+mov r11,rsp	;user rsp as context
 mov rsp,[r10+KSP_OFF]
-sub rsp,0x40
-mov [rsp+0x28],rcx	; user rip
-mov [rsp+0x30],r11	; user rflags
-mov [rsp+0x38],r8	; user rsp
 sti
+setc r10b
+sub rsp,0x40
+shl r10d,8
+mov [rsp+0x20],rcx	; user rip
+mov [rsp+0x28],r11	; user rsp
+mov [rsp+0x30],r10d	; user rflags
 mov rcx,rax
 call kernel_service
 cli
-mov rcx,[rsp+0x28]	; user rip
-mov r11,[rsp+0x30]	; user rflags
-mov rsp,[rsp+0x38]	; user rsp
+mov r11d,0x202
+mov rcx,[rsp+0x20]	; user rip
+or r11w,[rsp+0x30]	; user rflags
+mov rsp,[rsp+0x28]	; user rsp
 swapgs
 o64 sysret
 ; rax as return value
@@ -270,59 +273,6 @@ mov r11d,0x202	;IF
 lea rsp,[r9 - 0x20]
 swapgs
 o64 sysret
-
-
-align 16
-build_IDT:
-mov [rsp+0x10],rdi
-mov [rsp+0x08],rsi
-mov ecx,20
-mov rdi,HIGHADDR+IDT_BASE
-mov rsi,ISR_exception
-mov edx,(HIGHADDR>>32)
-
-.exception:
-mov eax,esi
-mov ax,1000_1110_0000_0000_b
-shl rax,32
-mov ax,si
-bts rax,19	;8<<16
-stosq
-mov rax,rdx
-add rsi,8
-stosq
-loop .exception
-
-mov ecx,12*2
-xor rax,rax
-rep stosq   ;gap
-
-mov rsi,ISR_irq
-;rdx == HIGHADDR>>32
-mov ecx,IDT_LIM/0x10 - 0x20
-
-.isr:
-mov eax,esi
-mov ax,1000_1110_0000_0000_b
-shl rax,32
-mov ax,si
-bts rax,19	;8<<16
-stosq
-mov rax,rdx
-add rsi,8
-stosq
-loop .isr
-
-mov rdi,[rsp+0x10]
-mov rsi,[rsp+0x08]
-ret
-
-; align 16
-; fpu_init:
-; mov DWORD [rsp+8],0x1F80
-; fninit
-; ldmxcsr [rsp+8]
-; ret
 
 align 16
 memset_val:

@@ -19,9 +19,13 @@
 #define PAGE_SIZE ((qword)0x1000)
 #define PAGE_MASK ((qword)0x0FFF)
 
-#define IDT_BASE HIGHADDR(0x0800)
+#define FATAL_STK_TOP HIGHADDR(0x2000)
+
+#define GDT_BASE HIGHADDR(0x0600)
+#define GDT_LIM ((qword)0x600)
+#define IDT_BASE HIGHADDR(0x0C00)
 #define IDT_LIM ((qword)0x400)
-#define SYSINFO_BASE HIGHADDR(0x0C00)
+#define SYSINFO_BASE HIGHADDR(0x0500)
 
 #define PL4T_PBASE ((qword)0x3000)
 #define PDPT0_PBASE ((qword)0x4000)

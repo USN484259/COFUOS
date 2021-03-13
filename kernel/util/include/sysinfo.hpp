@@ -1,12 +1,12 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "constant.hpp"
 
 namespace UOS{
 	class system_feature{
 		qword state = 0;	
 	public:
-		enum FEATURE : word {GDB, MEM, EXCEPT, APIC};
+		enum FEATURE : word {GDB, MEM, APIC, PS};
 		void set(FEATURE);
 		bool get(FEATURE) const;
 	};

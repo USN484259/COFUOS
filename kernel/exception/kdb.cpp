@@ -1,5 +1,8 @@
-#include "types.hpp"
 #include "kdb.hpp"
+#include "util.hpp"
+#include "lang.hpp"
+#include "constant.hpp"
+#include "assert.hpp"
 #include "intrinsics.hpp"
 #include "sysinfo.hpp"
 #include "memory/include/pm.hpp"
@@ -8,8 +11,7 @@
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
 #include "sync/include/lock_guard.hpp"
-#include "util.hpp"
-#include "lang.hpp"
+
 
 using namespace UOS;
 
@@ -29,6 +31,37 @@ static const char* err_invarg = "E16";
 static const char* err_denied = "E0D";
 
 static const char* feature_list = "PacketSize=400";
+
+void print_sysinfo(void){
+	assert(sysinfo->sig == 0x004F464E49535953ULL);	//'SYSINFO\0'
+	dbgprint("%s",&sysinfo->sig);
+	dbgprint("%cSDT @ %p",sysinfo->rsdp.version ? 'X' : 'R', sysinfo->rsdp.address);
+	dbgprint("PMM_avl_top @ %p",sysinfo->PMM_avl_top);
+	dbgprint("kernel image %d pages",sysinfo->kernel_page);
+	dbgprint("cpuid (eax == 7) -> 0x%x",(qword)sysinfo->cpuinfo);
+	dbgprint("MAXPHYADDR %d",sysinfo->addrwidth & 0xFF);
+	dbgprint("Video %d*%d*%d line_size = %d @ %p",\
+		sysinfo->VBE_width,sysinfo->VBE_height,sysinfo->VBE_bpp,sysinfo->VBE_scanline,(qword)sysinfo->VBE_addr);
+	dbgprint("FAT32 header @ %d, table @ %d, data @ %d, cluster %d",\
+		sysinfo->FAT_header,sysinfo->FAT_table,sysinfo->FAT_data,sysinfo->FAT_cluster);
+	assert(pe_kernel);
+	//since image has already loaded, it is safe to access section table
+	for (unsigned i = 0;i < pe_kernel->section_count;++i){
+		const auto section = pe_kernel->get_section(i);
+		assert(section);
+		char buf[9];
+		memcpy(buf,section->name,8);
+		buf[8] = 0;
+		char attr[4] = {' ',' ',' ',0};
+		if (section->attrib & 0x80000000)
+			attr[1] = 'W';
+		if (section->attrib & 0x40000000)
+			attr[0] = 'R';
+		if (section->attrib & 0x20000000)
+			attr[2] = 'X';
+		dbgprint("%s @ %p size = 0x%x %s",buf,pe_kernel->imgbase + section->offset,(qword)section->datasize,attr);
+	}
+}
 
 inline byte hex_to_bin(byte ch){
 	if (ch >= '0' && ch <= '9')
@@ -125,8 +158,8 @@ kdb_stub::kdb_stub(word pt) : port(pt) {
 	}
 
 	features.set(decltype(features)::GDB);
-
 	int_trap(3);
+	print_sysinfo();
 }
 
 void kdb_stub::recv(void) {
@@ -653,7 +686,7 @@ void dbgprint(const char* fmt,...){
 		return;
 	
 	va_list args;
-	auto port = debug_stub.get().get_port();
+	auto port = debug_stub.get_port();
 	interrupt_guard<void> guard;
 	do{
 		serial_put(port,'$');
@@ -719,6 +752,14 @@ void dbgprint(const char* fmt,...){
 				{
 					auto str = va_arg(args,const char*);
 					while(*str)
+						chksum += put_hex_char(port,*str++);
+					continue;
+				}
+				case 'T':	//buffer, length
+				{
+					auto str = va_arg(args,const char*);
+					auto length = va_arg(args,dword);
+					while(length--)
 						chksum += put_hex_char(port,*str++);
 					continue;
 				}

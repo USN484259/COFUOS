@@ -10,7 +10,7 @@ MODULES= util sync exception memory dev process filesystem interface
 
 COFUOS:	bin/COFUOS.sys
 
-bin/COFUOS.sys: $(MODULES) bin/scancode.o bin/hal.o bin/embed_test.o $(COFUOS_ROOT)/util/include/*.hpp $(MODULES)/include/*.hpp
+bin/COFUOS.sys: $(MODULES) bin/hal.o bin/embed_test.o $(COFUOS_ROOT)/util/include/*.hpp $(MODULES)/include/*.hpp
 	$(MINGW_CC) $(CPPFLAGS) $(wildcard *.cpp) $(wildcard bin/*.o) -o bin/COFUOS.sys -e krnlentry -Wl,--relax,--image-base=0xFFFF800002000000,--stack=0x4000,--no-seh
 	$(OBJCOPY) -S bin/COFUOS.sys bin/COFUOS.sys.clean
 	../tools/FAT32_editor/bin/FAT32_editor ../COFUOS.vhd < FAT32_kernel.txt
@@ -18,10 +18,7 @@ bin/COFUOS.sys: $(MODULES) bin/scancode.o bin/hal.o bin/embed_test.o $(COFUOS_RO
 $(MODULES):
 	@cd $@ && $(MAKE)
 
-bin/scancode.o: scancode.asm scancode.bin
-	$(NASM) -f win64 $< -o $@
-
-bin/embed_test.o: embed_test.asm ../app/bin/test.exe
+bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/test/bin/test.exe
 	$(NASM) -f win64 $< -o $@
 
 bin/hal.o:	hal.asm

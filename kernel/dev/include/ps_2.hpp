@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "process/include/waitable.hpp"
 #include "sync/include/spin_lock.hpp"
 
@@ -14,13 +14,16 @@ namespace UOS{
 			safe_queue(void);
 			safe_queue(const safe_queue&) = delete;
 			~safe_queue(void);
-			TYPE type(void) const override{
+			OBJTYPE type(void) const override{
 				return UNKNOWN;
 			}
 			byte get(void);
 			void put(byte);
 			void clear(void);
-			REASON wait(qword = 0) override;
+			bool check(void) const override{
+				return head != tail;
+			}
+			REASON wait(qword = 0,handle_table* = nullptr) override;
 		};
 
 		spin_lock lock;
@@ -30,7 +33,7 @@ namespace UOS{
 		}channel[2];
 
 		static void on_irq(byte,void*);
-		static void thread_ps2(void*);
+		static void thread_ps2(qword,qword,qword,qword);
 		static bool device_keybd(PS_2&,byte);
 		static bool device_mouse(PS_2&,byte,byte);
 	public:
@@ -39,5 +42,3 @@ namespace UOS{
 	};
 	extern PS_2 ps2_device;
 }
-
-extern "C" const byte scancode_table;

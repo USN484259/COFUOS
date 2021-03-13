@@ -1,7 +1,6 @@
 #include "process.hpp"
 #include "sync/include/lock_guard.hpp"
 #include "memory/include/vm.hpp"
-#include "interface/include/loader.hpp"
 #include "intrinsics.hpp"
 #include "core_state.hpp"
 
@@ -30,9 +29,11 @@ void handle_table::clear(void){
 
 dword handle_table::put(waitable* ptr){
 	interrupt_guard<spin_lock> guard(rwlock);
-	if (table.size() == count){
+	assert(table.size() <= count);
+	if (table.size()*4 >= count*3){
 		table.push_back(ptr);
-		return count++;
+		++count;
+		return table.size() - 1;
 	}
 	else{
 		for (auto it = table.begin();it != table.end();++it){
@@ -50,6 +51,7 @@ bool handle_table::close(dword index){
 	waitable* ptr;
 	{
 		interrupt_guard<spin_lock> guard(rwlock);
+		assert(table.size() <= count);
 		if (index >= table.size())
 			return false;
 		auto& ref = table.at(index);
@@ -66,21 +68,32 @@ bool handle_table::close(dword index){
 
 waitable* handle_table::operator[](dword index){
 	assert(rwlock.is_locked() && !rwlock.is_exclusive());
+	assert(table.size() <= count);
 	if (index >= table.size())
 		return nullptr;
 	return table.at(index);
 }
 
-process::process(initial_process_tag, kernel_vspace* v) : id (new_id()), vspace(v), image(nullptr){
+process::process(initial_process_tag, kernel_vspace* v) : id (new_id()), vspace(v), privilege(KERNEL), image(nullptr){
 	assert(id == 0);
 	threads.insert(thread::initial_thread_tag(), this);
 }
 
-process::process(startup_info* info) : id(new_id()),vspace(new user_vspace()){
+process::process(const string& cmd,basic_file* file,const qword* args) : id(new_id()),vspace(new user_vspace()),commandline(cmd){
 	//WARNING: header may be incomplete
-	assert(info && info->file && info->image_base && info->image_size && info->header_size && info->cmd_length);
+	IF_assert;
+	acquire();
+	{
+		lock_guard<spin_lock> guard(rwlock);
+		//image file handle as handle 0, user not accessible
+		auto handle = handles.put(file);
+		assert(handle == 0);
+	}
 	dbgprint("spawned new process $%d @ %p",id,this);
-	spawn(userentry,info);
+	auto th = spawn(process_loader,args);
+	assert(th);
+	th->relax();
+
 }
 
 process::~process(void){
@@ -91,7 +104,7 @@ process::~process(void){
 	delete vspace;
 }
 
-thread* process::spawn(thread::procedure entry,void* arg,qword stk_size){
+thread* process::spawn(thread::procedure entry,const qword* args,qword stk_size){
 	interrupt_guard<spin_lock> guard(rwlock);
 	if (state == STOPPED)
 		return nullptr;
@@ -99,7 +112,7 @@ thread* process::spawn(thread::procedure entry,void* arg,qword stk_size){
 		stk_size = max(stk_size,PAGE_SIZE);
 	else
 		stk_size = pe_kernel->stk_reserve;
-	auto it = threads.insert(this,entry,arg,stk_size);
+	auto it = threads.insert(this,entry,args,stk_size);
 	return &*it;
 }
 
@@ -142,6 +155,15 @@ void process::erase(thread* th){
 	relax();
 }
 
+REASON process::wait(qword us,handle_table* ht){
+	if (state == STOPPED){
+		if (ht)
+			ht->unlock();
+		return PASSED;
+	}
+	return waitable::wait(us,ht);
+}
+
 bool process::relax(void){
 	auto res = waitable::relax();
 	if (!res){
@@ -162,9 +184,7 @@ thread* process_manager::get_initial_thread(void){
 	return it->get_thread(0);
 }
 
-process* process_manager::spawn(const string& command){
-	if (command.size() >= 4000)	//too long to fit into one page
-		return nullptr;
+process* process_manager::spawn(string&& command,string&& env){
 	//TODO replace with real file-opening logic
 	auto sep = command.find_first_of(' ');
 	string filename(command.substr(command.begin(),sep));
@@ -190,26 +210,17 @@ process* process_manager::spawn(const string& command){
 			return nullptr;
 	//(likely) valid image file:
 	//non-system, non-dll, executable, valid vbase, valid alignment, has section
-	//allocate one kernel page as startup-info
-	//released after image loading
-	qword info_page = vm.reserve(0,1);
-	if (info_page == 0)
-		return nullptr;
-	auto res = vm.commit(info_page,1);
-	if (!res){
-		vm.release(info_page,1);
-		return nullptr;
-	}
-	auto info = (process::startup_info*)(void*)(info_page);
-	info->file = file;
-	info->image_base = header->imgbase;
-	info->image_size = header->imgsize;
-	info->header_size = header->header_size;
-	info->cmd_length = command.size() + 1;
-	memcpy(info + 1,command.c_str(),command.size() + 1);	//also copys '\0'
+	
+	qword info[4] = {
+		reinterpret_cast<qword>(env.empty() ? nullptr : new string(move(env))),
+		header->imgbase,
+		header->imgsize,
+		header->header_size
+	};
+
 	//create a process and load this image
 	interrupt_guard<spin_lock> guard(lock);
-	auto it = table.insert(info);
+	auto it = table.insert(move(command),file,info);
 	return &*it;
 }
 
@@ -222,11 +233,34 @@ void process_manager::erase(process* ps){
 	table.erase(it);
 }
 
+bool process_manager::enumerate(dword& id){
+	interrupt_guard<spin_lock> guard(lock,spin_lock::SHARED);
+	decltype(table)::iterator it;
+	if (id == 0)
+		it = table.begin();
+	else{
+		it = table.find(id);
+		if (it == table.end())
+			return false;
+		++it;
+	}
+	while(it != table.end()){
+		if (it->id != 0){
+			id = it->id;
+			return true;
+		}
+		++it;
+	}
+	id = 0;
+	return true;
+}
+
 process* process_manager::get(dword id){
 	interrupt_guard<spin_lock> guard(lock);
 	auto it = table.find(id);
 	if (it == table.end())
 		return nullptr;
-	it->acquire();
+	if (!it->acquire())
+		return nullptr;
 	return &*it;
 }

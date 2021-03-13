@@ -1,28 +1,31 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "thread.hpp"
+#include "dev/include/cpu.hpp"
 #include "intrinsics.hpp"
 
 namespace UOS{
+
 	struct core_state {
 		word uid;
 		thread* this_thread;
 		thread* fpu_owner;
 		thread* gc_ptr;
+		alignas(0x100) TSS tss;
 	};
 	static_assert(offsetof(core_state,this_thread) == 8,"core_state::this_thread mismatch");
 
 	class scheduler{
 	public:
-		static constexpr qword slice_us = 1000;
-		static constexpr word min_slice = 1;
-		static constexpr word max_slice = 4;
-		static constexpr byte max_priority = 8;
+		static constexpr qword slice_us = 5*1000;
+		static constexpr word max_slice = 6;
+		static constexpr byte max_priority = 0x10;
 		// [0] [1..3] [4..6] [7]
 		static constexpr byte realtime_priority = 0;
-		static constexpr byte kernel_priority = 2;
-		static constexpr byte user_priority = 5;
-		static constexpr byte idle_priority = 7;
+		static constexpr byte kernel_priority = 3;
+		static constexpr byte shell_priority = 5;
+		static constexpr byte user_priority = 0x0A;
+		static constexpr byte idle_priority = 0x0F;
 	
 	private:
 		spin_lock lock;
@@ -35,12 +38,15 @@ namespace UOS{
 
 	class core_manager{
 		dword count;
-		core_state* core_list;
+		core_state** core_list;
 		qword timer_ticket;
 
 		static void on_timer(qword,void*);
 	public:
 		core_manager(void);
+		inline dword size(void) const{
+			return count;
+		}
 		core_state* get(void);
 		static void preempt(void);
 	};

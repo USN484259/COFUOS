@@ -69,6 +69,10 @@ ACPI::ACPI(void) {
 				size -= 4;
 			}
 		}
+		if (fadt == nullptr)
+			bugcheck("FADT not present");
+		if (madt == nullptr)
+			bugcheck("MADT not present");
 		return;
 	}while(false);
 	bugcheck("invalid RSDP @ %p",rsdp.address);
@@ -104,24 +108,6 @@ void ACPI::parse_table(qword pbase){
 
 byte ACPI::get_version(void) const{
 	return version;
-}
-
-const MADT& ACPI::get_madt(void) const{
-	if (!madt)
-		bugcheck("MADT not present");
-	return *madt;
-}
-
-const FADT& ACPI::get_fadt(void) const{
-	if (!fadt)
-		bugcheck("FADT not present");
-	return *fadt;
-}
-
-const HPET& ACPI::get_hpet(void) const{
-	if (!hpet)
-		bugcheck("HPET not present");
-	return *hpet;
 }
 
 FADT::FADT(const dword* view){

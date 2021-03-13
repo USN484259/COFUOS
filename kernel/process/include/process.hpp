@@ -1,5 +1,5 @@
 #pragma once
-#include "types.hpp"
+#include "types.h"
 #include "thread.hpp"
 #include "memory/include/vm.hpp"
 #include "pe64.hpp"
@@ -10,7 +10,7 @@
 #include "hash_set.hpp"
 #include "hash.hpp"
 #include "id_gen.hpp"
-#include "interface/include/loader.hpp"
+#include "interface/include/bridge.hpp"
 
 namespace UOS{
 	class handle_table{
@@ -57,48 +57,63 @@ namespace UOS{
 				return id == ps.id;
 			}
 		};
-		struct startup_info{
-			basic_file* file;
-			qword image_base;
-			dword image_size;
-			dword header_size;
-			size_t cmd_length;
-		};
 		enum STATE : byte {RUNNING,STOPPED};
 		friend class process_manager;
 		friend struct hash;
 		friend class equal;
-		friend void ::UOS::userentry(void*);
+		friend void ::UOS::process_loader(qword,qword,qword,qword);
+		friend void ::UOS::user_entry(qword,qword,qword,qword);
 	public:
 		const dword id;
 		dword result = 0;
 		virtual_space* const vspace;
 	private:
+		volatile STATE state = RUNNING;
+		PRIVILEGE privilege = NORMAL;
 		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
 	public:
+		const string commandline;
 		handle_table handles;
-	private:
-		volatile STATE state = RUNNING;
+
 
 		struct initial_process_tag {};
 		static id_gen<dword> new_id;
 	public:
 		process(initial_process_tag, kernel_vspace*);
-		process(startup_info* info);
+		process(const UOS::string& cmd,basic_file* file,const qword* info);
 		~process(void);
-		TYPE type(void) const override{
+		OBJTYPE type(void) const override{
 			return PROCESS;
+		}
+		bool check(void) const override{
+			return state == STOPPED;
 		}
 		inline bool operator==(dword id) const{
 			return id == this->id;
+		}
+		inline size_t size(void) const{
+			return threads.size();
 		}
 		inline thread* get_thread(dword tid){
 			auto it = threads.find(tid);
 			return (it == threads.end()) ? nullptr : &(*it);
 		}
+		inline PRIVILEGE get_privilege(void) const{
+			return privilege;
+		}
+		inline qword get_stack_preserve(void) const{
+			return image->stk_reserve;
+		}
+		inline bool get_result(dword& val){
+			if (state != STOPPED)
+				return false;
+			val = result;
+			return true;
+		}
+		REASON wait(qword = 0,handle_table* = nullptr) override;
 		bool relax(void) override;
-		thread* spawn(thread::procedure entry,void* arg,qword stk_size = 0);
+		thread* spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
 		void kill(dword ret_val);
 		void erase(thread* th);
 	};
@@ -110,8 +125,13 @@ namespace UOS{
 	public:
 		process_manager(void);
 		thread* get_initial_thread(void);
-		process* spawn(const string& command);
+		inline size_t size(void) const{
+			return table.size();
+		}
+		//string should be in kernel space
+		process* spawn(string&& command,string&& env = string());
 		void erase(process* ps);
+		bool enumerate(dword& id);
 		//ref_count incremented
 		process* get(dword id);
 	};

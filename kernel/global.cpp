@@ -1,4 +1,4 @@
-#include "types.hpp"
+#include "types.h"
 #include "util.hpp"
 #include "sysinfo.hpp"
 #include "exception/include/kdb.hpp"
@@ -6,7 +6,6 @@
 #include "memory/include/pm.hpp"
 #include "memory/include/vm.hpp"
 #include "dev/include/acpi.hpp"
-#include "exception/include/exception.hpp"
 #include "process/include/process.hpp"
 #include "process/include/core_state.hpp"
 #include "dev/include/apic.hpp"
@@ -16,9 +15,9 @@
 #include "dev/include/ps_2.hpp"
 
 namespace UOS{
-	system_feature features;
-	optional<kdb_stub> debug_stub;
 	PE64 const* pe_kernel;
+	system_feature features;
+	kdb_stub debug_stub(sysinfo->ports[0]);
 	PM pm;
 	kernel_vspace vm;
 	paired_heap heap([](size_t& req_size) -> void* {
@@ -35,15 +34,13 @@ namespace UOS{
 		return nullptr;
 	});
 	ACPI acpi;
-	exception eh;
 	process_manager proc;
 	scheduler ready_queue;
 
 	APIC apic;
 	basic_timer timer;
+	RTC rtc;
 	core_manager cores;
-	// RTC rtc;
-	// Display display;
-	// Font text_font;
+	screen_buffer display;
 	PS_2 ps2_device;
 }

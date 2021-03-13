@@ -1,6 +1,5 @@
 #include "core_state.hpp"
 #include "util.hpp"
-#include "hal.hpp"
 #include "dev/include/acpi.hpp"
 #include "dev/include/apic.hpp"
 #include "memory/include/vm.hpp"
@@ -39,19 +38,27 @@ void scheduler::put(thread* th){
 }
 
 core_manager::core_manager(void){
-	auto& madt = acpi.get_madt();
-	count = madt.processors.size();
+	count = acpi.get_madt()->processors.size();
 	assert(count);
 	pm.set_mp_count(count);
-	core_list = new core_state[count];
+	core_list = (core_state**)operator new(sizeof(core_state*)*count);
+	zeromemory(core_list,sizeof(core_state*)*count);
 	//set up core_state for BSP
-	auto& self = core_list[0];
+	auto va = vm.reserve(0,3);
+	if (!va)
+		bugcheck("vm.reserve failed with 3 pages");
+	auto res = vm.commit(va,1) && vm.commit(va + 2*PAGE_SIZE,1);
+	if (!res)
+		bugcheck("vm.commit failed @ %p",va);
+	core_list[0] = (core_state*)va;
+	auto& self = *core_list[0];
 	self.uid = apic.id();
 	auto th = proc.get_initial_thread();
 	self.this_thread = th;
 	self.fpu_owner = th;
 	self.gc_ptr = nullptr;
-	wrmsr(MSR_GS_BASE,(qword)(core_list + 0));
+	build_TSS(&self.tss,va + 3*PAGE_SIZE,va + PAGE_SIZE,FATAL_STK_TOP);
+	wrmsr(MSR_GS_BASE,va);
 	//set up SYSCALL for BSP
 	qword STAR_value = (qword)(((SEG_USER_CS - 16) << 16) | (SEG_KRNL_CS)) << 32;
 	qword SFMASK_value = 0x700;	//masks IF & DF & TF (to protect GSBASE)
@@ -63,13 +70,14 @@ core_manager::core_manager(void){
 
 	//set up periodic timer here
 	timer_ticket = timer.wait(scheduler::slice_us,on_timer,this,true);
+	features.set(decltype(features)::PS);
 }
 
 core_state* core_manager::get(void){
 	auto id = apic.id();
 	for (unsigned i = 0;i < count;++i){
-		if (core_list[i].uid == id)
-			return core_list + i;
+		if (core_list[i]->uid == id)
+			return core_list[i];
 	}
 	return nullptr;
 }
@@ -83,6 +91,7 @@ void core_manager::on_timer(qword ticket,void* ptr){
 	auto this_thread = core.this_thread();
 	assert(this_thread->has_context());
 	if (this_thread->get_state() != thread::STOPPED){
+		assert(this_thread->get_state() == thread::RUNNING);
 		auto slice = this_thread->get_slice();
 		assert(slice <= scheduler::max_slice);
 		if (slice){
@@ -194,14 +203,10 @@ void this_core::gc_service(void){
 
 void this_core::switch_to(thread* th){
 	IF_assert;
-	gc_service();
-	assert(th && th->has_context());
+	assert(th && th->is_locked() && th->has_context());
 	assert(th->get_state() == thread::RUNNING);
 	assert(this_thread()->get_state() != thread::RUNNING);
-	//dbgprint("%d --> %d from %p",this_thread()->get_id(),th->get_id(),return_address());
-	//th->set_state(thread::RUNNING);
-	if (th->get_slice() < scheduler::min_slice)
-		th->put_slice(scheduler::max_slice);
+	gc_service();
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}
@@ -212,14 +217,11 @@ void this_core::switch_to(thread* th){
 
 void this_core::escape(thread* th){
 	IF_assert;
-	gc_service();
-	assert(th && th->has_context());
+	assert(th && th->is_locked() && th->has_context());
 	assert(th->get_state() == thread::RUNNING);
 	assert(this_thread()->get_state() == thread::STOPPED);
-	//th->set_state(thread::RUNNING);
+	gc_service();
 	write_gs(offsetof(core_state,gc_ptr),this_thread());
-	if (th->get_slice() < scheduler::min_slice)
-		th->put_slice(scheduler::max_slice);
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}

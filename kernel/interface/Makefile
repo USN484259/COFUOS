@@ -1,4 +1,4 @@
-all:	bin/loader.o bin/service.o
+all:	bin/bridge.o bin/service.o
 
 bin/%.o:	%.cpp
 	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@
