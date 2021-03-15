@@ -5,7 +5,7 @@
 
 namespace UOS{
 	class thread;
-	class handle_table;
+
 	struct thread_queue{
 		thread* head = nullptr;
 		thread* tail = nullptr;
@@ -17,8 +17,10 @@ namespace UOS{
 	};
 
 	class waitable{
+	public:
+		typedef void (*wait_callback)(void);
 	protected:
-		mutable spin_lock rwlock;
+		mutable spin_lock objlock;
 		dword ref_count = 1;
 		thread_queue wait_queue;
 
@@ -36,7 +38,7 @@ namespace UOS{
 		//returns true if signaled (aka PASSED on wait)
 		virtual bool check(void) const = 0;
 		// (this_thread) waits for (this)
-		virtual REASON wait(qword us = 0,handle_table* ht = nullptr);
+		virtual REASON wait(qword us = 0,wait_callback func = nullptr);
 		void cancel(thread*);
 		bool acquire(void);
 		//return true if still have reference

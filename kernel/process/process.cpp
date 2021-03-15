@@ -3,20 +3,27 @@
 #include "memory/include/vm.hpp"
 #include "intrinsics.hpp"
 #include "core_state.hpp"
+#include "dev/include/timer.hpp"
 
 using namespace UOS;
 
 id_gen<dword> process::new_id;
 
+handle_table::handle_table(waitable* obj){
+	assert(obj);
+	table.push_back(obj);
+	++count;
+}
+
 handle_table::~handle_table(void){
-	rwlock.lock();
+	interrupt_guard<rwlock> guard(objlock);
 	if (count)
 		bugcheck("deleting non-empty handle_table @ %p",this);
 	//clear();
 }
 
 void handle_table::clear(void){
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<rwlock> guard(objlock);
 	for (auto ptr : table){
 		if (ptr){
 			assert(count);
@@ -28,8 +35,7 @@ void handle_table::clear(void){
 }
 
 dword handle_table::put(waitable* ptr){
-	interrupt_guard<spin_lock> guard(rwlock);
-	assert(table.size() <= count);
+	interrupt_guard<rwlock> guard(objlock);
 	if (table.size()*4 >= count*3){
 		table.push_back(ptr);
 		++count;
@@ -50,8 +56,7 @@ dword handle_table::put(waitable* ptr){
 bool handle_table::close(dword index){
 	waitable* ptr;
 	{
-		interrupt_guard<spin_lock> guard(rwlock);
-		assert(table.size() <= count);
+		interrupt_guard<rwlock> guard(objlock);
 		if (index >= table.size())
 			return false;
 		auto& ref = table.at(index);
@@ -66,54 +71,58 @@ bool handle_table::close(dword index){
 	return true;
 }
 
-waitable* handle_table::operator[](dword index){
-	assert(rwlock.is_locked() && !rwlock.is_exclusive());
-	assert(table.size() <= count);
+waitable* handle_table::operator[](dword index) const{
+	assert(objlock.is_locked() && !objlock.is_exclusive());
 	if (index >= table.size())
 		return nullptr;
 	return table.at(index);
 }
 
-process::process(initial_process_tag, kernel_vspace* v) : id (new_id()), vspace(v), privilege(KERNEL), image(nullptr){
-	assert(id == 0);
-	threads.insert(thread::initial_thread_tag(), this);
-}
+process::process(initial_process_tag) : id (new_id()), vspace(&vm), privilege(KERNEL), image(nullptr),\
+	handles(&*threads.insert(thread::initial_thread_tag(), this)),start_time(0) { assert(id == 0); }
 
-process::process(const string& cmd,basic_file* file,const qword* args) : id(new_id()),vspace(new user_vspace()),commandline(cmd){
-	//WARNING: header may be incomplete
+process::process(const string& cmd,basic_file* file,const qword* args) : \
+	id(new_id()),vspace(new user_vspace()),commandline(cmd),\
+	handles(file),start_time(timer.running_time())
+{
+	//image file handle as handle 0, user not accessible
 	IF_assert;
 	acquire();
-	{
-		lock_guard<spin_lock> guard(rwlock);
-		//image file handle as handle 0, user not accessible
-		auto handle = handles.put(file);
-		assert(handle == 0);
-	}
 	dbgprint("spawned new process $%d @ %p",id,this);
-	auto th = spawn(process_loader,args);
+	HANDLE th = spawn(process_loader,args);
 	assert(th);
-	th->relax();
-
+	auto res = handles.close(th);
+	assert(res);
 }
 
 process::~process(void){
-	if (!threads.empty()){
-		bugcheck("deleting non-stop process #%d @ %p",id,this);
+	if (!threads.empty() || active_count){
+		bugcheck("deleting non-stop process #%d (%d,%d) @ %p",id,active_count,threads.size(),this);
 	}
 	dbgprint("deleted process $%d @ %p",id,this);
 	delete vspace;
 }
 
-thread* process::spawn(thread::procedure entry,const qword* args,qword stk_size){
-	interrupt_guard<spin_lock> guard(rwlock);
+HANDLE process::spawn(thread::procedure entry,const qword* args,qword stk_size){
 	if (state == STOPPED)
-		return nullptr;
+		return 0;
 	if (stk_size)
 		stk_size = max(stk_size,PAGE_SIZE);
 	else
 		stk_size = pe_kernel->stk_reserve;
-	auto it = threads.insert(this,entry,args,stk_size);
-	return &*it;
+
+	HANDLE handle;
+	thread* th;
+	{
+		interrupt_guard<spin_lock> guard(objlock);
+		auto it = threads.insert(this,entry,args,stk_size);
+		++active_count;
+		th = &*it;
+		handle = handles.put(th);
+	}
+	if (handle == 0)
+		th->relax();
+	return handle;
 }
 
 void process::kill(dword ret_val){
@@ -121,7 +130,7 @@ void process::kill(dword ret_val){
 	auto this_thread = core.this_thread();
 	bool kill_self = false;
 	{
-		interrupt_guard<spin_lock> guard(rwlock);
+		interrupt_guard<spin_lock> guard(objlock);
 		state = STOPPED;
 		result = ret_val;
 		for (auto& th : threads){
@@ -136,12 +145,24 @@ void process::kill(dword ret_val){
 		thread::kill(this_thread);
 }
 
-void process::erase(thread* th){
-	if (th->get_state() != thread::STOPPED){
-		bugcheck("killing other thread not implemented");
-	}
+void process::on_exit(void){
 	{
-		interrupt_guard<spin_lock> guard(rwlock);
+		interrupt_guard<spin_lock> guard(objlock);
+		assert(active_count && active_count <= threads.size());
+		if (--active_count)
+			return;
+		state = STOPPED;
+	}
+	handles.clear();
+	dbgprint("process $%d exit with %x",id,(qword)result);
+	notify();
+}
+
+void process::erase(thread* th){
+	assert(th && th->get_process() == this);
+	{	
+		interrupt_guard<spin_lock> guard(objlock);
+		assert(active_count <= threads.size());	
 		auto it = threads.find(th->id);
 		if (it == threads.end()){
 			bugcheck("cannot find thread %p in process %p",th,this);
@@ -149,19 +170,18 @@ void process::erase(thread* th){
 		threads.erase(it);
 		if (!threads.empty())
 			return;
+		assert(active_count == 0);
 	}
-	handles.clear();
-	notify();
 	relax();
 }
 
-REASON process::wait(qword us,handle_table* ht){
+REASON process::wait(qword us,wait_callback func){
 	if (state == STOPPED){
-		if (ht)
-			ht->unlock();
+		if (func)
+			func();
 		return PASSED;
 	}
-	return waitable::wait(us,ht);
+	return waitable::wait(us,func);
 }
 
 bool process::relax(void){
@@ -174,7 +194,7 @@ bool process::relax(void){
 
 process_manager::process_manager(void){
 	//create initial thread & process
-	table.insert(process::initial_process_tag(), &vm);
+	table.insert(process::initial_process_tag());
 }
 
 thread* process_manager::get_initial_thread(void){
@@ -184,19 +204,19 @@ thread* process_manager::get_initial_thread(void){
 	return it->get_thread(0);
 }
 
-process* process_manager::spawn(string&& command,string&& env){
+HANDLE process_manager::spawn(string&& command,string&& env){
 	//TODO replace with real file-opening logic
 	auto sep = command.find_first_of(' ');
 	string filename(command.substr(command.begin(),sep));
 	if (filename != "/test.exe")
-		return nullptr;
+		return 0;
 	basic_file* file = new file_stub();
 	//read & validate PE header
 	byte buffer[0x200];
 	if (0x200 != file->read(buffer,0x200))
-		return nullptr;
+		return 0;
 	if (!file->seek(0))
-		return nullptr;
+		return 0;
 	auto header = PE64::construct(buffer,0x200);
 	if (header == nullptr || \
 		(0 == (header->img_type & 0x02)) || \
@@ -207,7 +227,7 @@ process* process_manager::spawn(string&& command,string&& env){
 		(header->align_file & 0x1FF) || \
 		(header->header_size & 0x1FF) || \
 		(0 == header->section_count))
-			return nullptr;
+			return 0;
 	//(likely) valid image file:
 	//non-system, non-dll, executable, valid vbase, valid alignment, has section
 	
@@ -218,10 +238,20 @@ process* process_manager::spawn(string&& command,string&& env){
 		header->header_size
 	};
 
-	//create a process and load this image
-	interrupt_guard<spin_lock> guard(lock);
-	auto it = table.insert(move(command),file,info);
-	return &*it;
+	this_core core;
+	auto this_process = core.this_thread()->get_process();
+	HANDLE handle;
+	process* ps;
+	{
+		//create a process and load this image
+		interrupt_guard<spin_lock> guard(lock);
+		auto it = table.insert(move(command),file,info);
+		ps = &*it;
+		handle = this_process->handles.put(ps);
+	}
+	if (handle == 0)
+		ps->relax();
+	return handle;
 }
 
 void process_manager::erase(process* ps){

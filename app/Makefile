@@ -1,7 +1,7 @@
 INC_PATH:=$(COFUOS_ROOT) $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/app/libuos/include
 LIB_PATH:=$(COFUOS_ROOT)/app/libuos/bin
 
-export CC_OPTIONS= -g -std=c++14 -Og -ffreestanding -fno-exceptions -fno-rtti -Wall -nostdlib -m64
+export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -nostdlib -m64
 export INC_PATH:=$(addprefix -I,$(INC_PATH))
 export LIB_PATH:=$(addprefix -L,$(LIB_PATH))
 export DEFINES:=$(addprefix -D,$(DEFINES))

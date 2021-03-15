@@ -23,7 +23,7 @@ namespace UOS{
 			bool check(void) const override{
 				return head != tail;
 			}
-			REASON wait(qword = 0,handle_table* = nullptr) override;
+			REASON wait(qword = 0,wait_callback = nullptr) override;
 		};
 
 		spin_lock lock;

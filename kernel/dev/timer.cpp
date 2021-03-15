@@ -31,7 +31,7 @@ basic_timer::basic_timer(void) : base(nullptr){
 	if (hpet == nullptr){
 		//fallback to 8254
 		static constexpr dword frequency = 1193182;
-		dword count = frequency*heartbeat_rate_us/(1000*1000);	// frequency/(1000*1000/heartbeat_rate_us)
+		dword count = frequency*heartbeat_us/(1000*1000);	// frequency/(1000*1000/heartbeat_us)
 		if (count >= 0x10000)
 			bugcheck("invalid 8254 count %d",count);
 		out_byte(0x43,0x34);
@@ -62,7 +62,7 @@ basic_timer::basic_timer(void) : base(nullptr){
 		*(base + 0xF0/sizeof(qword)) = 0;	//reset counter
 
 		//channel 0 as heat beat
-		auto count = set_timer(0,2,heartbeat_rate_us);
+		auto count = set_timer(0,2,heartbeat_us);
 
 
 		for (unsigned i = 0;i < comarator_count;++i){
@@ -74,6 +74,7 @@ basic_timer::basic_timer(void) : base(nullptr){
 		dbgprint("Timer using HPET with count = %d",count);
 	}
 	conductor = 0;
+	running_us = 0;
 	beat_counter = 0;
 	apic.set(APIC::IRQ_PIT, irq_timer,this);
 }
@@ -83,7 +84,7 @@ qword basic_timer::wait(qword us, CALLBACK func, void* arg, bool repeat){
 	auto ticket = ++conductor;
 	record.insert(ticket);
 
-	auto total_tick = max<qword>(us/heartbeat_rate_us,1);
+	auto total_tick = max<qword>(us/heartbeat_us,1);
 	auto delta_tick = total_tick;
 	auto it = delta_queue.begin();
 	while(it != delta_queue.end()){
@@ -108,75 +109,71 @@ bool basic_timer::cancel(qword ticket){
 	return true;
 }
 
+void basic_timer::step(unsigned count){
+	IF_assert;
+	assert(count);
+	lock_guard<spin_lock> guard(lock);
+	decltype(delta_queue) periodic_list;
+	while(!delta_queue.empty()){
+		auto& cur = delta_queue.front();
+		if (cur.diff_tick > count){
+			cur.diff_tick -= count;
+			return;
+		}
+		count -= cur.diff_tick;
+		auto rec = record.find(cur.ticket);
+		if (rec == record.end()){
+			delta_queue.pop_front();
+			continue;
+		}
+		//callback here
+		cur.func(cur.ticket,cur.arg);
+
+		if (!cur.interval){
+			//one-shot
+			delta_queue.pop_front();
+			continue;
+		}
+		//periodic
+		auto node = delta_queue.get_node(delta_queue.begin());
+		cur.diff_tick = (cur.interval > count) ? (cur.interval - count) : 0;
+		periodic_list.put_node(periodic_list.begin(),node);
+	}
+	while(!periodic_list.empty()){
+		auto node = periodic_list.get_node(periodic_list.begin());
+		auto& cur = node->payload;
+		auto it = delta_queue.begin();
+		while(true){
+			if (it == delta_queue.end()){
+				delta_queue.put_node(it,node);
+				break;
+			}
+			if (cur.diff_tick <= it->diff_tick){
+				it->diff_tick -= cur.diff_tick;
+				delta_queue.put_node(it,node);
+				break;
+			}
+			cur.diff_tick -= it->diff_tick;
+			++it;
+		}
+	}
+}
+
 void basic_timer::on_second(void){
 	auto val = beat_counter;
+	auto adjust_tick = (heartbeat_hz > beat_counter) ? (heartbeat_hz - beat_counter) : 0;
 	beat_counter = 0;
 	dbgprint("beat = %d",val);
-	//TODO adjust ticks
+	running_us += heartbeat_us*adjust_tick;
+	if (adjust_tick)
+		step(adjust_tick);
 }
 
 void basic_timer::on_timer(void){
 	IF_assert;
 	++beat_counter;
-	struct callback_context {
-		CALLBACK func;
-		qword ticket;
-		void* arg;
-		callback_context(CALLBACK f,qword t,void* a) : func(f), ticket(t), arg(a) {}
-	};
-	vector<callback_context> call_chain;
-
-	{
-		lock_guard<spin_lock> guard(lock);
-		if (delta_queue.empty())
-			return;
-		{
-			auto& cur = delta_queue.front();
-			if (cur.diff_tick){
-				--cur.diff_tick;
-				return;
-			}
-		}
-		do{
-			auto& cur = delta_queue.front();
-			if (cur.diff_tick)
-				break;
-			auto rec = record.find(cur.ticket);
-			do{
-				if (rec != record.end()){
-					call_chain.push_back(cur.func,cur.ticket,cur.arg);
-					if (cur.interval){	//periodic
-						//move this node back
-						auto node = delta_queue.get_node(delta_queue.begin());
-						auto it = delta_queue.begin();
-						cur.diff_tick = cur.interval;
-						while(true){
-							if (it == delta_queue.end()){
-								delta_queue.put_node(it,node);
-								break;
-							}
-							if (cur.diff_tick <= it->diff_tick){
-								it->diff_tick -= cur.diff_tick;
-								delta_queue.put_node(it,node);
-								break;
-							}
-							cur.diff_tick -= it->diff_tick;
-							++it;
-						}
-						break;
-					}
-					else{	//one-shot
-						record.erase(rec);
-					}
-				}
-				delta_queue.pop_front();
-			}while(false);
-
-		}while(!delta_queue.empty());
-	}
-	for (auto& it : call_chain){
-		it.func(it.ticket,it.arg);
-	}
+	running_us += heartbeat_us;
+	step(1);
 }
 
 void basic_timer::irq_timer(byte irq,void* ptr){

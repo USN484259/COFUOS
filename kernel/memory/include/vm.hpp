@@ -4,6 +4,7 @@
 #include "pe64.hpp"
 #include "pm.hpp"
 #include "constant.hpp"
+#include "sync/include/rwlock.hpp"
 
 namespace UOS{
 	class map_view{
@@ -102,7 +103,7 @@ namespace UOS{
 	public:
 		static constexpr qword size_512G = 0x008000000000ULL;
 	protected:
-		spin_lock rwlock;
+		qword used_pages;
 		typedef bool (*PTE_CALLBACK)(PT& pt,qword addr,qword data);
 	public:
 		virtual_space(void) = default;
@@ -114,19 +115,14 @@ namespace UOS{
 		virtual bool protect(qword addr,dword page_count,qword attrib) = 0;
 		virtual bool release(qword addr,dword page_count) = 0;
 		virtual PT peek(qword va) = 0;
-		inline bool try_lock(void){
-			return rwlock.try_lock(spin_lock::SHARED);
+		inline qword usage(void) const{
+			return used_pages;
 		}
-		inline void lock(void){
-			rwlock.lock(spin_lock::SHARED);
-		}
-		inline void unlock(void){
-			assert(!rwlock.is_exclusive());
-			rwlock.unlock();
-		}
-		inline bool is_locked(void) const{
-			return rwlock.is_locked();
-		}
+		virtual bool try_lock(void) = 0;
+		virtual void lock(void) = 0;
+		virtual void unlock(void) = 0;
+		virtual bool is_locked(void) const = 0;
+		virtual bool is_exclusive(void) const = 0;
 	protected:
 		//low-level methods
 		qword imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word count);
@@ -136,8 +132,8 @@ namespace UOS{
 
 	protected:
 		//generic helper methods
-		static bool new_pdt(PDPT& pdpt,map_view& view);
-		static bool new_pt(PDT& pdt,map_view& view,bool take);
+		bool new_pdt(PDPT& pdpt,map_view& view);
+		bool new_pt(PDT& pdt,map_view& view,bool take);
 		bool reserve_fixed(PDPT* pdpt_table,qword addr,dword page_count);
 		qword reserve_any(PDPT* pdpt_table,dword page_count);
 		qword reserve_big(PDPT* pdpt_table,dword page_count);
@@ -172,6 +168,7 @@ namespace UOS{
 	};
 
 	class kernel_vspace : public virtual_space{
+		spin_lock objlock;
 		static bool common_check(qword addr,dword page_count);
 	public:
 		kernel_vspace(void);
@@ -182,8 +179,25 @@ namespace UOS{
 		bool release(qword addr,dword page_count) override;
 		PT peek(qword va) override;
 		bool assign(qword va,qword pa,dword page_count);
+		bool try_lock(void) override{
+			return objlock.try_lock(spin_lock::SHARED);
+		}
+		void lock(void) override{
+			return objlock.lock(spin_lock::SHARED);
+		}
+		void unlock(void) override{
+			assert(objlock.is_locked() && !objlock.is_exclusive());
+			objlock.unlock();
+		}
+		bool is_locked(void) const override{
+			return objlock.is_locked();
+		}
+		bool is_exclusive(void) const override{
+			return objlock.is_exclusive();
+		}
 	};
 	class user_vspace : public virtual_space{
+		rwlock objlock;
 		const qword cr3;
 		const qword pl4te;
 
@@ -197,6 +211,22 @@ namespace UOS{
 		bool protect(qword addr,dword page_count,qword attrib) override;
 		bool release(qword addr,dword page_count) override;
 		PT peek(qword va) override;
+		bool try_lock(void) override{
+			return objlock.try_lock(rwlock::SHARED);
+		}
+		void lock(void) override{
+			objlock.lock(rwlock::SHARED);
+		}
+		void unlock(void) override{
+			assert(objlock.is_locked() && !objlock.is_exclusive());
+			objlock.unlock();
+		}
+		bool is_locked(void) const override{
+			return objlock.is_locked();
+		}
+		bool is_exclusive(void) const override{
+			return objlock.is_exclusive();
+		}
 	};
 	extern kernel_vspace vm;
 }

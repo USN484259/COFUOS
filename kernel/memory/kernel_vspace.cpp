@@ -74,7 +74,7 @@ kernel_vspace::kernel_vspace(void){
 	auto krnl_index = LOWADDR(module_base) >> 21;
 	assert(krnl_index < 0x200 && pdt_table[krnl_index].present);
 	pdt_table[krnl_index].bypass = 1;
-
+	used_pages = pm.capacity() - pm.available();
 	features.set(decltype(features)::MEM);
 	int_trap(3);
 }
@@ -110,7 +110,7 @@ qword kernel_vspace::reserve(qword addr,dword page_count){
 			return 0;
 		}
 	}
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	if (addr){
 		return reserve_fixed(pdpt_table,addr,page_count) ? addr : 0;
 	}
@@ -127,7 +127,7 @@ qword kernel_vspace::reserve(qword addr,dword page_count){
 bool kernel_vspace::release(qword addr,dword page_count){
 	if (!common_check(addr,page_count))
 		return false;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,addr,page_count,[](PT& pt,qword,qword) -> bool{
 		if (pt.bypass)
 			return false;
@@ -150,7 +150,7 @@ bool kernel_vspace::commit(qword base_addr,dword page_count){
 		//no physical memory
 		return false;
 	}
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
 		return (pt.preserve && !pt.bypass && !pt.present);
 	});
@@ -171,6 +171,7 @@ bool kernel_vspace::commit(qword base_addr,dword page_count){
 	});
 	if (res != page_count)
 		bugcheck("page count mispatch (%x,%x)",res,page_count);
+	used_pages += page_count;
 	return true;
 }
 
@@ -181,7 +182,7 @@ bool kernel_vspace::protect(qword base_addr,dword page_count,qword attrib){
 	qword mask = PAGE_XD | PAGE_GLOBAL | PAGE_CD | PAGE_WT | PAGE_WRITE;
 	if (attrib & ~mask)
 		return false;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
 		return (pt.present && !pt.bypass && !pt.user && pt.page_addr);
 	});
@@ -207,7 +208,7 @@ bool kernel_vspace::protect(qword base_addr,dword page_count,qword attrib){
 bool kernel_vspace::assign(qword base_addr,qword phy_addr,dword page_count){
 	if (!common_check(base_addr,page_count) || !phy_addr)
 		return false;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword){
 		return (pt.preserve && !pt.present) ? true : false;
 	});

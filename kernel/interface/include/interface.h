@@ -53,7 +53,8 @@ struct PROCESS_INFO{
 	dword thread_count;
 	dword handle_count;
 	qword start_time;
-	qword cpu_time_ms;
+	qword cpu_time;
+	qword memory_usage;
 };
 struct STARTUP_INFO{
 //#error TODO

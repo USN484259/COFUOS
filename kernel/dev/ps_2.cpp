@@ -83,7 +83,7 @@ void PS_2::safe_queue::put(byte val){
 	interrupt_guard<void> ig;
 
 	{
-		lock_guard<spin_lock> guard(rwlock);
+		lock_guard<spin_lock> guard(objlock);
 		auto new_tail = (tail + 1) % QUEUE_SIZE;
 		if (new_tail != head){
 			buffer[tail] = val;
@@ -96,16 +96,16 @@ void PS_2::safe_queue::put(byte val){
 }
 
 void PS_2::safe_queue::clear(void){
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	head = tail;
 }
 
-REASON PS_2::safe_queue::wait(qword us,handle_table* ht){
-	assert(ht == nullptr);
+REASON PS_2::safe_queue::wait(qword us,wait_callback func){
+	assert(func == nullptr);
 	interrupt_guard<void> ig;
-	rwlock.lock();
+	objlock.lock();
 	if (head != tail){
-		rwlock.unlock();
+		objlock.unlock();
 		return PASSED;
 	}
 	return imp_wait(us);
@@ -191,9 +191,12 @@ PS_2::PS_2(void){
 			}
 			write(0xFF);
 			qword args[4] = {reinterpret_cast<qword>(this)};
-			auto th = ps->spawn(thread_ps2,args);
-			//th->set_priority(scheduler::realtime_priority);
-			channel[i].th = th;
+			HANDLE th = ps->spawn(thread_ps2,args);
+			assert(th);
+			lock_guard<handle_table> guard(ps->handles);
+			auto ptr = ps->handles[th];
+			assert(ptr && ptr->type() == THREAD);
+			channel[i].th = (thread*)ptr;
 		}
 	}
 }
@@ -421,7 +424,7 @@ bool PS_2::device_mouse(PS_2& self,byte index,byte mode){
 				packet[it++] = data;
 			}
 		}
-		dbgprint("mouse %x,%x,%x,%x",packet[0],packet[1],packet[2],mode ? packet[3] : 0);
+		dbgprint("mouse %x,%x,%x,%x",(qword)packet[0],(qword)packet[1],(qword)packet[2],(qword)(mode ? packet[3] : 0));
 		//TODO translate & dispatch mouse event
 	}
 }

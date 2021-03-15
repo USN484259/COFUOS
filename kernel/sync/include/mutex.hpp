@@ -15,7 +15,7 @@ namespace UOS{
 		bool check(void) const override{
 			return owner == nullptr;
 		}
-		REASON wait(qword = 0,handle_table* = nullptr) override;
+		REASON wait(qword = 0,wait_callback = nullptr) override;
 		void lock(void);
 		void unlock(void);
 		bool try_lock(void);

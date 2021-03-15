@@ -32,7 +32,7 @@ screen_buffer::screen_buffer(void){
 		bugcheck("vm.assign failed @ %p",aligned_pbase);
 	}
 	vbe_memory = (dword volatile*)(vbase + (sysinfo->VBE_addr - aligned_pbase));
-
+	features.set(decltype(features)::SCR);
 	dbgprint("Video memory mapped to %p",vbe_memory);
 }
 

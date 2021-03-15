@@ -14,17 +14,17 @@ using namespace UOS;
 id_gen<dword> thread::new_id;
 
 //initial thread
-thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), priority(scheduler::idle_priority), slice(scheduler::max_slice), ps(p) {
+thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), hold_lock(0), priority(scheduler::idle_priority), slice(scheduler::max_slice), ps(p) {
 	assert(ps && id == 0);
 	krnl_stk_top = 0;	//???
 	krnl_stk_reserved = pe_kernel->stk_reserve;
 }
 
-thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), state(READY), hold_lock(0), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
 	IF_assert;
 	assert(ps && krnl_stk_reserved >= PAGE_SIZE);
 	acquire();
-	lock_guard<spin_lock> guard(rwlock);
+	lock_guard<spin_lock> guard(objlock);
 	auto va = vm.reserve(0,2 + krnl_stk_reserved/PAGE_SIZE);
 	if (!va)
 		bugcheck("vm.reserve failed with 0x%x pages",krnl_stk_reserved);
@@ -50,6 +50,8 @@ thread::thread(process* p, procedure entry, const qword* args, qword stk_size) :
 thread::~thread(void){
 	if (state != STOPPED)
 		bugcheck("deleting non-stop thread #%d @ %p",id,this);
+	if (hold_lock)
+		bugcheck("deleting thread #%d @ %p while holding lock %x",id,this,hold_lock);
 	dbgprint("deleted thread #%d @ %p",id,this);
 	if (sse){
 		//flush FPU state from this core
@@ -68,13 +70,13 @@ thread::~thread(void){
 		bugcheck("vm.release failed @ %p",krnl_stk_top - krnl_stk_reserved);
 }
 
-REASON thread::wait(qword us,handle_table* ht){
+REASON thread::wait(qword us,wait_callback func){
 	if (state == STOPPED){
-		if (ht)
-			ht->unlock();
+		if (func)
+			func();
 		return PASSED;
 	}
-	return waitable::wait(us,ht);
+	return waitable::wait(us,func);
 }
 
 bool thread::set_priority(byte val){
@@ -86,7 +88,7 @@ bool thread::set_priority(byte val){
 
 bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
 	IF_assert;
-	assert(rwlock.is_locked());
+	assert(objlock.is_locked());
 	if (state == STOPPED){
 		return false;
 	}
@@ -125,6 +127,16 @@ bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
 		timer_ticket = arg;
 		break;
 	case STOPPED:
+		if (state == WAITING){
+			if (wait_for){
+				wait_for->cancel(this);
+				wait_for = nullptr;
+			}
+			if (timer_ticket){
+				timer.cancel(timer_ticket);
+				timer_ticket = 0;
+			}
+		}
 		break;
 	}
 	state = st;
@@ -140,8 +152,28 @@ bool thread::relax(void){
 }
 
 void thread::on_stop(void){
+	IF_assert;
+	assert(objlock.is_locked());
 	assert(state == thread::STOPPED);
+
+	assert(wait_for == nullptr && timer_ticket == 0);
+
+	if (hold_lock){
+		if (hold_lock & HOLD_VSPACE){
+			auto vspace = get_process()->vspace;
+			assert(vspace->is_locked() && !vspace->is_exclusive());
+			vspace->unlock();
+		}
+		if (hold_lock & HOLD_HANDLE){
+			auto& ht = get_process()->handles;
+			assert(ht.is_locked() && !ht.is_exclusive());
+			ht.unlock();
+		}
+		hold_lock = 0;
+	}
+	objlock.unlock();
 	notify();
+	ps->on_exit();
 	relax();
 }
 
@@ -161,6 +193,22 @@ void thread::load_sse(void){
 	}
 }
 
+void thread::hold(byte val){
+	IF_assert;
+	assert(is_locked());
+	assert(val == HOLD_HANDLE || val == HOLD_VSPACE);
+	assert(0 == (hold_lock & val));
+	hold_lock |= val;
+}
+
+void thread::drop(byte val){
+	IF_assert;
+	assert(is_locked());
+	assert(val == HOLD_HANDLE || val == HOLD_VSPACE);
+	assert(hold_lock & val);
+	hold_lock &= (~val);
+}
+
 void thread::sleep(qword us){
 	this_core core;
 	thread* this_thread = core.this_thread();
@@ -173,7 +221,6 @@ void thread::sleep(qword us){
 		next_thread->lock();
 		if (next_thread->set_state(thread::RUNNING))
 			break;
-		next_thread->unlock();
 		next_thread->on_stop();
 	}while(true);
 	bool res;

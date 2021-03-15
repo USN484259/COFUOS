@@ -35,13 +35,15 @@ namespace UOS{
 	public:
 		typedef void (*procedure)(qword,qword,qword,qword);
 		enum STATE : byte {READY,RUNNING,WAITING,STOPPED};
+		enum : byte {HOLD_VSPACE = 1,HOLD_HANDLE = 2};
 	public:
 		const dword id;
 	private:
 		volatile STATE state : 4;
-		REASON reason : 4;
+		volatile byte hold_lock : 4;
 		byte priority;
-		word slice;
+		REASON reason;
+		byte slice;
 		process* const ps;
 		thread* next = nullptr;
 		waitable* wait_for = nullptr;
@@ -56,6 +58,7 @@ namespace UOS{
 		qword user_stk_top = 0;
 		qword user_stk_reserved = 0;
 	public:
+		qword slice_timestamp = 0;
 		qword user_handler = 0;
 		
 	private:
@@ -83,10 +86,10 @@ namespace UOS{
 		inline process* get_process(void){
 			return ps;
 		}
-		inline word get_slice(void) const{
+		inline byte get_slice(void) const{
 			return slice;
 		}
-		inline void put_slice(word val){
+		inline void put_slice(byte val){
 			slice = val;
 		}
 		inline STATE get_state(void) const{
@@ -102,22 +105,25 @@ namespace UOS{
 			return reason;
 		}
 		inline void lock(void){
-			rwlock.lock();
+			objlock.lock();
 		}
 		inline bool try_lock(void){
-			return rwlock.try_lock();
+			return objlock.try_lock();
 		}
 		inline void unlock(void){
-			rwlock.unlock();
+			objlock.unlock();
 		}
 		inline bool is_locked(void) const{
-			return rwlock.is_locked();
+			return objlock.is_locked();
 		}
-		REASON wait(qword us = 0,handle_table* = nullptr) override;
+		REASON wait(qword us = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
+		// lock before calling, unlocks inside
 		void on_stop(void);
 		void save_sse(void);
 		void load_sse(void);
+		void hold(byte val);
+		void drop(byte val);
 		static void sleep(qword us);
 		static void kill(thread*);
 		//[[ noreturn ]]

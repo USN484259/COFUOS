@@ -6,8 +6,9 @@ namespace UOS{
 	class system_feature{
 		qword state = 0;	
 	public:
-		enum FEATURE : word {GDB, MEM, APIC, PS};
+		enum FEATURE : word {GDB, MEM, APIC, PS, SCR};
 		void set(FEATURE);
+		void clear(FEATURE);
 		bool get(FEATURE) const;
 	};
 	struct SYSINFO{

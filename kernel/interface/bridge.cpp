@@ -34,6 +34,7 @@ bool UOS::user_exception(qword& rip,qword& rsp,dword errcode){
 	stk_ptr[0] = rip;
 	stk_ptr[1] = errcode;
 	rip = this_thread->user_handler;
+	rsp = aligned_rsp;
 	this_thread->user_handler = 0;
 	return true;
 }
@@ -46,8 +47,9 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 	basic_file* file;
 	{
 		interrupt_guard<handle_table> guard(this_process->handles);
-		file = static_cast<basic_file*>(this_process->handles[0]);
-		assert(file && file->type() == FILE);
+		auto obj = this_process->handles[0];
+		assert(obj && obj->type() == FILE);
+		file = (basic_file*)obj;
 	}
 	do{
 		

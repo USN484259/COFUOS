@@ -11,7 +11,7 @@
 
 using namespace UOS;
 
-constexpr word scheduler::max_slice;
+constexpr byte scheduler::max_slice;
 constexpr byte scheduler::max_priority;
 
 thread* scheduler::get(byte level){
@@ -30,7 +30,8 @@ thread* scheduler::get(byte level){
 
 void scheduler::put(thread* th){
 	assert(th && th->is_locked());
-	word index = th->priority;
+	assert(th->get_state() == thread::READY);
+	byte index = th->priority;
 	assert(index < max_priority);
 	interrupt_guard<spin_lock> guard(lock);
 	ready_queue[index].put(th);
@@ -117,7 +118,6 @@ void core_manager::preempt(void){
 		next_thread->lock();
 		if (next_thread->set_state(thread::RUNNING))
 			break;
-		next_thread->unlock();
 		next_thread->on_stop();
 	}while(true);
 	//dbgprint("%d --> %d", this_thread->get_id(), next_thread ? next_thread->get_id() : this_thread->get_id());
@@ -142,7 +142,6 @@ void core_manager::preempt(void){
 			next_thread->lock();
 			if (next_thread->set_state(thread::RUNNING))
 				break;
-			next_thread->unlock();
 			next_thread->on_stop();
 		}while(true);
 		core.escape(next_thread);
@@ -161,6 +160,8 @@ void this_core::irq_switch_to(byte,void* data){
 			read_gs<qword>(offsetof(core_state,this_thread))
 	);
 	assert(cur_thread->has_context());
+	auto time_tick = timer.running_time();
+	lock_add(&cur_thread->get_process()->cpu_time,time_tick - cur_thread->slice_timestamp);
 
 	thread* target;
 	if (data){
@@ -170,14 +171,18 @@ void this_core::irq_switch_to(byte,void* data){
 		target = reinterpret_cast<thread*>(cur_thread->get_context()->rcx);
 	}
 	assert(target->is_locked());
+	target->slice_timestamp = time_tick;
+
 	process* ps = target->get_process();
 	if (cur_thread->get_process() != ps){
-		//set CR0.TS
-		auto cr0 = read_cr0();
-		write_cr0(cr0 | 0x08);
 		//change CR3
 		write_cr3(ps->vspace->get_cr3());
 	}
+
+	//set CR0.TS
+	auto cr0 = read_cr0();
+	write_cr0(cr0 | 0x08);
+
 	write_gs(offsetof(core_state,this_thread),reinterpret_cast<qword>(target));
 	target->unlock();
 }
@@ -195,6 +200,7 @@ void this_core::gc_service(void){
 			read_gs<qword>(offsetof(core_state,gc_ptr))
 		);
 	if (gc_thread){
+		gc_thread->lock();
 		gc_thread->on_stop();
 		dbgprint("gc relaxed %p",gc_thread);
 		write_gs<qword>(offsetof(core_state,gc_ptr),0);

@@ -27,15 +27,8 @@ namespace UOS{
 	public:
 		template<typename ... Arg>
 		interrupt_guard(M& m,Arg&& ... args) : state(read_eflags() & 0x0200), mutex(m){
-			do{
-				cli();
-				if (m.try_lock(forward<Arg>(args)...))
-					break;
-				if (state){
-					sti();
-				}
-				mm_pause();
-			}while(true);
+			cli();
+			m.lock(forward<Arg>(args)...);
 		}
 		~interrupt_guard(void){
 			mutex.unlock();

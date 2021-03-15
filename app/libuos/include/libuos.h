@@ -20,7 +20,7 @@ enum STATUS		get_priority(HANDLE handle,byte* priority);
 __attribute__((noreturn))
 void			exit_thread(void);
 enum STATUS		kill_thread(HANDLE handle);
-enum STATUS		set_handler(void* func);
+enum STATUS		set_handler(void *func);
 enum STATUS		set_priority(HANDLE handle,byte priority);
 enum STATUS		create_thread(void* func,void* arg,dword stk_size,HANDLE* handle);
 void			sleep(qword us);

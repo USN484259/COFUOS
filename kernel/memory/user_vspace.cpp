@@ -28,10 +28,11 @@ user_vspace::user_vspace(void) : cr3(pm.allocate(PM::MUST_SUCCEED)), pl4te(pm.al
 	view.map(pa_pdt);
 	zeromemory((void*)view,PAGE_SIZE);
 	(*(PDT*)view).bypass = 1;
+	used_pages = 3;
 }
 
 user_vspace::~user_vspace(void){
-	rwlock.lock();
+	interrupt_guard<rwlock> guard(objlock);
 	{
 		map_view pdpt_view(pl4te);
 		auto pdpt_table = (PDPT*)pdpt_view;
@@ -101,7 +102,7 @@ qword user_vspace::reserve(qword addr,dword page_count){
 	}
 	map_view view(pl4te);
 	auto pdpt_table = (PDPT*)view;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<rwlock> guard(objlock);
 
 	if (addr){
 		return reserve_fixed(pdpt_table,addr,page_count) ? addr : 0;
@@ -118,7 +119,7 @@ bool user_vspace::release(qword addr,dword page_count){
 		return false;
 	map_view view(pl4te);
 	auto pdpt_table = (PDPT*)view;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<rwlock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,addr,page_count,[](PT& pt,qword,qword) -> bool{
 		if (pt.bypass)
 			return false;
@@ -139,7 +140,7 @@ bool user_vspace::commit(qword base_addr,dword page_count){
 
 	map_view view(pl4te);
 	auto pdpt_table = (PDPT*)view;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<rwlock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
 		return (pt.preserve && !pt.bypass && !pt.present);
 	});
@@ -160,6 +161,7 @@ bool user_vspace::commit(qword base_addr,dword page_count){
 	});
 	if (res != page_count)
 		bugcheck("page count mismatch (%x,%x)",res,page_count);
+	used_pages += page_count;
 	return true;
 }
 
@@ -171,7 +173,7 @@ bool user_vspace::protect(qword base_addr,dword page_count,qword attrib){
 		return false;
 	map_view view(pl4te);
 	auto pdpt_table = (PDPT*)view;
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<rwlock> guard(objlock);
 	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
 		return (pt.present && !pt.bypass && pt.user && pt.page_addr);
 	});

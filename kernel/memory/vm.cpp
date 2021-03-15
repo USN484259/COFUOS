@@ -327,7 +327,7 @@ void virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
 
 #ifndef NDEBUG
 void virtual_space::check_integrity(PDT& pdt,PT* table){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	bool free_map[0x200] = {0};
 	unsigned free_count = 0;
 	for (unsigned i = 0;i < 0x200;++i){
@@ -386,7 +386,7 @@ void virtual_space::check_integrity(PDT& pdt,PT* table){
 #endif
 
 qword virtual_space::imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word count){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(count && table);
 	assert(pdt.present && !pdt.bypass);
 	if (get_max_size(pdt) < count)
@@ -418,7 +418,7 @@ qword virtual_space::imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word cou
 }
 
 bool virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word count){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(count && table && index + count <= 0x200);
 	assert(pdt.present && !pdt.bypass && get_max_size(pdt) > 0);
 
@@ -458,7 +458,7 @@ bool virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word count){
 }
 
 void virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word count){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(count && table && base_addr);
 	word index = (base_addr >> 12) & 0x1FF;
 	assert(index + count <= 0x200);
@@ -517,6 +517,7 @@ void virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word count){
 			pm.release(cur.page_addr << 12);
 			cur.page_addr = 0;
 			invlpg((void*)addr);
+			--used_pages;
 		}
 		else if (!cur.preserve){
 			bugcheck("double release %p",addr);
@@ -532,7 +533,7 @@ void virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word count){
 }
 
 dword virtual_space::imp_iterate(const PDPT* pdpt_table,qword base_addr,dword page_count,PTE_CALLBACK callback,qword data){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(pdpt_table && page_count && callback);
 	assert(base_addr && 0 == (base_addr & PAGE_MASK));
 	map_view pdt_view;
@@ -591,6 +592,8 @@ bool virtual_space::new_pdt(PDPT& pdpt,map_view& view){
 	pdpt.user = 1;
 	pdpt.write = 1;
 	pdpt.present = 1;
+
+	++used_pages;
 	return true;
 }
 
@@ -602,7 +605,6 @@ bool virtual_space::new_pt(PDT& pdt,map_view& view,bool take){
 	view.map(phy_addr);
 	PT* table = (PT*)view;
 	zeromemory(table,PAGE_SIZE);
-
 	pdt = {0};
 	pdt.pt_addr = phy_addr >> 12;
 	pdt.user = 1;
@@ -613,11 +615,13 @@ bool virtual_space::new_pt(PDT& pdt,map_view& view,bool take){
 	BLOCK block = {0};
 	block.size = 0x200;
 	block.put(table);
+	
+	++used_pages;
 	return true;
 }
 
 qword virtual_space::reserve_any(PDPT* pdpt_table,dword page_count){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(page_count <= 0x200);
 	map_view pdt_view;
 	map_view pt_view;
@@ -652,7 +656,7 @@ qword virtual_space::reserve_any(PDPT* pdpt_table,dword page_count){
 }
 
 bool virtual_space::reserve_fixed(PDPT* pdpt_table,qword base_addr,dword page_count){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(base_addr && page_count);
 	assert(0 == (base_addr & PAGE_MASK));
 
@@ -712,7 +716,7 @@ rollback:
 }
 
 qword virtual_space::reserve_big(PDPT* pdpt_table,dword pagecount){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	auto aligned_count = align_up(pagecount,0x200) / 0x200;
 	map_view pdt_view;
 	for (unsigned pdpt_index = 0;pdpt_index < 0x200;++pdpt_index){
@@ -780,7 +784,7 @@ qword virtual_space::reserve_big(PDPT* pdpt_table,dword pagecount){
 }
 
 void virtual_space::safe_release(PDPT* pdpt_table,qword base_addr,dword page_count){
-	assert(rwlock.is_locked());
+	assert(is_locked());
 	assert(base_addr && page_count);
 	assert(0 == (base_addr & PAGE_MASK));
 

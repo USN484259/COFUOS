@@ -50,7 +50,7 @@ void thread_queue::clear(void){
 }
 
 waitable::~waitable(void){
-	rwlock.lock();
+	objlock.lock();
 	if(ref_count){
 		bugcheck("deleting object %p with ref_count %d",this,ref_count);
 	}
@@ -63,7 +63,7 @@ size_t waitable::notify(void){
 	thread* ptr;
 	interrupt_guard<void> ig;
 	{
-		lock_guard<spin_lock> guard(rwlock);
+		lock_guard<spin_lock> guard(objlock);
 		ptr = wait_queue.head;
 		wait_queue.clear();
 	}
@@ -72,7 +72,7 @@ size_t waitable::notify(void){
 
 REASON waitable::imp_wait(qword us){
 	IF_assert;
-	assert(rwlock.is_locked());
+	assert(objlock.is_locked());
 	this_core core;
 	thread* this_thread = core.this_thread();
 	{
@@ -89,7 +89,6 @@ REASON waitable::imp_wait(qword us){
 		next_thread->lock();
 		if (next_thread->set_state(thread::RUNNING))
 			break;
-		next_thread->unlock();
 		next_thread->on_stop();
 	}while(true);
 	next_thread->put_slice(scheduler::max_slice);
@@ -101,7 +100,7 @@ REASON waitable::imp_wait(qword us){
 		this_thread->put_slice(scheduler::max_slice);
 		wait_queue.put(this_thread);
 		this_thread->unlock();
-		rwlock.unlock();
+		objlock.unlock();
 		core.switch_to(next_thread);
 		return this_thread->get_reason();
 	}
@@ -109,17 +108,17 @@ REASON waitable::imp_wait(qword us){
 		if (ticket)
 			timer.cancel(ticket);
 		this_thread->unlock();
-		rwlock.unlock();
+		objlock.unlock();
 		core.escape(next_thread);
 		bugcheck("escape in imp_wait failed @ %p",this);
 	}
 }
 
-REASON waitable::wait(qword us,handle_table* ht){
+REASON waitable::wait(qword us,wait_callback func){
 	interrupt_guard<void> ig;
-	rwlock.lock();
-	if (ht)
-		ht->unlock();
+	objlock.lock();
+	if (func)
+		func();
 	return imp_wait(us);
 }
 
@@ -130,7 +129,6 @@ void waitable::on_timer(qword ticket,void* ptr){
 		return;
 	th->lock();
 	if (!th->set_state(thread::READY,TIMEOUT)){
-		th->unlock();
 		th->on_stop();
 		return;
 	}
@@ -160,7 +158,7 @@ void waitable::on_timer(qword ticket,void* ptr){
 //wait-timeout should happen less likely, currently O(n)
 void waitable::cancel(thread* th){
 	assert(th);
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	auto prev = wait_queue.head;
 	if (prev == th){
 		wait_queue.get();
@@ -202,7 +200,6 @@ size_t waitable::imp_notify(thread* th){
 			th->unlock();
 		}
 		else{
-			th->unlock();
 			th->on_stop();
 		}
 		++count;
@@ -213,7 +210,7 @@ size_t waitable::imp_notify(thread* th){
 }
 
 bool waitable::acquire(void){
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	if (!ref_count)
 		return false;
 	++ref_count;
@@ -221,7 +218,7 @@ bool waitable::acquire(void){
 }
 
 bool waitable::relax(void){
-	interrupt_guard<spin_lock> guard(rwlock);
+	interrupt_guard<spin_lock> guard(objlock);
 	assert(ref_count);
 	return (--ref_count);
 }

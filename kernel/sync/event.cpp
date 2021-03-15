@@ -1,25 +1,24 @@
 #include "event.hpp"
 #include "lock_guard.hpp"
-#include "process/include/process.hpp"
 
 using namespace UOS;
 
 event::event(bool initial_state) : state(initial_state ? 1 : 0) {}
 
-REASON event::wait(qword us,handle_table* ht){
+REASON event::wait(qword us,wait_callback func){
 	if (state){
-		if (ht)
-			ht->unlock();
+		if (func)
+			func();
 		return PASSED;
 	}
-	return waitable::wait(us,ht);
+	return waitable::wait(us,func);
 }
 
 bool event::signal_one(void){
 	thread* ptr;
 	interrupt_guard<void> ig;
 	{
-		lock_guard<spin_lock> guard(rwlock);
+		lock_guard<spin_lock> guard(objlock);
 		ptr = wait_queue.get();
 	}
 	return imp_notify(ptr);

@@ -64,7 +64,7 @@ void exit_thread(void) {
 STATUS kill_thread(HANDLE handle) {
 	return (STATUS)syscall(srv::kill_thread,handle);
 }
-STATUS set_handler(void* func) {
+STATUS set_handler(void *func) {
 	return (STATUS)syscall(srv::set_handler,func);
 }
 STATUS set_priority(HANDLE handle,byte priority) {

@@ -226,7 +226,7 @@ namespace UOS{
 	template<typename T>
 	inline T cmpxchg(T volatile* dst,T xchg,T cmp){
 		ASM (
-			"cmpxchg %1, %2"
+			"lock cmpxchg %1, %2"
 			: "+a" (cmp), "+m" (*dst)
 			: "r" (xchg)
 		);
@@ -259,6 +259,22 @@ namespace UOS{
 				reinterpret_cast<qword volatile*>(dst),
 				reinterpret_cast<qword>(val)
 			)
+		);
+	}
+	template<typename T>
+	inline void lock_add(T volatile* dst,T val){
+		ASM (
+			"lock add %0, %1"
+			: "+m" (*dst)
+			: "ri" (val)
+		);
+	}
+	template<typename T>
+	inline void lock_sub(T volatile* dst,T val){
+		ASM (
+			"lock sub %0, %1"
+			: "+m" (*dst)
+			: "ri" (val)
 		);
 	}
 

@@ -9,7 +9,8 @@ namespace UOS{
 	class basic_timer{
 	public:
 		static constexpr qword us2fs = (qword)1000*1000*1000;
-		static constexpr qword heartbeat_rate_us = 1000;
+		static constexpr qword heartbeat_us = 1000;
+		static constexpr qword heartbeat_hz = (1000*1000)/heartbeat_us;
 		typedef void (*CALLBACK)(qword,void*);
 	private:
 		struct queue_type{
@@ -25,10 +26,10 @@ namespace UOS{
 		};
 
 		spin_lock lock;
-		qword volatile* base;
 		dword tick_fs;
+		qword volatile* base;
 		volatile dword beat_counter;
-		
+		qword running_us;
 		qword conductor;
 		hash_set<qword,UOS::hash<qword>,UOS::equal_to<qword> > record;
 		linked_list<queue_type> delta_queue;
@@ -36,6 +37,7 @@ namespace UOS{
 		static void irq_timer(byte,void*);
 		void on_timer(void);
 		void on_second(void);
+		void step(unsigned count);
 		qword set_timer(unsigned,byte,qword);
 		friend class RTC;
 	public:
@@ -43,6 +45,9 @@ namespace UOS{
 		basic_timer(const basic_timer&) = delete;
 		qword wait(qword us, CALLBACK func, void* arg, bool repeat = false);
 		bool cancel(qword ticket);
+		inline qword running_time(void) const{
+			return running_us;
+		}
 	};
 	extern basic_timer timer;
 }

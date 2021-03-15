@@ -17,6 +17,7 @@ using namespace UOS;
 //[[ noreturn ]]
 //void AP_entry(word);
 
+/*
 void thread_test(qword ptr,qword,qword,qword){
 	auto m = reinterpret_cast<mutex*>(ptr);
 	this_core core;
@@ -45,6 +46,7 @@ void thread_spawner(qword ptr,qword,qword,qword){
 	}
 	thread::kill(this_thread);
 }
+*/
 
 typedef void (*global_constructor)(void);
 
@@ -77,18 +79,45 @@ void krnlentry(void* module_base){
 	int_trap(3);
 	sti();
 
-	auto th = proc.spawn("/test.exe p");
-	auto pid = th->id;
-	th->relax();
-	proc.spawn("/test.exe")->relax();
-	proc.spawn("/test.exe l")->relax();
-	proc.spawn("/test.exe f")->relax();
-	proc.spawn("/test.exe y")->relax();
+	this_core core;
+	auto ps = core.this_thread()->get_process();
+	HANDLE th = proc.spawn("/test.exe p");
+	dword pid;
+	{
+		lock_guard<handle_table> guard(ps->handles);
+		auto ptr = ps->handles[th];
+		assert(ptr && ptr->type() == PROCESS);
+		pid = ((process*)ptr)->id;
+		ptr->relax();
+	}
+	char const* commands[] = {\
+		"/test.exe",
+		"/test.exe l",
+		"/test.exe f",
+		"/test.exe y",
+		"/test.exe v",
+		"/test.exe i"
+	};
+	for (auto cmd : commands){
+		th = proc.spawn(cmd);
+		lock_guard<handle_table> guard(ps->handles);
+		auto ptr = ps->handles[th];
+		assert(ptr && ptr->type() == PROCESS);
+		ptr->relax();
+	}
+
 	string str("/test.exe ");
 	str.push_back('0' + pid);
-	proc.spawn(move(str))->relax();
-	proc.spawn("/test.exe v")->relax();
+	th = proc.spawn(move(str));
+	{
+		lock_guard<handle_table> guard(ps->handles);
+		auto ptr = ps->handles[th];
+		assert(ptr && ptr->type() == PROCESS);
+		ptr->relax();
+	}
 
+
+/*
 	if(false){
 		this_core core;
 		process* ps = core.this_thread()->get_process();
@@ -96,6 +125,7 @@ void krnlentry(void* module_base){
 		qword args[4] = {reinterpret_cast<qword>(m)};
 		ps->spawn(thread_spawner,args);
 	}
+*/
 
 	//as idle thread
 	while(true){

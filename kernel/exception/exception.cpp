@@ -5,6 +5,7 @@
 #include "dev/include/acpi.hpp"
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
+#include "dev/include/display.hpp"
 
 using namespace UOS;
 
@@ -67,9 +68,9 @@ void on_fpu_switch(context* context){
 	this_core core;
 	auto this_thread = core.this_thread();
 	auto owner = core.fpu_owner();
-	if (this_thread == owner)
-		bugcheck("#NM while owning fpu @ %p",this_thread);
 	clts();
+	if (this_thread == owner)
+		return;
 	if (owner){
 		owner->save_sse();
 	}
@@ -122,8 +123,16 @@ void dispatch_exception(byte id,qword errcode,context* context){
 			return;
 	}
 
-	if (id != 0xFF){
-		bugcheck("unhandled_exception #%d",id);
+	// if (id != 0xFF){
+	// 	bugcheck("unhandled_exception #%d",id);
+	// }
+	//shutdown();
+	if (features.get(decltype(features)::SCR)){
+		rectangle rect = {0,0,display.get_width(),display.get_height()};
+		display.fill(rect,0x0000FF);
 	}
-	shutdown();
+	cli();
+	while(true){
+		halt();
+	}
 }

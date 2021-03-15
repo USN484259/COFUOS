@@ -8,20 +8,25 @@
 
 namespace UOS{
 	class memory_lock{
-		interrupt_guard<virtual_space> guard;
+		virtual_space* vspace = nullptr;
 		bool state = false;
 	public:
-		memory_lock(virtual_space& vs,void const* va,dword length,bool write = false);
+		memory_lock(void const* va,dword length,bool write = false);
+		~memory_lock(void);
 		inline bool get(void) const{
 			return state;
 		}
 	};
 
 	class handle_lock{
-		interrupt_guard<handle_table> guard;
+		handle_table* table = nullptr;
 		waitable* obj = nullptr;
 	public:
-		handle_lock(handle_table& table,HANDLE handle,OBJTYPE type);
+		handle_lock(HANDLE handle,OBJTYPE type);
+		~handle_lock(void);
+		inline void drop(void){
+			table = nullptr;
+		}
 		inline waitable* get(void) const{
 			return obj;
 		}

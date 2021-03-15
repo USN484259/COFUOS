@@ -14,7 +14,7 @@ namespace UOS{
 		bool check(void) const override{
 			return state;
 		}
-		REASON wait(qword us = 0,handle_table* = nullptr) override;
+		REASON wait(qword us = 0,wait_callback = nullptr) override;
 		bool signal_one(void);
 		size_t signal_all(void);
 		void reset(void);

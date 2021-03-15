@@ -610,9 +610,19 @@ void kdb_stub::cmd_breakpoint(void){
 
 bool kdb_stub::cmd_run(void){
 	while(length){
-		if (length > 1){
+		unsigned offset = 1;
+		if (buffer[0] == 'C'){	//continue with signal
+			//ignore signal
+			while(offset < length && buffer[offset++] != ';');
+		}
+		if (buffer[0] == 'D'){
+			if (length != 1)
+				break;
+			features.clear(decltype(features)::GDB);
+		}
+		if (length > offset){
 			qword addr;
-			if (0 == hex_to_num(buffer + 1,length - 1,addr))
+			if (0 == hex_to_num(buffer + offset,length - offset,addr))
 				break;
 			conx->rip = addr;
 		}
@@ -633,7 +643,6 @@ void kdb_stub::signal(byte id,qword error_code,context* i_context){
 
 	// https://elixir.bootlin.com/linux/latest/source/kernel/debug/gdbstub.c#L957
 	on_break();
-
 	while(true){
 		recv();
 		if (length == 0)
@@ -660,6 +669,8 @@ void kdb_stub::signal(byte id,qword error_code,context* i_context){
 				continue;
 			case 'c':
 			case 's':
+			case 'C':
+			case 'D':
 				if (cmd_run())
 					return;
 				break;

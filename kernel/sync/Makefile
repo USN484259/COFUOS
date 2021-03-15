@@ -1,4 +1,4 @@
-all:	bin/spin_lock.o bin/mutex.o bin/event.o
+all:	bin/spin_lock.o bin/rwlock.o bin/mutex.o bin/event.o
 
 bin/%.o:	%.cpp
 	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@

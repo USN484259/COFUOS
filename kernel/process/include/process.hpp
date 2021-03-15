@@ -11,35 +11,39 @@
 #include "hash.hpp"
 #include "id_gen.hpp"
 #include "interface/include/bridge.hpp"
+#include "sync/include/rwlock.hpp"
 
 namespace UOS{
 	class handle_table{
-		spin_lock rwlock;
+		rwlock objlock;
 		dword count = 0;
 		vector<waitable*> table;
 	public:
-		handle_table(void) = default;
+		handle_table(waitable*);
 		handle_table(const handle_table&) = delete;
 		~handle_table(void);
 		void clear(void);
 		dword put(waitable*);
 		bool close(dword);
-		waitable* operator[](dword);
+		waitable* operator[](dword) const;
 		inline dword size(void) const{
 			return count;
 		}
 		inline bool try_lock(void){
-			return rwlock.try_lock(spin_lock::SHARED);
+			return objlock.try_lock(rwlock::SHARED);
 		}
 		inline void lock(void){
-			rwlock.lock(spin_lock::SHARED);
+			objlock.lock(rwlock::SHARED);
 		}
 		inline void unlock(void){
-			assert(!rwlock.is_exclusive());
-			rwlock.unlock();
+			assert(objlock.is_locked() && !objlock.is_exclusive());
+			objlock.unlock();
 		}
 		inline bool is_locked(void) const{
-			return rwlock.is_locked();
+			return objlock.is_locked();
+		}
+		inline bool is_exclusive(void) const{
+			return objlock.is_exclusive();
 		}
 	};
 	class process : public waitable{
@@ -70,17 +74,19 @@ namespace UOS{
 	private:
 		volatile STATE state = RUNNING;
 		PRIVILEGE privilege = NORMAL;
+		dword active_count = 0;
 		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
 	public:
 		const string commandline;
 		handle_table handles;
-
+		const qword start_time;
+		volatile qword cpu_time = 0;
 
 		struct initial_process_tag {};
 		static id_gen<dword> new_id;
 	public:
-		process(initial_process_tag, kernel_vspace*);
+		process(initial_process_tag);
 		process(const UOS::string& cmd,basic_file* file,const qword* info);
 		~process(void);
 		OBJTYPE type(void) const override{
@@ -93,7 +99,7 @@ namespace UOS{
 			return id == this->id;
 		}
 		inline size_t size(void) const{
-			return threads.size();
+			return active_count;
 		}
 		inline thread* get_thread(dword tid){
 			auto it = threads.find(tid);
@@ -111,10 +117,13 @@ namespace UOS{
 			val = result;
 			return true;
 		}
-		REASON wait(qword = 0,handle_table* = nullptr) override;
+		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
-		thread* spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
+		HANDLE spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
 		void kill(dword ret_val);
+		//on thread exit
+		void on_exit(void);
+		//delete thread object
 		void erase(thread* th);
 	};
 
@@ -129,7 +138,7 @@ namespace UOS{
 			return table.size();
 		}
 		//string should be in kernel space
-		process* spawn(string&& command,string&& env = string());
+		HANDLE spawn(string&& command,string&& env = string());
 		void erase(process* ps);
 		bool enumerate(dword& id);
 		//ref_count incremented
