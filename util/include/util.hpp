@@ -86,8 +86,9 @@ namespace UOS{
 		A first;
 		B second;
 		pair(void) = default;
-		inline pair(const A& a,const B& b) : first(a),second(b){}
-		inline pair(A&& a,B&& b) : first(move(a)),second(move(b)){}
+		constexpr pair(const A& a,const B& b) : first(a),second(b){}
+		template<typename U1,typename U2>
+		constexpr pair(U1&& a,U2&& b) : first(move(a)),second(move(b)){}
 	};
 
 	
@@ -95,10 +96,10 @@ namespace UOS{
 	//inline pair<A, B> make_pair(const A& a, const B& b) {
 	//	return pair<A, B>(a, b);
 	//}
-	template<typename A, typename B>
-	inline pair<A, B> make_pair(A&& a, B&& b) {
-		return pair<A, B>(move(a), move(b));
-	}
+	// template<typename A, typename B>
+	// inline pair<A, B> make_pair(A&& a, B&& b) {
+	// 	return pair<A, B>(move(a), move(b));
+	// }
 
 	template<typename T>
 	inline void swap(T& a,T& b){
@@ -162,7 +163,7 @@ namespace UOS{
 	}
 
 	template<typename It,typename T>
-	It find(It head, It tail, const T& cmp) {
+	It find_first_of(It head, It tail, const T& cmp) {
 		while (head != tail) {
 			if (*head == cmp)
 				return head;
@@ -170,7 +171,18 @@ namespace UOS{
 		}
 		return tail;
 	}
-
+	template<typename It,typename T>
+	It find_last_of(It head,It tail,const T& cmp) {
+		if (head == tail)
+			return tail;
+		auto ptr = tail;
+		do{
+			--ptr;
+			if (*ptr == cmp)
+				return ptr;
+		}while(ptr != head);
+		return tail;
+	}
 	
 	template<typename T>
 	constexpr T align_down(T value,size_t align){

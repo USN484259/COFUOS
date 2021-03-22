@@ -13,6 +13,7 @@
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/ps_2.hpp"
+#include "interface/include/object.hpp"
 
 namespace UOS{
 	PE64 const* pe_kernel;
@@ -22,16 +23,20 @@ namespace UOS{
 	kernel_vspace vm;
 	paired_heap heap([](size_t& req_size) -> void* {
 		req_size = align_up(max(req_size,PAGE_SIZE),PAGE_SIZE);
-		auto req_page = req_size >> 12;
-		auto ptr = vm.reserve(0,req_page);
-		if (ptr){
-			if (vm.commit(ptr,req_page)){
-				dbgprint("HEAP: expand %d pages @ %p",req_page,ptr);
-				return (void*)ptr;
+		do{
+			auto req_page = req_size / PAGE_SIZE;
+			auto ptr = vm.reserve(0,req_page);
+			if (ptr){
+				if (vm.commit(ptr,req_page)){
+					dbgprint("HEAP: expand %d pages @ %p",req_page,ptr);
+					return (void*)ptr;
+				}
+				vm.release(ptr,req_page);
 			}
-			vm.release(ptr,req_page);
-		}
-		return nullptr;
+			if (req_page <= 1)
+				return nullptr;
+			req_size = PAGE_SIZE;
+		}while(true);
 	});
 	ACPI acpi;
 	process_manager proc;
@@ -41,6 +46,7 @@ namespace UOS{
 	basic_timer timer;
 	RTC rtc;
 	core_manager cores;
+	object_manager named_obj;
 	screen_buffer display;
 	PS_2 ps2_device;
 }

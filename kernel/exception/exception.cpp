@@ -1,7 +1,7 @@
 #include "kdb.hpp"
 #include "sysinfo.hpp"
 #include "intrinsics.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "dev/include/acpi.hpp"
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
@@ -10,6 +10,48 @@
 using namespace UOS;
 
 #define MAKE_ERROR_CODE(id) (0xC0000000UL | (id))
+
+
+byte UOS::check_guard_page(qword va){
+	this_core core;
+	auto this_thread = core.this_thread();
+	qword bot,top;
+	virtual_space* vspace;
+	if (IS_HIGHADDR(va)){
+		top = this_thread->krnl_stk_top;
+		bot = top - this_thread->krnl_stk_reserved;
+		vspace = &vm;
+	}
+	else{
+		top = this_thread->user_stk_top;
+		bot = top - this_thread->user_stk_reserved;
+		vspace = this_thread->get_process()->vspace;
+	}
+	do{
+		//valid stack range
+		if (top == 0 || (top & PAGE_MASK) || (bot & PAGE_MASK) || top == bot)
+			break;
+		top -= PAGE_SIZE;
+		if (IS_HIGHADDR(va) != IS_HIGHADDR(top))
+			break;
+		if (!IS_HIGHADDR(va))
+			bot -= PAGE_SIZE;
+		//should in stack range
+		if (va >= top || va < bot)
+			break;
+		auto pt = vspace->peek(va + PAGE_SIZE);
+		//page behind (va) should look like stack
+		if (!pt.present || !pt.write || !pt.xd) 
+			break;
+		if (!vspace->commit(align_down(va,PAGE_SIZE),1))
+			break;
+		if (!IS_HIGHADDR(va) && align_down(va,PAGE_SIZE) == bot){
+			return 0x80;
+		}
+		return 1;
+	}while(false);
+	return 0;
+}
 
 struct PF_STATE{
 	byte P : 1;
@@ -20,7 +62,7 @@ struct PF_STATE{
 	byte : 0;
 };
 
-bool on_page_fault(qword errcode,qword va,context* context){
+byte on_page_fault(qword errcode,qword va,context* context){
 	PF_STATE& state = *(PF_STATE*)&errcode;
 	if (((context->cs & 0x03) ? 1 : 0) != state.U)
 		bugcheck("#PF state.U mismatch (%x,%x) @ %p",errcode,(qword)context->cs,va);
@@ -40,8 +82,12 @@ bool on_page_fault(qword errcode,qword va,context* context){
 		if (0 == state.P){
 			if (pt.present)
 				bugcheck("#PF state.P mismatch (%x,%x) @ %p",errcode,*(qword*)&pt,va);
-			else
+			else{
+				if (pt.preserve){
+					return check_guard_page(va);
+				}
 				break;
+			}
 		}
 		if (state.I && state.W)
 			bugcheck("#PF invalid state (%x) @ %p",errcode,va);
@@ -59,9 +105,9 @@ bool on_page_fault(qword errcode,qword va,context* context){
 				break;
 		}
 		invlpg((void*)va);
-		return true;
+		return 1;
 	}while(false);
-	return false;
+	return 0;
 }
 
 void on_fpu_switch(context* context){
@@ -90,8 +136,12 @@ bool on_dispatch(byte id,qword errcode,context* context){
 		case 0x0F:	//??
 			return false;
 		case 0x0E:	//PF handler
-			if (on_page_fault(errcode,read_cr2(),context))
-				return true;
+			switch (on_page_fault(errcode,read_cr2(),context)){
+				case 1:
+					return true;
+				case 0x80:
+					id = (byte)SO;
+			}
 			break;
 		case 0x07:	//NM handler
 			on_fpu_switch(context);

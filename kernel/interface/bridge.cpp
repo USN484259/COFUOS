@@ -3,7 +3,7 @@
 #include "process/include/process.hpp"
 #include "process/include/thread.hpp"
 #include "dev/include/cpu.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "interface.h"
 #include "assert.hpp"
 #include "string.hpp"
@@ -40,7 +40,8 @@ bool UOS::user_exception(qword& rip,qword& rsp,dword errcode){
 }
 
 void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword header_size){
-	auto env = reinterpret_cast<string*>(ptr);
+	literal env;
+	env.attach(reinterpret_cast<void*>(ptr));
 	this_core core;
 	thread* this_thread = core.this_thread();
 	process* this_process = this_thread->get_process();
@@ -124,17 +125,18 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 		
 		//copy environment to user space
 		qword env_page = 0;
-		if (env && !env->empty()){
-			auto env_count = align_up(env->size() + 1,PAGE_SIZE)/PAGE_SIZE;
+		if (!env.empty()){
+			auto env_count = align_up(env.size() + 1,PAGE_SIZE)/PAGE_SIZE;
 			env_page = this_process->vspace->reserve(0,env_count);
 			if (env_page == 0)
 				break;
 			if (!this_process->vspace->commit(env_page,env_count))
 				break;
-			memcpy((void*)env_page,env->c_str(),env->size() + 1);
+			memcpy((void*)env_page,env.c_str(),env.size() + 1);
+			//no destructor called, release manually
+			env.clear();
 		}
-		delete env;
-		env = nullptr;
+
 		//TODO resolve import table
 		
 		//lower thread priority
@@ -146,7 +148,8 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 			break;
 		service_exit(entrypoint,this_process->image->imgbase,env_page,this_thread->user_stk_top);
 	}while(false);
-	delete env;
+	//no destructor called, release manually
+	env.clear();
 	//all user resource should be released on destruction
 	thread::kill(this_thread);
 	bugcheck("process_loader failed to exit");
@@ -178,10 +181,6 @@ qword kernel_service(qword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 			return srv.get_time();
 		case enum_process:
 			return srv.enum_process(a1);
-		case get_message:
-			return srv.get_message((void*)a1,a2);
-		case dbg_print:
-			return srv.dbg_print((void const*)a1,a2);
 		case display_fill:
 			return srv.display_fill(a1,a2,a3);
 		case display_draw:
@@ -211,6 +210,8 @@ qword kernel_service(qword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 			return srv.check(a1);
 		case wait_for:
 			return srv.wait_for(a1,a2);
+		case signal:
+			return srv.signal(a1,a2);
 		case get_process:
 			return srv.get_process();
 		case process_id:
@@ -231,8 +232,12 @@ qword kernel_service(qword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 			return srv.open_process(a1);
 		case handle_type:
 			return srv.handle_type(a1);
+		case open_handle:
+			return srv.open_handle((void const*)a1,a2);
 		case close_handle:
 			return srv.close_handle(a1);
+		case create_object:
+			return srv.create_object((OBJTYPE)a1,a2,a3);
 		case vm_peek:
 			return srv.vm_peek(a1);
 		case vm_protect:
@@ -243,6 +248,12 @@ qword kernel_service(qword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 			return srv.vm_commit(a1,a2);
 		case vm_release:
 			return srv.vm_release(a1,a2);
+		case iostate:
+			return srv.iostate(a1);
+		case read:
+			return srv.read(a1,(void*)a2,a3);
+		case write:
+			return srv.write(a1,(void const*)a2,a3);
 	}
 	if (!user_exception(rip,rsp,ERROR_CODE::SV))
 		srv.exit_process(ERROR_CODE::SV);

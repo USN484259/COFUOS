@@ -14,7 +14,7 @@ namespace UOS{
 		OBJTYPE type(void) const override{
 			return UNKNOWN;
 		}
-		bool check(void) const override{
+		bool check(void) override{
 			return owner == nullptr;
 		}
 		bool try_lock(MODE = EXCLUSIVE);

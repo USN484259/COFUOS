@@ -8,6 +8,7 @@
 
 namespace UOS{
 	class process;
+	byte check_guard_page(qword);
 	class thread : public waitable{
 		struct hash{
 			UOS::hash<dword> h;
@@ -32,6 +33,7 @@ namespace UOS{
 		friend struct conx_off_check;
 		friend void ::UOS::process_loader(qword,qword,qword,qword);
 		friend void ::UOS::user_entry(qword,qword,qword,qword);
+		friend byte ::UOS::check_guard_page(qword);
 	public:
 		typedef void (*procedure)(qword,qword,qword,qword);
 		enum STATE : byte {READY,RUNNING,WAITING,STOPPED};
@@ -71,7 +73,7 @@ namespace UOS{
 		OBJTYPE type(void) const override{
 			return THREAD;
 		}
-		bool check(void) const override{
+		bool check(void) override{
 			return state == STOPPED;
 		}
 		inline bool has_context(void) const{
@@ -118,6 +120,7 @@ namespace UOS{
 		}
 		REASON wait(qword us = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
+		void manage(void* = nullptr) override;
 		// lock before calling, unlocks inside
 		void on_stop(void);
 		void save_sse(void);

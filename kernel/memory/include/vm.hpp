@@ -129,7 +129,7 @@ namespace UOS{
 		bool imp_reserve_fixed(PDT& pdt,PT* table,word index,word count);
 		void imp_release(PDT& pdt,PT* table,qword base_addr,word count);
 		dword imp_iterate(const PDPT* pdpt,qword base_addr,dword page_count,PTE_CALLBACK callback,qword data = 0);
-
+		PT imp_peek(qword va,PDPT const* pdpt_table);
 	protected:
 		//generic helper methods
 		bool new_pdt(PDPT& pdpt,map_view& view);
@@ -162,7 +162,7 @@ namespace UOS{
 		//void shift_left(PDT& pdt,PT* table,BLOCK& block);
 		//void shift_right(PDT& pdt,PT* table,BLOCK& block);
 		//void insert(PDT& pdt,PT* table,BLOCK& block);
-#ifndef NDEBUG
+#ifdef VM_TEST
 		void check_integrity(PDT& pdt,PT* table);
 #endif
 	};

@@ -41,8 +41,8 @@ namespace UOS{
 		byte id(void);
 
 
-		bool available(byte irq_index);
-		bool allocate(byte irq_index,bool level);
+		//bool available(byte irq_index);
+		//bool allocate(byte irq_index,bool level);
 
 		CALLBACK get(byte irq) const;
 		void set(byte irq,CALLBACK callback,void* data = nullptr);

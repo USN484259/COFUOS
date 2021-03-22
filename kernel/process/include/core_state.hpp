@@ -17,8 +17,8 @@ namespace UOS{
 
 	class scheduler{
 	public:
-		static constexpr qword slice_us = 5*1000;
-		static constexpr byte max_slice = 6;
+		static constexpr qword slice_us = 4*1000;
+		static constexpr byte max_slice = 8;
 		static constexpr byte max_priority = 0x10;
 		// [0] [1..3] [4..6] [7]
 		static constexpr byte realtime_priority = 0;
@@ -49,7 +49,7 @@ namespace UOS{
 			//TODO return count on SMP
 		}
 		core_state* get(void);
-		static void preempt(void);
+		static void preempt(bool lower);
 	};
 
 	class this_core{

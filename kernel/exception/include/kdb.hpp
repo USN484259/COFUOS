@@ -43,7 +43,9 @@ namespace UOS{
 		kdb_stub(word);
 		word get_port(void) const;
 		void signal(byte,qword,context*);
-		
+		inline bool is_active(void) const{
+			return (conx);
+		}
 		//void print(const char*,...);
 	};
 	extern kdb_stub debug_stub;

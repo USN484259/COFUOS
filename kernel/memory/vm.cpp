@@ -3,6 +3,7 @@
 #include "constant.hpp"
 #include "util.hpp"
 #include "assert.hpp"
+#include "exception/include/kdb.hpp"
 #include "intrinsics.hpp"
 
 using namespace UOS;
@@ -325,7 +326,7 @@ void virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
 	block.put(table + block.self);
 }
 
-#ifndef NDEBUG
+#ifdef VM_TEST
 void virtual_space::check_integrity(PDT& pdt,PT* table){
 	assert(is_locked());
 	bool free_map[0x200] = {0};
@@ -407,7 +408,7 @@ qword virtual_space::imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word cou
 			}
 			block.size -= count;
 			insert(pdt,table,block);
-#ifndef NDEBUG
+#ifdef VM_TEST
 	check_integrity(pdt,table);
 #endif
 			return base_addr + (allocated_block << 12);
@@ -450,7 +451,7 @@ bool virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word count){
 	insert(pdt,table,blocks[0]);
 	insert(pdt,table,blocks[1]);
 
-#ifndef NDEBUG
+#ifdef VM_TEST
 	check_integrity(pdt,table);
 #endif
 
@@ -527,7 +528,7 @@ void virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word count){
 	}
 	insert(pdt,table,block);
 
-#ifndef NDEBUG
+#ifdef VM_TEST
 	check_integrity(pdt,table);
 #endif
 }
@@ -577,6 +578,29 @@ dword virtual_space::imp_iterate(const PDPT* pdpt_table,qword base_addr,dword pa
 	return count;
 }
 
+PT virtual_space::imp_peek(qword va,PDPT const* pdpt_table){
+	auto pdpt_index = (va >> 30) & 0x1FF;
+	auto pdt_index = (va >> 21) & 0x1FF;
+	auto pt_index = (va >> 12) & 0x1FF;
+	auto need_lock = !debug_stub.is_active();
+	PT pt = {0};
+	if (need_lock)
+		lock();
+	do{
+		if (!pdpt_table[pdpt_index].present)
+			break;
+		map_view pdt_view(pdpt_table[pdpt_index].pdt_addr << 12);
+		auto pdt_table = (PDT*)pdt_view;
+		if (!pdt_table[pdt_index].present)
+			break;
+		map_view pt_view(pdt_table[pdt_index].pt_addr << 12);
+		auto pt_table = (PT*)pt_view;
+		pt = pt_table[pt_index];
+	}while(false);
+	if (need_lock)
+		unlock();
+	return pt;
+}
 
 bool virtual_space::new_pdt(PDPT& pdpt,map_view& view){
 	assert(!pdpt.present);

@@ -1,7 +1,7 @@
 #include "ps_2.hpp"
 #include "dev/include/apic.hpp"
 #include "acpi.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "intrinsics.hpp"
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
@@ -54,15 +54,17 @@ inline void write(byte data){
 	out_byte(0x60,data);
 }
 
+extern "C"
+byte keycode[0x100];
+
 inline byte translate(byte code,byte stat){
-	auto ext = (stat == 0xC0 || stat == 0xE0);
-	if (code == 0x83 && !ext)
-		return code;	//treat F7 as 'ext'
-	if (code == 0x12 && ext)
-		return 0;	//simplify PrtScr, so PrtScr -> (0x7C | 0x80)
-	if (code < 0x80)	//ext -> bit7 set
-		return code | (ext ? 0x80 : 0);
-	return 0;
+	byte base = (stat == 0xC0 || stat == 0xE0) ? 0x80 : 0;
+	if (code & 0x80)
+		base = 0;
+	auto key = keycode[base + code];
+	if (stat == 0xC0 || stat == 0xF0)
+		key |= 0x80;
+	return key;
 }
 
 PS_2::safe_queue::safe_queue(void) : buffer((byte*)operator new(QUEUE_SIZE)), head(0),tail(0) {}
@@ -71,7 +73,7 @@ PS_2::safe_queue::~safe_queue(void){
 }
 
 byte PS_2::safe_queue::get(void){
-	interrupt_guard<void> ig;
+	interrupt_guard<spin_lock> guard(objlock);
 	if (head == tail)
 		bugcheck("PS_2::safe_queue get empty queue @ %p",this);
 	byte val = buffer[head];
@@ -80,18 +82,16 @@ byte PS_2::safe_queue::get(void){
 }
 
 void PS_2::safe_queue::put(byte val){
-	interrupt_guard<void> ig;
-
-	{
-		lock_guard<spin_lock> guard(objlock);
-		auto new_tail = (tail + 1) % QUEUE_SIZE;
-		if (new_tail != head){
-			buffer[tail] = val;
-			tail = new_tail;
-		}
-		else
-			dbgprint("WARNING PS_2::safe_queue overflow");
+	interrupt_guard<spin_lock> guard(objlock);
+	auto new_tail = (tail + 1) % QUEUE_SIZE;
+	if (new_tail != head){
+		buffer[tail] = val;
+		tail = new_tail;
 	}
+	else
+		dbgprint("WARNING PS_2::safe_queue overflow");
+	
+	guard.drop();
 	notify();
 }
 
@@ -102,12 +102,11 @@ void PS_2::safe_queue::clear(void){
 
 REASON PS_2::safe_queue::wait(qword us,wait_callback func){
 	assert(func == nullptr);
-	interrupt_guard<void> ig;
-	objlock.lock();
+	interrupt_guard<spin_lock> guard(objlock);
 	if (head != tail){
-		objlock.unlock();
 		return PASSED;
 	}
+	guard.drop();
 	return imp_wait(us);
 }
 
@@ -201,6 +200,12 @@ PS_2::PS_2(void){
 	}
 }
 
+void PS_2::set_handler(callback cb,void* ud){
+	if (func)
+		bugcheck("invalid PS_2::set_handler call from %p",return_address());
+	userdata = ud;
+	func = cb;
+}
 
 void PS_2::on_irq(byte irq,void* ptr){
 	IF_assert;
@@ -389,9 +394,8 @@ bool PS_2::device_keybd(PS_2& self,byte index){
 				continue;
 		}
 		auto keycode = translate(data,state);
-		//auto keychar = (keycode < 0x80) ? (&scancode_table)[keycode] : ' ';
-		dbgprint("key (%x) %s",keycode,(state == 0xC0 || state == 0xF0) ? "released" : "pressed");
-		//TODO dispatch keyboard event
+		if ((keycode & 0x7F) && self.func)
+			self.func(&keycode,sizeof(keycode),self.userdata);
 		state = 0;
 	}
 }
@@ -424,7 +428,7 @@ bool PS_2::device_mouse(PS_2& self,byte index,byte mode){
 				packet[it++] = data;
 			}
 		}
-		dbgprint("mouse %x,%x,%x,%x",(qword)packet[0],(qword)packet[1],(qword)packet[2],(qword)(mode ? packet[3] : 0));
+		//dbgprint("mouse %x,%x,%x,%x",(qword)packet[0],(qword)packet[1],(qword)packet[2],(qword)(mode ? packet[3] : 0));
 		//TODO translate & dispatch mouse event
 	}
 }

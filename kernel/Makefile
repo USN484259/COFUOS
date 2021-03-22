@@ -1,5 +1,5 @@
-DEFINES:=$(DEFINES) KSP_OFF=0x48 CONX_OFF=0x58
-INC_PATH:=$(COFUOS_ROOT)/kernel/ $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/kernel/util/include/ ./include/
+DEFINES:=$(DEFINES) UOS_KRNL KSP_OFF=0x48 CONX_OFF=0x58
+INC_PATH:=$(COFUOS_ROOT)/kernel/ $(COFUOS_ROOT)/util/ $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/kernel/util/include/ ./include/
 
 export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -nostdlib -m64 -mno-mmx -mno-sse -mno-sse2
 export INC_PATH:=$(addprefix -I,$(INC_PATH))
@@ -18,7 +18,7 @@ bin/COFUOS.sys: $(MODULES) bin/hal.o bin/embed_test.o $(COFUOS_ROOT)/util/includ
 $(MODULES):
 	@cd $@ && $(MAKE)
 
-bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/test/bin/test.exe
+bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/test/bin/shell.exe
 	$(NASM) -f win64 $< -o $@
 
 bin/hal.o:	hal.asm

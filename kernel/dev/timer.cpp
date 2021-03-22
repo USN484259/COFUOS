@@ -3,7 +3,7 @@
 #include "acpi.hpp"
 #include "dev/include/apic.hpp"
 #include "memory/include/vm.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "intrinsics.hpp"
 #include "assert.hpp"
 #include "vector.hpp"
@@ -64,7 +64,6 @@ basic_timer::basic_timer(void) : base(nullptr){
 		//channel 0 as heat beat
 		auto count = set_timer(0,2,heartbeat_us);
 
-
 		for (unsigned i = 0;i < comarator_count;++i){
 			qword state = *(base + (0x100 + i*0x20)/sizeof(qword));
 			dbgprint("comparator #%d : %x",i,state);
@@ -118,7 +117,7 @@ void basic_timer::step(unsigned count){
 		auto& cur = delta_queue.front();
 		if (cur.diff_tick > count){
 			cur.diff_tick -= count;
-			return;
+			break;
 		}
 		count -= cur.diff_tick;
 		auto rec = record.find(cur.ticket);

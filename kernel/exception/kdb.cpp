@@ -10,7 +10,7 @@
 #include "dev/include/acpi.hpp"
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 
 
 using namespace UOS;
@@ -435,7 +435,16 @@ bool modify_instruction(qword va,byte& data){
 	do{
 		if (!features.get(decltype(features)::MEM))
 			break;
-		auto pt = vm.peek(va);
+		
+		virtual_space* vspace;
+		if (IS_HIGHADDR(va))
+			vspace = &vm;
+		else{
+			this_core core;
+			vspace = core.this_thread()->get_process()->vspace;
+		}
+
+		auto pt = vspace->peek(va);
 		if (!pt.present || pt.xd)
 			break;
 		map_view view(pt.page_addr << 12);
@@ -671,8 +680,10 @@ void kdb_stub::signal(byte id,qword error_code,context* i_context){
 			case 's':
 			case 'C':
 			case 'D':
-				if (cmd_run())
+				if (cmd_run()){
+					conx = nullptr;
 					return;
+				}
 				break;
 			case 'k':
 				shutdown();

@@ -24,7 +24,7 @@ namespace UOS{
 		void* userdata;
 	
 		//static constexpr dword hard_critical_limit = 4;
-#ifndef NDEBUG
+#ifdef PM_TEST
 		void check_integrity(void);
 #endif
 		void critical_check(void);

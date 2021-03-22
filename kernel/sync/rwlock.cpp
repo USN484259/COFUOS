@@ -37,45 +37,42 @@ bool rwlock::try_lock(MODE mode){
 
 void rwlock::lock(MODE mode){
 	do{
-		interrupt_guard<void> ig;
-		objlock.lock();
+		interrupt_guard<spin_lock> guard(objlock);
 		if (mode == MODE::EXCLUSIVE){
 			if (owner == nullptr && share_count == 0){
 				this_core core;
 				owner = core.this_thread();
-				objlock.unlock();
 				return;
 			}
 		}
 		else{
 			if (owner == nullptr){
 				++share_count;
-				objlock.unlock();
 				return;
 			}
 		}
+		guard.drop();
 	}while(imp_wait(0) == NOTIFY);
 	bugcheck("locking deleted rwlock @ %p",this);
 }
 
 void rwlock::unlock(void){
-	{
-		interrupt_guard<spin_lock> guard(objlock);
-		if (owner){
-			assert(share_count == 0);
-			this_core core;
-			if (owner != core.this_thread())
-				bugcheck("releasing non-owning exclusive lock @ %p",this);
+	interrupt_guard<spin_lock> guard(objlock);
+	if (owner){
+		assert(share_count == 0);
+		this_core core;
+		if (owner != core.this_thread())
+			bugcheck("releasing non-owning exclusive lock @ %p",this);
 
-			owner = nullptr;
-		}
-		else{
-			if (share_count == 0)
-				bugcheck("releasing free shared lock @ %p",this);
-			if (--share_count != 0)
-				return;
-		}
+		owner = nullptr;
 	}
+	else{
+		if (share_count == 0)
+			bugcheck("releasing free shared lock @ %p",this);
+		if (--share_count != 0)
+			return;
+	}
+	guard.drop();
 	notify();
 }
 

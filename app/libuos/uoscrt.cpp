@@ -1,6 +1,7 @@
 #include "uos.h"
 #include "util.hpp"
 #include "stdarg.h"
+#include "crt_heap.hpp"
 
 using namespace UOS;
 
@@ -8,14 +9,18 @@ static const char* hexchar = "0123456789ABCDEF";
 
 static void* image_base;
 static const char* environment;
+static qword guard_value;
 
 typedef void (*procedure)(void);
 
-extern "C"{
-	procedure __CTOR_LIST__;
-	procedure __DTOR_LIST__;
-	int main(int argc,char** argv);
-}
+extern "C"
+procedure __CTOR_LIST__;
+
+extern "C"
+procedure __DTOR_LIST__;
+
+extern "C"
+int main(int argc,char** argv);
 
 extern "C"
 int isspace(int ch){
@@ -29,6 +34,69 @@ int isspace(int ch){
 			return 1;
 	}
 	return 0;
+}
+extern "C"
+int isalpha(int ch){
+	ch &= (~0x20);
+	return (ch >= 'A' && ch <= 'Z');
+}
+extern "C"
+int isdigit(int ch){
+	return (ch >= '0' && ch <= '9');
+}
+extern "C"
+int isxdigit(int ch){
+	if (isdigit(ch))
+		return 1;
+	ch &= (~0x20);
+	return (ch >= 'A' && ch <= 'F');
+}
+extern "C"
+int isalnum(int ch){
+	return (isalpha(ch) || isdigit(ch));
+}
+extern "C"
+int ispunct(int ch){
+	switch(ch){
+		case '!':
+		case '\"':
+		case '#':
+		case '$':
+		case '%':
+		case '&':
+		case '\'':
+		case '(':
+		case ')':
+		case '*':
+		case '+':
+		case ',':
+		case '-':
+		case '.':
+		case '/':
+		case ':':
+		case ';':
+		case '<':
+		case '=':
+		case '>':
+		case '?':
+		case '@':
+		case '[':
+		case '\\':
+		case ']':
+		case '^':
+		case '_':
+		case '`':
+		case '{':
+		case '|':
+		case '}':
+		case '~':
+			return 1;
+	}
+	return 0;
+}
+extern "C"
+int isprint(int ch){
+	return (isalnum(ch) || ispunct(ch) || ch == ' ');
 }
 
 extern "C"
@@ -273,7 +341,16 @@ int snprintf(char* buffer,size_t limit,const char* format,...){
 }
 
 extern "C"
+[[ noreturn ]]
+void abort(void){
+	exit_process(0x80000000);
+}
+
+extern "C"
 void __main(void){
+	static bool done = false;
+	if (done)
+		return;
 	//call global constructors
 	procedure* head = &__CTOR_LIST__;
 	auto tail = head;
@@ -284,6 +361,7 @@ void __main(void){
 	while(head != tail){
 		(*tail--)();
 	}
+	done = true;
 }
 
 extern "C"
@@ -294,6 +372,15 @@ void exit(int result){
 	for(++dtor;*dtor;++dtor)
 		(*dtor)();
 	exit_process(result);
+}
+
+qword rdtsc(void){
+	dword lo,hi;
+	__asm__ volatile (
+		"rdtsc"
+		: "=a" (lo), "=d" (hi)
+	);
+	return (((qword)hi) << 32) | lo;
 }
 
 char** parse_commandline(char* const cmd,dword length,unsigned& argc){
@@ -326,7 +413,8 @@ extern "C"
 void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
 	image_base = imgbase;
 	environment = (const char*)env;
-
+	guard_value = get_time() ^ rdtsc();
+	__main();
 	int return_value = (-1);
 	do{
 		//prepare arguments
@@ -350,17 +438,30 @@ void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
 }
 
 void* operator new(size_t size){
-	//TODO replace with REAL heap
-	size = align_up(size,0x1000)/0x1000;
-	auto ptr = vm_reserve(nullptr,size);
-	if (ptr){
-		vm_commit(ptr,size);
-	}
+	auto ptr = heap.allocate(size);
+	if (!ptr)
+		abort();
 	return ptr;
 }
 
 void operator delete(void* ptr,size_t size){
-	//TODO replace with REAL heap
-	size = align_up(size,0x1000)/0x1000;
-	vm_release(ptr,size);
+	heap.release(ptr,size);
+}
+
+void* malloc(size_t size){
+	size = 0x10 + align_up(size,8);
+	auto ptr = (dword*)operator new(size);
+	ptr[0] = guard_value;
+	ptr[1] = size;
+	ptr[2] = size >> 32;
+	ptr[3] = guard_value >> 32;
+	return (ptr + 4);
+}
+
+void free(void* p){
+	auto ptr = (dword*)p - 4;
+	if (ptr[0] != guard_value || ptr[3] != (guard_value >> 32))
+		abort();
+	auto size = ((size_t)ptr[2] << 32) | ptr[1];
+	operator delete(ptr,size);
 }

@@ -5,8 +5,7 @@
 #include "pe64.hpp"
 #include "filesystem/include/file.hpp"
 #include "assert.hpp"
-#include "vector.hpp"
-#include "string.hpp"
+#include "literal.hpp"
 #include "hash_set.hpp"
 #include "hash.hpp"
 #include "id_gen.hpp"
@@ -15,15 +14,20 @@
 
 namespace UOS{
 	class handle_table{
+		static constexpr dword limit = 0x800;
+		static constexpr dword avl_base = 4;
+		static constexpr dword handle_of_page = PAGE_SIZE/sizeof(waitable*);
 		rwlock objlock;
 		dword count = 0;
-		vector<waitable*> table;
+		dword top = 0;
+		waitable** table[align_up(limit*sizeof(waitable*),PAGE_SIZE)/PAGE_SIZE] = {0};
 	public:
-		handle_table(waitable*);
+		handle_table(void) = default;
 		handle_table(const handle_table&) = delete;
 		~handle_table(void);
 		void clear(void);
 		dword put(waitable*);
+		bool assign(dword,waitable*);
 		bool close(dword);
 		waitable* operator[](dword) const;
 		inline dword size(void) const{
@@ -64,12 +68,15 @@ namespace UOS{
 		enum STATE : byte {RUNNING,STOPPED};
 		friend class process_manager;
 		friend struct hash;
-		friend class equal;
+		friend struct equal;
 		friend void ::UOS::process_loader(qword,qword,qword,qword);
 		friend void ::UOS::user_entry(qword,qword,qword,qword);
+
+		struct initial_process_tag {};
+		static id_gen<dword> new_id;
 	public:
 		const dword id;
-		dword result = 0;
+		dword result = NO_RESOURCE;
 		virtual_space* const vspace;
 	private:
 		volatile STATE state = RUNNING;
@@ -78,21 +85,23 @@ namespace UOS{
 		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
 	public:
-		const string commandline;
+		literal const commandline;
 		handle_table handles;
 		const qword start_time;
 		volatile qword cpu_time = 0;
 
-		struct initial_process_tag {};
-		static id_gen<dword> new_id;
+		struct startup_info{
+			PRIVILEGE privilege;
+			stream* std_stream[3];
+		};
 	public:
 		process(initial_process_tag);
-		process(const UOS::string& cmd,basic_file* file,const qword* info);
+		process(literal&& cmd,basic_file* file,const startup_info& info,const qword* args);
 		~process(void);
 		OBJTYPE type(void) const override{
 			return PROCESS;
 		}
-		bool check(void) const override{
+		bool check(void) override{
 			return state == STOPPED;
 		}
 		inline bool operator==(dword id) const{
@@ -119,6 +128,7 @@ namespace UOS{
 		}
 		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
+		void manage(void* = nullptr) override;
 		HANDLE spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
 		void kill(dword ret_val);
 		//on thread exit
@@ -137,8 +147,8 @@ namespace UOS{
 		inline size_t size(void) const{
 			return table.size();
 		}
-		//string should be in kernel space
-		HANDLE spawn(string&& command,string&& env = string());
+
+		HANDLE spawn(literal&& command,literal&& env,const process::startup_info& info);
 		void erase(process* ps);
 		bool enumerate(dword& id);
 		//ref_count incremented

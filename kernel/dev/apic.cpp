@@ -3,7 +3,7 @@
 #include "memory/include/vm.hpp"
 #include "intrinsics.hpp"
 #include "dev/include/acpi.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "assert.hpp"
 
 using namespace UOS;
@@ -60,7 +60,7 @@ APIC::APIC(void) : table{0}{
 
 	res = false;
 	byte apic_id = id();
-	byte uid;
+	byte uid = 0;
 	for (auto& p : madt->processors){
 		if (p.apic_id == apic_id){
 			uid = p.uid;
@@ -153,7 +153,7 @@ APIC::APIC(void) : table{0}{
 		else{
 			new_value |= (IRQ_OFFSET + redirect.irq);
 			if (redirect.irq >= madt->gsi_base \
-				&& (rte[redirect.irq - madt->gsi_base] & 0xFF) == (IRQ_OFFSET + redirect.irq) )
+				&& (byte)(rte[redirect.irq - madt->gsi_base]) == (IRQ_OFFSET + redirect.irq) )
 			{	//clear origin IRQ vector if exists
 				rte[redirect.irq - madt->gsi_base] = 0x00010000;
 			}
@@ -177,7 +177,7 @@ APIC::APIC(void) : table{0}{
 byte APIC::id(void){
 	return (byte)(apic_read(0x20) >> 24);
 }
-
+/*
 bool APIC::available(byte irq_index){
 	if (irq_index >= io_apic_entries)
 		return false;
@@ -200,6 +200,7 @@ bool APIC::allocate(byte irq_index,bool level){
 	io_apic_write(0x10 + 2*irq_index,stat);
 	return true;
 }
+*/
 
 APIC::CALLBACK APIC::get(byte irq) const{
 	if (irq >= IRQ_MIN && irq < IRQ_MAX){

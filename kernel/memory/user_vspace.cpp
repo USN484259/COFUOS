@@ -1,6 +1,6 @@
 #include "vm.hpp"
 #include "pm.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "constant.hpp"
 #include "lang.hpp"
 #include "assert.hpp"
@@ -197,24 +197,9 @@ bool user_vspace::protect(qword base_addr,dword page_count,qword attrib){
 }
 
 PT user_vspace::peek(qword va){
-	do{
-		if (IS_HIGHADDR(va) || va >= size_512G)
-			break;
-		map_view view(pl4te);
-		auto pdpt_table = (PDPT*)view;
-		auto pdpt_index = (va >> 30) & 0x1FF;
-		auto pdt_index = (va >> 21) & 0x1FF;
-		auto pt_index = (va >> 12) & 0x1FF;
-
-		if (!pdpt_table[pdpt_index].present)
-			break;
-		map_view pdt_view(pdpt_table[pdpt_index].pdt_addr << 12);
-		auto pdt_table = (PDT*)pdt_view;
-		if (!pdt_table[pdt_index].present)
-			break;
-		map_view pt_view(pdt_table[pdt_index].pt_addr << 12);
-		auto pt_table = (PT*)pt_view;
-		return pt_table[pt_index];
-	}while(false);
-	return PT {0};
+	if (IS_HIGHADDR(va) || va >= size_512G)
+		return PT{0};
+	map_view view(pl4te);
+	auto pdpt_table = (PDPT*)view;
+	return imp_peek(va,pdpt_table);
 }

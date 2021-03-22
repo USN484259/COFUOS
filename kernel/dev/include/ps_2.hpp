@@ -2,9 +2,12 @@
 #include "types.h"
 #include "process/include/waitable.hpp"
 #include "sync/include/spin_lock.hpp"
-
+#include "sync/include/pipe.hpp"
 namespace UOS{
 	class PS_2{
+	public:
+		typedef void (*callback)(void const*,dword,void*);
+	private:
 		class safe_queue : public waitable{
 			static constexpr dword QUEUE_SIZE = 0x100;
 			byte* const buffer;
@@ -20,7 +23,7 @@ namespace UOS{
 			byte get(void);
 			void put(byte);
 			void clear(void);
-			bool check(void) const override{
+			bool check(void) override{
 				return head != tail;
 			}
 			REASON wait(qword = 0,wait_callback = nullptr) override;
@@ -31,6 +34,8 @@ namespace UOS{
 			thread* th = nullptr;
 			safe_queue queue;
 		}channel[2];
+		callback volatile func = nullptr;
+		void* volatile userdata = nullptr;
 
 		static void on_irq(byte,void*);
 		static void thread_ps2(qword,qword,qword,qword);
@@ -39,6 +44,7 @@ namespace UOS{
 	public:
 		PS_2(void);
 		PS_2(const PS_2&) = delete;
+		void set_handler(callback cb,void* ud);
 	};
 	extern PS_2 ps2_device;
 }

@@ -93,13 +93,13 @@ namespace UOS{
 			assert(buffer.size());
 			if (index < buffer.size() - 1)
 				return buffer.at(index);
-			THROW(this);
+			THROW("index %x out of range @ %p",index,this);
 		}
 		const C& at(size_t index) const{
 			assert(buffer.size());
 			if (index < buffer.size() - 1)
 				return buffer.at(index);
-			THROW(this);
+			THROW("index %x out of range @ %p",index,this);
 		}
 		C& operator[](size_t index){
 			return at(index);
@@ -111,25 +111,25 @@ namespace UOS{
 			assert(buffer.size());
 			if (buffer.size() > 1)
 				return buffer.front();
-			THROW(this);
+			THROW("access empty string @ %p",this);
 		}
 		const C& front(void) const{
 			assert(buffer.size());
 			if (buffer.size() > 1)
 				return buffer.front();
-			THROW(this);
+			THROW("access empty string @ %p",this);
 		}
 		C& back(void){
 			assert(buffer.size());
 			if (buffer.size() > 1)
 				return at(buffer.size() - 2);
-			THROW(this);
+			THROW("access empty string @ %p",this);
 		}
 		const C& back(void) const{
 			assert(buffer.size());
 			if (buffer.size() > 1)
 				return at(buffer.size() - 2);
-			THROW(this);
+			THROW("access empty string @ %p",this);
 		}
 		void push_back(C ch){
 			assert(buffer.size() && buffer.back() == (C)0);
@@ -145,9 +145,9 @@ namespace UOS{
 				buffer.push_back((C)0);
 				return;
 			}
-			THROW(this);
+			THROW("access empty string @ %p",this);
 		}
-		bool operator==(const char* str) const{
+		bool operator==(const C* str) const{
 			if (str == nullptr)
 				return false;
 			for (auto it = begin();it != end();++it,++str){
@@ -158,12 +158,11 @@ namespace UOS{
 			}
 			return (*str == 0);
 		}
-		bool operator==(const basic_string& str) const{
-			auto length = size();
-			if (length != str.size())
+		template<typename T>
+		bool operator==(const T& str) const{
+			if (size() != str.size())
 				return false;
-			auto i = match(begin(),str.begin(),length);
-			return i == length;
+			return size() == match(begin(),str.begin(),size());
 		}
 		template<typename T>
 		bool operator!=(const T& val) const{
@@ -195,12 +194,12 @@ namespace UOS{
 			return basic_string(head,tail);
 		}
 	};
-	typedef basic_string<char> string;
-	template<>
-	struct hash<string>
+	template<typename T>
+	struct hash<basic_string<T> >
 	{
-		qword operator()(const string& str){
-			return fasthash64(str.c_str(),str.size(),0);
+		qword operator()(const basic_string<T>& str){
+			return fasthash64(str.c_str(),sizeof(T)*str.size(),0);
 		}
 	};
+	typedef basic_string<char> string;
 }

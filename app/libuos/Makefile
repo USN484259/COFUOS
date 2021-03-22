@@ -1,6 +1,6 @@
 all:	bin/libuos.a
 
-bin/libuos.a:	bin/syscall.o bin/libuos.o bin/uoscrt.o
+bin/libuos.a:	bin/syscall.o bin/libuos.o bin/uoscrt.o bin/crt_heap.o
 	$(MINGW_AR) -rcsv $@ $(wildcard bin/*.o)
 
 bin/syscall.o:	syscall.asm

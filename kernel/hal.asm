@@ -30,6 +30,8 @@ global memcpy
 global bugcheck_raise
 global __chkstk
 
+global keycode
+
 section .text
 
 ; 0 ~ 7, 9, 15, 16, 18, 19 no errcode
@@ -270,7 +272,7 @@ align 16
 service_exit:
 cli
 mov r11d,0x202	;IF
-lea rsp,[r9 - 0x20]
+lea rsp,[r9 - 0x30]
 swapgs
 o64 sysret
 
@@ -560,10 +562,7 @@ mov r10,[rsp]
 add rsp,0x10
 ret
 
-
-
-;__C_specific_handler:
-
-
-;xor rax,rax
-;ret
+section .rdata
+align 16
+keycode:
+incbin 'keycode.bin'

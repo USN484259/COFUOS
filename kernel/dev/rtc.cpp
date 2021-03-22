@@ -4,7 +4,7 @@
 #include "exception/include/kdb.hpp"
 #include "dev/include/apic.hpp"
 #include "acpi.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "timer.hpp"
 
 using namespace UOS;

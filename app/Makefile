@@ -1,4 +1,4 @@
-INC_PATH:=$(COFUOS_ROOT) $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/app/libuos/include
+INC_PATH:=$(COFUOS_ROOT) $(COFUOS_ROOT)/util/ $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/app/libuos/include
 LIB_PATH:=$(COFUOS_ROOT)/app/libuos/bin
 
 export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -nostdlib -m64

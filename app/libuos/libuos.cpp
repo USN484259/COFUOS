@@ -27,13 +27,6 @@ STATUS enum_process(dword* id) {
 	auto res = syscall(srv::enum_process,*id);
 	return unpack_qword(res,id);
 }
-STATUS get_message(void* buffer,dword* length) {
-	auto res = syscall(srv::get_message,buffer,*length);
-	return unpack_qword(res,length);
-}
-void dbg_print(const char* str,dword length) {
-	syscall(srv::dbg_print,str,length);
-}
 STATUS display_fill(dword color,const rectangle* rect) {
 	qword lt,rb;
 	pack_rect(*rect,lt,rb);
@@ -47,16 +40,14 @@ STATUS display_draw(const dword* buffer,const rectangle* rect) {
 HANDLE get_thread(void) {
 	return syscall(srv::get_thread);
 }
-STATUS thread_id(HANDLE handle,dword* id) {
-	auto res = syscall(srv::thread_id,handle);
-	return unpack_qword(res,id);
+dword thread_id(HANDLE handle) {
+	return syscall(srv::thread_id,handle);
 }
 void* get_handler(void) {
 	return (void*)syscall(srv::get_handler);
 }
-STATUS get_priority(HANDLE handle,byte* priority) {
-	auto res = syscall(srv::get_priority,handle);
-	return unpack_qword(res,priority);
+dword get_priority(HANDLE handle) {
+	return syscall(srv::get_priority,handle);
 }
 void exit_thread(void) {
 	syscall(srv::exit_thread);
@@ -77,20 +68,20 @@ STATUS create_thread(void* func,void* arg,dword stk_size,HANDLE* handle) {
 void sleep(qword us) {
 	syscall(srv::sleep,us);
 }
-STATUS check(HANDLE handle,byte* state) {
-	auto res = syscall(srv::check,handle);
-	return unpack_qword(res,state);
+dword check(HANDLE handle) {
+	return syscall(srv::check,handle);
 }
-STATUS wait_for(HANDLE handle,qword us,REASON* reason) {
-	auto res = syscall(srv::wait_for,handle,us);
-	return unpack_qword(res,reason);
+dword wait_for(HANDLE handle,qword us) {
+	return syscall(srv::wait_for,handle,us);
+}
+dword signal(HANDLE handle,dword mode) {
+	return syscall(srv::signal,handle,mode);
 }
 HANDLE get_process(void) {
 	return syscall(srv::get_process);
 }
-STATUS process_id(HANDLE handle,dword* id) {
-	auto res = syscall(srv::process_id,handle);
-	return unpack_qword(res,id);
+dword process_id(HANDLE handle) {
+	return syscall(srv::process_id,handle);
 }
 STATUS process_info(HANDLE handle,PROCESS_INFO* buffer,dword* length) {
 	auto res = syscall(srv::process_info,handle,buffer,*length);
@@ -118,12 +109,19 @@ STATUS open_process(dword id,HANDLE* handle) {
 	auto res = syscall(srv::open_process,id);
 	return unpack_qword(res,handle);
 }
-STATUS handle_type(HANDLE handle,OBJTYPE* type) {
-	auto res = syscall(srv::handle_type,handle);
-	return unpack_qword(res,type);
+OBJTYPE handle_type(HANDLE handle) {
+	return (OBJTYPE)syscall(srv::handle_type,handle);
+}
+STATUS open_handle(const char* name,dword length,HANDLE* handle){
+	auto res = syscall(srv::open_handle,name,length);
+	return unpack_qword(res,handle);
 }
 STATUS close_handle(HANDLE handle) {
 	return (STATUS)syscall(srv::close_handle,handle);
+}
+STATUS create_object(OBJTYPE type,qword a1,qword a2,HANDLE* handle){
+	auto res = syscall(srv::create_object,type,a1,a2);
+	return unpack_qword(res,handle);
 }
 qword vm_peek(void* va) {
 	return syscall(srv::vm_peek,va);
@@ -139,4 +137,15 @@ STATUS vm_commit(void* base,dword count) {
 }
 STATUS vm_release(void* base,dword count) {
 	return (STATUS)syscall(srv::vm_release,base,count);
+}
+dword iostate(HANDLE handle){
+	return syscall(srv::iostate,handle);
+}
+dword read(HANDLE handle,void* buffer,dword* length){
+	auto res = syscall(srv::read,handle,buffer,*length);
+	return unpack_qword(res,length);
+}
+dword write(HANDLE handle,const void* buffer,dword* length){
+	auto res = syscall(srv::write,handle,buffer,*length);
+	return unpack_qword(res,length);
 }

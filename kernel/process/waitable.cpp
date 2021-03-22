@@ -2,7 +2,7 @@
 #include "thread.hpp"
 #include "core_state.hpp"
 #include "dev/include/timer.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "process.hpp"
 #include "assert.hpp"
 
@@ -59,15 +59,13 @@ waitable::~waitable(void){
 	}
 }
 
-size_t waitable::notify(void){
-	thread* ptr;
-	interrupt_guard<void> ig;
-	{
-		lock_guard<spin_lock> guard(objlock);
-		ptr = wait_queue.head;
-		wait_queue.clear();
-	}
-	return imp_notify(ptr);
+size_t waitable::notify(REASON reason){
+	IF_assert;
+	assert(objlock.is_locked());
+	thread* ptr = wait_queue.head;
+	wait_queue.clear();
+	objlock.unlock();
+	return imp_notify(ptr,reason);
 }
 
 REASON waitable::imp_wait(qword us){
@@ -115,10 +113,10 @@ REASON waitable::imp_wait(qword us){
 }
 
 REASON waitable::wait(qword us,wait_callback func){
-	interrupt_guard<void> ig;
-	objlock.lock();
+	interrupt_guard<spin_lock> guard(objlock);
 	if (func)
 		func();
+	guard.drop();
 	return imp_wait(us);
 }
 
@@ -185,7 +183,7 @@ void waitable::cancel(thread* th){
 	bugcheck("wait_queue corrupted @ %p",&wait_queue);
 }
 
-size_t waitable::imp_notify(thread* th){
+size_t waitable::imp_notify(thread* th,REASON reason){
 	IF_assert;
 	if (!th)
 		return 0;
@@ -195,7 +193,7 @@ size_t waitable::imp_notify(thread* th){
 	while(th){
 		auto next = thread_queue::next(th);
 		th->lock();
-		if (th->set_state(thread::READY,NOTIFY)){
+		if (th->set_state(thread::READY,reason)){
 			ready_queue.put(th);
 			th->unlock();
 		}
@@ -205,7 +203,9 @@ size_t waitable::imp_notify(thread* th){
 		++count;
 		th = next;
 	}
-	core_manager::preempt();
+	this_core core;
+	if (!core.this_thread()->has_context())
+		core_manager::preempt(false);
 	return count;
 }
 
@@ -219,6 +219,14 @@ bool waitable::acquire(void){
 
 bool waitable::relax(void){
 	interrupt_guard<spin_lock> guard(objlock);
-	assert(ref_count);
+	if (ref_count == 0)
+		bugcheck("relaxing %p without reference",this);
 	return (--ref_count);
+}
+
+void waitable::manage(void*){
+	interrupt_guard<spin_lock> guard(objlock);
+	if (ref_count)
+		bugcheck("managing object with %d references",ref_count);
+	++ref_count;
 }

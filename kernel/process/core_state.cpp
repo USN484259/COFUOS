@@ -5,7 +5,7 @@
 #include "memory/include/vm.hpp"
 #include "process.hpp"
 #include "dev/include/timer.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "assert.hpp"
 #include "lang.hpp"
 
@@ -91,28 +91,28 @@ void core_manager::on_timer(qword ticket,void* ptr){
 	this_core core;
 	auto this_thread = core.this_thread();
 	assert(this_thread->has_context());
+	byte slice = 0;
 	if (this_thread->get_state() != thread::STOPPED){
 		assert(this_thread->get_state() == thread::RUNNING);
-		auto slice = this_thread->get_slice();
+		slice = this_thread->get_slice();
 		assert(slice <= scheduler::max_slice);
 		if (slice){
 			this_thread->put_slice(slice - 1);
-			return;
 		}
 		else{
 			this_thread->put_slice(scheduler::max_slice);
 		}
 	}
-	preempt();
+	preempt(slice == 0);
 }
 
-void core_manager::preempt(void){
+void core_manager::preempt(bool lower){
 	IF_assert;
 	this_core core;
 	auto this_thread = core.this_thread();
 	thread* next_thread;
 	do{
-		next_thread = ready_queue.get(this_thread->get_priority() + 1);
+		next_thread = ready_queue.get(this_thread->get_priority() + lower);
 		if (!next_thread)
 			break;
 		next_thread->lock();
@@ -120,7 +120,7 @@ void core_manager::preempt(void){
 			break;
 		next_thread->on_stop();
 	}while(true);
-	//dbgprint("%d --> %d", this_thread->get_id(), next_thread ? next_thread->get_id() : this_thread->get_id());
+
 	if (next_thread){
 		assert(next_thread->is_locked());
 		this_thread->lock();
@@ -213,6 +213,7 @@ void this_core::switch_to(thread* th){
 	assert(th->get_state() == thread::RUNNING);
 	assert(this_thread()->get_state() != thread::RUNNING);
 	gc_service();
+	//dbgprint("%d --> %d", this_thread()->id, th->id);
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}
@@ -228,6 +229,7 @@ void this_core::escape(thread* th){
 	assert(this_thread()->get_state() == thread::STOPPED);
 	gc_service();
 	write_gs(offsetof(core_state,gc_ptr),this_thread());
+	//dbgprint("%d --> %d", this_thread()->id, th->id);
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}

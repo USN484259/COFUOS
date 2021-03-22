@@ -5,7 +5,7 @@
 #include "process.hpp"
 #include "pe64.hpp"
 #include "dev/include/timer.hpp"
-#include "sync/include/lock_guard.hpp"
+#include "lock_guard.hpp"
 #include "assert.hpp"
 
 using namespace UOS;
@@ -33,7 +33,7 @@ thread::thread(process* p, procedure entry, const qword* args, qword stk_size) :
 	if (!res)
 		bugcheck("vm.commit failed @ %p",krnl_stk_top - PAGE_SIZE);
 	gpr.rbp = krnl_stk_top;
-	gpr.rsp = krnl_stk_top - 0x20;
+	gpr.rsp = krnl_stk_top - 0x30;
 	gpr.ss = SEG_KRNL_SS;
 	gpr.cs = SEG_KRNL_CS;
 	gpr.rip = reinterpret_cast<qword>(entry);
@@ -72,8 +72,9 @@ thread::~thread(void){
 
 REASON thread::wait(qword us,wait_callback func){
 	if (state == STOPPED){
-		if (func)
+		if (func){
 			func();
+		}
 		return PASSED;
 	}
 	return waitable::wait(us,func);
@@ -97,6 +98,10 @@ bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
 		if (state == WAITING){
 			//arg as reason
 			switch(arg){
+			case REASON::ABANDON:
+				assert(wait_for);
+				wait_for->cancel(this);
+				//fall through
 			case REASON::NOTIFY:
 				assert(wait_for);
 				if (timer_ticket)
@@ -144,11 +149,19 @@ bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
 }
 
 bool thread::relax(void){
+	interrupt_guard<void> ig;
 	auto res = waitable::relax();
 	if (!res){
 		ps->erase(this);
 	}
 	return res;
+}
+
+void thread::manage(void*){
+	IF_assert;
+	waitable::manage();
+	++ref_count;
+	assert(ref_count == 2);
 }
 
 void thread::on_stop(void){
@@ -171,7 +184,6 @@ void thread::on_stop(void){
 		}
 		hold_lock = 0;
 	}
-	objlock.unlock();
 	notify();
 	ps->on_exit();
 	relax();
@@ -257,6 +269,6 @@ void thread::kill(thread* th){
 		th->set_state(STOPPED);
 	}
 	if (this_thread == th){
-		core_manager::preempt();
+		core_manager::preempt(true);
 	}
 }

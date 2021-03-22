@@ -1,6 +1,6 @@
-all:	bin/test.exe
+all:	bin/shell.exe
 
 bin/%.exe:	%.cpp
-	$(MINGW_CC) $(CPPFLAGS) -e uos_entry -luos $< -o $@ 
+	$(MINGW_CC) $(CPPFLAGS) -e uos_entry $< -o $@ -luos -Wl,--relax,--stack=0x4000,--no-seh
 
 .PHONY:	all

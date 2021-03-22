@@ -20,7 +20,7 @@ then
 	gnome-terminal -- bochs -q
 	cd kernel/ && gdb
 else
-	export DEFINES=COFUOS
+	export DEFINES=COFUOS VM_TEST
 	make $@
 fi
 
