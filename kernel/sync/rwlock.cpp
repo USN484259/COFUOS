@@ -56,6 +56,21 @@ void rwlock::lock(MODE mode){
 	bugcheck("locking deleted rwlock @ %p",this);
 }
 
+void rwlock::upgrade(void){
+	do{
+		interrupt_guard<spin_lock> guard(objlock);
+		assert(owner == nullptr && share_count);
+		if (share_count == 1){
+			this_core core;
+			owner = core.this_thread();
+			share_count = 0;
+			return;
+		}
+		guard.drop();
+	}while(imp_wait(0) == NOTIFY);
+	bugcheck("upgrading deleted rwlock @ %p",this);
+}
+
 void rwlock::unlock(void){
 	interrupt_guard<spin_lock> guard(objlock);
 	if (owner){

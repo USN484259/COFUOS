@@ -2,9 +2,6 @@
 #include "types.h"
 #include "container.hpp"
 #include "util.hpp"
-#include "constant.hpp"
-#include "lang.hpp"
-#include "assert.hpp"
 
 namespace UOS{
 	template<typename T>

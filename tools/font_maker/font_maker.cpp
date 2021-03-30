@@ -41,16 +41,21 @@ public:
 
 class Font{
 	ifstream font_file;
+	string font_name;
 	vector<DDS_image> images;
 	word line_height = 0;
-	word max_height = 0;
 	word page_count = 0;
 public:
 	Font(const char* filename);
 	template<typename F>
 	void proceed(F func);
-	word get_line_height(void) const;
-	word get_max_height(void) const;
+	word get_line_height(void) const{
+		return line_height;
+	}
+	const string& get_font_name(void) const{
+		return font_name;
+	}
+
 };
 
 DDS_image::DDS_image(const char* filename){
@@ -132,11 +137,22 @@ void Font::proceed(F func){
 		font_file.read((char*)&size,4);
 		auto next = (size_t)font_file.tellg() + size;
 		switch(type){
+		case 1:
+			font_file.seekg(14,ios::cur);
+			size -= 14;
+			while(size--){
+				auto ch = font_file.get();
+				if (ch == 0)
+					break;
+				font_name.push_back(ch);
+			}
+			cout << "font name : " << font_name << endl;
+			break;
 		case 2:
 			font_file.read((char*)&line_height,2);
-			font_file.read((char*)&max_height,2);
-			font_file.seekg(4,ios::cur);
+			font_file.seekg(6,ios::cur);
 			font_file.read((char*)&page_count,2);
+			cout << "line height " << hex << line_height << endl;
 			break;
 		case 3:
 			for (word i = 0;i < page_count;++i){
@@ -163,15 +179,6 @@ void Font::proceed(F func){
 		font_file.seekg(next,ios::beg);
 	}while(font_file.good());
 }
-
-word Font::get_line_height(void) const{
-	return line_height;
-}
-
-word Font::get_max_height(void) const{
-	return max_height;
-}
-
 /*
 byte line_height;
 byte max_height;
@@ -194,7 +201,8 @@ void generate_font(ostream& out,const fontchar& fc,const DDS_image& image){
 	out.put((byte)fc.height);
 	out.put((byte)fc.xoff);
 	out.put((byte)fc.yoff);
-	unsigned size = 6;
+	out.put(0);
+	out.put(0);
 	for (word h = 0;h < fc.height;++h){
 		byte data = 0;
 		word w = 0;
@@ -206,13 +214,11 @@ void generate_font(ostream& out,const fontchar& fc,const DDS_image& image){
 			}
 			if (0 == (++w % 8)){
 				out.put(data);
-				++size;
 				data = 0;
 			}
 		}
 		if (w % 8){
 			out.put(data);
-			++size;
 		}
 	}
 }
@@ -229,23 +235,24 @@ int main(int argc,char** argv){
 		ofstream out_file(argv[2],ios::binary);
 		if (!out_file.is_open())
 			throw runtime_error(string("cannot open ") + argv[2]);
-		dword padding = 0;
-		out_file.write((const char*)&padding,4);
-
+		byte padding[0x10] = {0};
+		out_file.write((const char*)padding,0x10);
+		word max_width = 0;
 		font.proceed([&](const fontchar& fc,const DDS_image& image) {
 			cout << "0x" << hex << fc.charcode << ' ' << (char)fc.charcode \
-				<< '\t' << dec << fc.width << '*' << fc.height \
-				<< "\t@ " << (unsigned)fc.page << ':' << fc.xpos << ',' << fc.ypos << endl;
+				<< '\t' << dec << fc.width << '*' << fc.height << '\t' << fc.advance \
+				<< "\t@ " << fc.xpos << ',' << fc.ypos << endl;
+			max_width = max(max_width,fc.width);
 			generate_font(out_file,fc,image);
 		});
-		size_t size = out_file.tellp();
-		if (size > 0x10004)
-			throw runtime_error("compact font length overflow");
+		cout << "max width " << hex << max_width << endl;
 		out_file.seekp(0,ios::beg);
-		word length = size - 4;
-		out_file.put((byte)font.get_line_height());
-		out_file.put((byte)font.get_max_height());
-		out_file.write((const char*)&length,2);
+		auto& name = font.get_font_name();
+		out_file.write(name.c_str(),min<size_t>(0x0C,name.size()));
+		out_file.seekp(0x0C,ios::beg);
+		word lh = font.get_line_height();
+		out_file.write((const char*)&lh,2);
+		out_file.write((const char*)&max_width,2);
 	}
 	catch(exception& e){
 		cerr << typeid(e).name() << '\t' << e.what() << endl;

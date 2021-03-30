@@ -1,7 +1,7 @@
 DEFINES:=$(DEFINES) UOS_KRNL KSP_OFF=0x48 CONX_OFF=0x58
-INC_PATH:=$(COFUOS_ROOT)/kernel/ $(COFUOS_ROOT)/util/ $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/kernel/util/include/ ./include/
+INC_PATH:=$(COFUOS_ROOT)/kernel/ $(COFUOS_ROOT)/util/include/ $(COFUOS_ROOT)/kernel/util/include/ ./include/
 
-export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -nostdlib -m64 -mno-mmx -mno-sse -mno-sse2
+export CC_OPTIONS:=$(CC_OPTIONS) -mno-mmx -mno-sse -mno-sse2
 export INC_PATH:=$(addprefix -I,$(INC_PATH))
 export DEFINES:=$(addprefix -D,$(DEFINES))
 export CPPFLAGS=$(CC_OPTIONS) $(INC_PATH) $(DEFINES)
@@ -11,14 +11,14 @@ MODULES= util sync exception memory dev process filesystem interface
 COFUOS:	bin/COFUOS.sys
 
 bin/COFUOS.sys: $(MODULES) bin/hal.o bin/embed_test.o $(COFUOS_ROOT)/util/include/*.hpp $(MODULES)/include/*.hpp
-	$(MINGW_CC) $(CPPFLAGS) $(wildcard *.cpp) $(wildcard bin/*.o) -o bin/COFUOS.sys -e krnlentry -Wl,--relax,--image-base=0xFFFF800002000000,--stack=0x4000,--no-seh
+	$(MINGW_CC) $(CPPFLAGS) $(wildcard *.cpp) $(wildcard $(COFUOS_ROOT)/util/bin/*.o) $(wildcard bin/*.o) -o bin/COFUOS.sys -e krnlentry -Wl,--relax,--image-base=0xFFFF800002000000,--stack=0x4000,--no-seh
 	$(OBJCOPY) -S bin/COFUOS.sys bin/COFUOS.sys.clean
 	../tools/FAT32_editor/bin/FAT32_editor ../COFUOS.vhd < FAT32_kernel.txt
 
 $(MODULES):
 	@cd $@ && $(MAKE)
 
-bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/test/bin/shell.exe
+bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/shell/bin/shell.exe $(COFUOS_ROOT)/app/test/bin/echo.exe
 	$(NASM) -f win64 $< -o $@
 
 bin/hal.o:	hal.asm

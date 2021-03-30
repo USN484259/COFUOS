@@ -118,6 +118,9 @@ namespace UOS{
 		inline bool is_locked(void) const{
 			return objlock.is_locked();
 		}
+		inline bool is_exclusive(void) const{
+			return objlock.is_exclusive();
+		}
 		REASON wait(qword us = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
 		void manage(void* = nullptr) override;

@@ -2,6 +2,7 @@
 #include "types.h"
 #include "util.hpp"
 #include "process/include/waitable.hpp"
+#include "assert.hpp"
 #include "literal.hpp"
 
 namespace UOS{

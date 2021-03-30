@@ -5,6 +5,7 @@
 namespace UOS{
 	class event : public waitable{
 		volatile dword state;
+		bool named = false;
 	public:
 		event(bool initial_state = false);
 		~event(void);
@@ -19,8 +20,6 @@ namespace UOS{
 		size_t signal_all(void);
 		void reset(void);
 		bool relax(void) override;
-		inline bool get_state(void) const{
-			return (state);
-		}
+		void manage(void*) override;
 	};
 }

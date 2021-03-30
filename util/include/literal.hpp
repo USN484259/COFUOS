@@ -3,7 +3,6 @@
 #include "container.hpp"
 #include "util.hpp"
 #include "hash.hpp"
-#include "assert.hpp"
 
 namespace UOS{
 	template<typename C,typename L = word>

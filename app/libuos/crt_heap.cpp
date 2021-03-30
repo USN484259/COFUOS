@@ -18,9 +18,9 @@ void mutex::unlock(void){
 	signal(semaphore,0);
 }
 
-#include "paired_heap.cpp"
+#include "buddy_heap.cpp"
 
-paired_heap UOS::heap([](size_t& req_size) -> void* {
+buddy_heap UOS::heap([](size_t& req_size) -> void* {
 	req_size = align_up(max(req_size,PAGE_SIZE),PAGE_SIZE);
 	do{
 		auto req_page = req_size / PAGE_SIZE;

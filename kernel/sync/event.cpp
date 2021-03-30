@@ -23,14 +23,13 @@ REASON event::wait(qword us,wait_callback func){
 
 bool event::signal_one(void){
 	thread* ptr;
+	interrupt_guard<void> ig;
 	do{
-		interrupt_guard<spin_lock> guard(objlock);
+		lock_guard<spin_lock> guard(objlock);
 		ptr = wait_queue.get();
 		if (ptr == nullptr){
-			state = 1;
 			return false;
 		}
-		guard.drop();
 	}while(0 == imp_notify(ptr,NOTIFY));
 	return true;
 }
@@ -51,7 +50,20 @@ bool event::relax(void){
 	interrupt_guard<void> ig;
 	auto res = waitable::relax();
 	if (!res){
-		named_obj.erase(this);
+		if (named)
+			named_obj.erase(this);
+		delete this;
 	}
 	return res;
+}
+
+void event::manage(void* ptr){
+	interrupt_guard<void> ig;
+	if (ptr){
+		if (get_reference_count() == 0)
+			bugcheck("expose non-managed event @ %p",this);
+		named = true;
+	}
+	else
+		waitable::manage();
 }

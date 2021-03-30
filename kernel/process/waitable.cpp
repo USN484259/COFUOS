@@ -8,6 +8,14 @@
 
 using namespace UOS;
 
+bool thread_queue::empty(void) const{
+	if (head){
+		assert(tail);
+		return false;
+	}
+	assert(!tail);
+	return true;
+}
 
 void thread_queue::put(thread* th){
 	th->next = nullptr;
@@ -196,11 +204,11 @@ size_t waitable::imp_notify(thread* th,REASON reason){
 		if (th->set_state(thread::READY,reason)){
 			ready_queue.put(th);
 			th->unlock();
+			++count;
 		}
 		else{
 			th->on_stop();
 		}
-		++count;
 		th = next;
 	}
 	this_core core;

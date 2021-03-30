@@ -44,9 +44,8 @@ bool screen_buffer::fill(const rectangle& rect,dword color){
 	color &= 0x00FFFFFF;
 
 	auto dst = vbe_memory + line_size/4*rect.top + rect.left;
-	for (unsigned line = 0;line < (rect.bottom - rect.top);++line){
-		unsigned i;
-		for (i = 0;i < (rect.right - rect.left);++i){
+	for (auto line = 0;line < (rect.bottom - rect.top);++line){
+		for (auto i = 0;i < (rect.right - rect.left);++i){
 			dst[i] = color;
 		}
 		dst += line_size/4;
@@ -54,22 +53,23 @@ bool screen_buffer::fill(const rectangle& rect,dword color){
 	return true;
 }
 
-bool screen_buffer::draw(const rectangle& rect,const dword* sor){
+bool screen_buffer::draw(const rectangle& rect,const dword* sor,word advance){
 	if (!sor)
 		return false;
 	if (rect.left >= rect.right || rect.top >= rect.bottom)
 		return false;
 	if (rect.right > width || rect.bottom > height)
 		return false;
+	if (rect.right - rect.left > advance)
+		return false;
 
 	auto dst = vbe_memory + line_size/4*rect.top + rect.left;
-	for (unsigned line = 0;line < (rect.bottom - rect.top);++line){
-		unsigned i;
-		for (i = 0;i < (rect.right - rect.left);++i){
+	for (auto line = 0;line < (rect.bottom - rect.top);++line){
+		for (auto i = 0;i < (rect.right - rect.left);++i){
 			dst[i] = 0x00FFFFFF & sor[i];
 		}
 		dst += line_size/4;
-		sor += i;
+		sor += advance;
 	}
 	return true;
 }

@@ -172,7 +172,7 @@ void UOS::user_entry(qword entry,qword arg,qword stk_top,qword stk_size){
 }
 
 extern "C"
-qword kernel_service(qword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
+qword kernel_service(dword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 	service_provider srv;
 	switch(cmd){
 		case os_info:
@@ -182,7 +182,7 @@ qword kernel_service(qword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 		case enum_process:
 			return srv.enum_process(a1);
 		case display_fill:
-			return srv.display_fill(a1,a2,a3);
+			return srv.display_fill(a1,a2);
 		case display_draw:
 			return srv.display_draw((void const*)a1,a2,a3);
 		case get_thread:

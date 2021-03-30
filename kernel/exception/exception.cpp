@@ -69,7 +69,7 @@ byte on_page_fault(qword errcode,qword va,context* context){
 	if (state.R)
 		bugcheck("#PF state.R set (%x) @ %p",errcode,va);
 
-	PT pt;
+	PTE pt;
 	if (IS_HIGHADDR(va)){
 		pt = vm.peek(va);
 	}

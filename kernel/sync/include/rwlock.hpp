@@ -20,6 +20,7 @@ namespace UOS{
 		bool try_lock(MODE = EXCLUSIVE);
 		void lock(MODE = EXCLUSIVE);
 		void unlock(void);
+		void upgrade(void);
 		bool is_locked(void) const;
 		bool is_exclusive(void) const;
 	};

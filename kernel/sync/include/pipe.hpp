@@ -40,7 +40,7 @@ namespace UOS{
 		void manage(void*) override;
 		bool check(void) override;
 		REASON wait(qword us = 0,wait_callback = nullptr) override;
-		dword read(void* dst,dword length);
-		dword write(void const* sor,dword length);
+		dword read(void* dst,dword length) override;
+		dword write(void const* sor,dword length) override;
 	};
 }

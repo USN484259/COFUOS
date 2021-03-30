@@ -49,7 +49,9 @@ struct OS_INFO{
 	qword running_time;
 	qword total_memory;
 	qword used_memory;
-	qword reserved;
+	word resolution_x;
+	word resolution_y;
+	dword reserved;
 	//system description follows
 };
 struct PROCESS_INFO{
@@ -63,11 +65,17 @@ struct PROCESS_INFO{
 	qword memory_usage;
 };
 struct STARTUP_INFO{
-//#error TODO
+	char* commandline;
+	char* environment;
+	dword cmd_length;
+	dword env_length;
+	qword reserved;
+	dword flags;
+	HANDLE std_handle[3];
 };
 struct rectangle{
-	dword left;
-	dword top;
-	dword right;
-	dword bottom;
+	word left;
+	word top;
+	word right;
+	word bottom;
 };

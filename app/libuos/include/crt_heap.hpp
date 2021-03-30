@@ -12,4 +12,4 @@ public:
 	void unlock(void);
 };
 
-#include "paired_heap.hpp"
+#include "buddy_heap.hpp"

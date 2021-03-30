@@ -3,10 +3,15 @@
 
 namespace UOS{
 	class RTC{
+	public:
+		typedef void (*callback)(qword,void*);
+	private:
 		qword time = 0;
 		byte mode;
 		byte century_index = 0;
 		bool reset = true;
+		callback volatile func = nullptr;
+		void* userdata = nullptr;
 
 		static void on_irq(byte id,void* data);
 		//could handle 'overflowed' BCD
@@ -20,6 +25,7 @@ namespace UOS{
 		inline void reload(void){
 			reset = true;
 		}
+		void set_handler(callback cb,void* ud);
 	};
 	extern RTC rtc;
 }

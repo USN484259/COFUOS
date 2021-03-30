@@ -58,35 +58,35 @@ void map_view::unmap(void){
 	invlpg(view);
 }
 
-void virtual_space::BLOCK::get(const PT* pt){
+void virtual_space::BLOCK::get(const PTE* pt){
 	assert(0 == ((qword)pt & 0x07));
 	self = (word)(((qword)pt & PAGE_MASK) >> 3);
 	assert(!pt->present && !pt->preserve);
 
 	switch(pt->type){
-		case PT::OFF:
+		case PTE::OFF:
 			assert(pt->valid);
 			assert(pt->data > 2 && pt->data <= self);
 			self -= (word)pt->data;
 			pt -= pt->data;
 			break;
-		case PT::SIZE:
+		case PTE::SIZE:
 			assert(pt->valid);
 			assert(pt->data == 3 && self >= 2);
 			self -= 2;
 			pt -= 2;
 			break;
-		case PT::PREV:
+		case PTE::PREV:
 			assert(self >= 1);
 			self -= 1;
 			pt -= 1;
 			break;
-		case PT::NEXT:
+		case PTE::NEXT:
 			break;
 	}
 
 	assert(!pt->present && !pt->preserve);
-	assert(pt->type == PT::NEXT);
+	assert(pt->type == PTE::NEXT);
 	next = pt->data;
 	next_valid = pt->valid;
 	prev_valid = 0;
@@ -96,7 +96,7 @@ void virtual_space::BLOCK::get(const PT* pt){
 	if (0 == ((qword)pt & PAGE_MASK) || pt->present || pt->preserve){
 		return;		//just one page
 	}
-	assert(pt->type == PT::PREV);
+	assert(pt->type == PTE::PREV);
 	prev = pt->data;
 	prev_valid = pt->valid;
 	size = 2;
@@ -105,7 +105,7 @@ void virtual_space::BLOCK::get(const PT* pt){
 	if (0 == ((qword)pt & PAGE_MASK) || pt->present || pt->preserve){
 		return;		//just two pages
 	}
-	assert(pt->type == PT::SIZE && pt->valid);
+	assert(pt->type == PTE::SIZE && pt->valid);
 	size = pt->data + 1;
 	assert(size > 2);
 
@@ -114,19 +114,19 @@ void virtual_space::BLOCK::get(const PT* pt){
 		++pt;
 		assert((qword)pt & PAGE_MASK);
 		assert(!pt->present && !pt->preserve);
-		assert(pt->type == PT::OFF);
+		assert(pt->type == PTE::OFF);
 		assert(pt->valid && pt->data == i);
 	}
 #endif
 
 }
 
-void virtual_space::BLOCK::put(PT* pt) const{
+void virtual_space::BLOCK::put(PTE* pt) const{
 	assert(0 == ((qword)pt & 0x07));
 	assert(self == (((qword)pt & PAGE_MASK) >> 3));
 	assert(size);
 	assert(!pt->present && !pt->preserve);
-	pt->type = PT::NEXT;
+	pt->type = PTE::NEXT;
 	pt->data = next;
 	pt->valid = next_valid ? 1 : 0;
 
@@ -135,7 +135,7 @@ void virtual_space::BLOCK::put(PT* pt) const{
 	++pt;
 	assert((qword)pt & PAGE_MASK);
 	assert(!pt->present && !pt->preserve);
-	pt->type = PT::PREV;
+	pt->type = PTE::PREV;
 	pt->data = prev;
 	pt->valid = prev_valid ? 1 : 0;
 
@@ -144,7 +144,7 @@ void virtual_space::BLOCK::put(PT* pt) const{
 	++pt;
 	assert((qword)pt & PAGE_MASK);
 	assert(!pt->present && !pt->preserve);
-	pt->type = PT::SIZE;
+	pt->type = PTE::SIZE;
 	pt->data = size - 1;
 	pt->valid = 1;
 
@@ -152,7 +152,7 @@ void virtual_space::BLOCK::put(PT* pt) const{
 		++pt;
 		assert((qword)pt & PAGE_MASK);
 		assert(!pt->present && !pt->preserve);
-		pt->type = PT::OFF;
+		pt->type = PTE::OFF;
 		pt->valid = 1;
 		pt->data = i;
 	}
@@ -162,7 +162,7 @@ void virtual_space::BLOCK::put(PT* pt) const{
 #endif
 }
 
-void virtual_space::resolve_prior(const PDT& pdt,const PT* table,BLOCK& block){
+void virtual_space::resolve_prior(const PDTE& pdt,const PTE* table,BLOCK& block){
 	assert(block.size);
 	assert(get_max_size(pdt));
 	if (pdt.head == block.self){
@@ -188,7 +188,7 @@ void virtual_space::resolve_prior(const PDT& pdt,const PT* table,BLOCK& block){
 }
 
 
-word virtual_space::get_max_size(const PDT& pdt){
+word virtual_space::get_max_size(const PDTE& pdt){
 	word remain = pdt.remain;
 	if (remain < 8)
 		return remain ? (word)1 << (remain - 1) : (word)0;
@@ -196,7 +196,7 @@ word virtual_space::get_max_size(const PDT& pdt){
 		return (word)(64 + 56*(remain - 7));
 }
 
-void virtual_space::put_max_size(PDT& pdt,word max_size){
+void virtual_space::put_max_size(PDTE& pdt,word max_size){
 	if (max_size >= 64 + 56)
 		pdt.remain = (word)(7 + (max_size - 64) / 56);
 	else{
@@ -209,7 +209,7 @@ void virtual_space::put_max_size(PDT& pdt,word max_size){
 	}
 }
 
-void virtual_space::erase(PDT& pdt,PT* table,BLOCK& block){
+void virtual_space::erase(PDTE& pdt,PTE* table,BLOCK& block){
 	auto max_size = 0;
 	if (block.prev_valid){
 		BLOCK prev_block;
@@ -239,7 +239,7 @@ void virtual_space::erase(PDT& pdt,PT* table,BLOCK& block){
 	put_max_size(pdt,max_size);
 }
 
-void virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
+void virtual_space::insert(PDTE& pdt,PTE* table,BLOCK& block){
 	if (block.size == 0)
 		return;
 	BLOCK prev_block;
@@ -266,7 +266,7 @@ void virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
 		next_block.size = 0;
 	}
 	auto func = (prev_block.size && prev_block.size > block.size) ? \
-		[](PT* table,BLOCK& block,BLOCK& prev_block,BLOCK& next_block) -> bool{
+		[](PTE* table,BLOCK& block,BLOCK& prev_block,BLOCK& next_block) -> bool{
 			//shift left
 			if (prev_block.size && prev_block.size > block.size)
 				;
@@ -280,7 +280,7 @@ void virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
 			prev_block.get(table + next_block.prev);
 			return true;
 		} : \
-		[](PT* table,BLOCK& block,BLOCK& prev_block,BLOCK& next_block) -> bool{
+		[](PTE* table,BLOCK& block,BLOCK& prev_block,BLOCK& next_block) -> bool{
 			//shift right
 			if (next_block.size && next_block.size < block.size)
 				;
@@ -327,7 +327,7 @@ void virtual_space::insert(PDT& pdt,PT* table,BLOCK& block){
 }
 
 #ifdef VM_TEST
-void virtual_space::check_integrity(PDT& pdt,PT* table){
+void virtual_space::check_integrity(PDTE& pdt,PTE* table){
 	assert(is_locked());
 	bool free_map[0x200] = {0};
 	unsigned free_count = 0;
@@ -386,7 +386,7 @@ void virtual_space::check_integrity(PDT& pdt,PT* table){
 }
 #endif
 
-qword virtual_space::imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word count){
+qword virtual_space::imp_reserve_any(PDTE& pdt,PTE* table,qword base_addr,word count){
 	assert(is_locked());
 	assert(count && table);
 	assert(pdt.present && !pdt.bypass);
@@ -418,7 +418,7 @@ qword virtual_space::imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word cou
 	bugcheck("virtual_space corrupted %p",base_addr);
 }
 
-bool virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word count){
+bool virtual_space::imp_reserve_fixed(PDTE& pdt,PTE* table,word index,word count){
 	assert(is_locked());
 	assert(count && table && index + count <= 0x200);
 	assert(pdt.present && !pdt.bypass && get_max_size(pdt) > 0);
@@ -458,7 +458,7 @@ bool virtual_space::imp_reserve_fixed(PDT& pdt,PT* table,word index,word count){
 	return true;
 }
 
-void virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word count){
+void virtual_space::imp_release(PDTE& pdt,PTE* table,qword base_addr,word count){
 	assert(is_locked());
 	assert(count && table && base_addr);
 	word index = (base_addr >> 12) & 0x1FF;
@@ -533,7 +533,7 @@ void virtual_space::imp_release(PDT& pdt,PT* table,qword base_addr,word count){
 #endif
 }
 
-dword virtual_space::imp_iterate(const PDPT* pdpt_table,qword base_addr,dword page_count,PTE_CALLBACK callback,qword data){
+dword virtual_space::imp_iterate(const PDPTE* pdpt_table,qword base_addr,dword page_count,PTE_CALLBACK callback,qword data){
 	assert(is_locked());
 	assert(pdpt_table && page_count && callback);
 	assert(base_addr && 0 == (base_addr & PAGE_MASK));
@@ -550,14 +550,14 @@ dword virtual_space::imp_iterate(const PDPT* pdpt_table,qword base_addr,dword pa
 			return count;
 		}
         pdt_view.map(pdpt_table[pdpt_index].pdt_addr << 12);
-        PDT* pdt_table = (PDT*)pdt_view;
+        PDTE* pdt_table = (PDTE*)pdt_view;
         while(count < page_count){
             auto& cur = pdt_table[pdt_index];
             if (cur.bypass || !cur.present){
                 return count;
             }
             pt_view.map(cur.pt_addr << 12);
-            PT* table = (PT*)pt_view;
+            PTE* table = (PTE*)pt_view;
             while(off < 0x200){
 				if (!callback(table[off],addr,data))
 					return count;
@@ -578,23 +578,23 @@ dword virtual_space::imp_iterate(const PDPT* pdpt_table,qword base_addr,dword pa
 	return count;
 }
 
-PT virtual_space::imp_peek(qword va,PDPT const* pdpt_table){
+PTE virtual_space::imp_peek(qword va,PDPTE const* pdpt_table){
 	auto pdpt_index = (va >> 30) & 0x1FF;
 	auto pdt_index = (va >> 21) & 0x1FF;
 	auto pt_index = (va >> 12) & 0x1FF;
 	auto need_lock = !debug_stub.is_active();
-	PT pt = {0};
+	PTE pt = {0};
 	if (need_lock)
 		lock();
 	do{
 		if (!pdpt_table[pdpt_index].present)
 			break;
 		map_view pdt_view(pdpt_table[pdpt_index].pdt_addr << 12);
-		auto pdt_table = (PDT*)pdt_view;
+		auto pdt_table = (PDTE*)pdt_view;
 		if (!pdt_table[pdt_index].present)
 			break;
 		map_view pt_view(pdt_table[pdt_index].pt_addr << 12);
-		auto pt_table = (PT*)pt_view;
+		auto pt_table = (PTE*)pt_view;
 		pt = pt_table[pt_index];
 	}while(false);
 	if (need_lock)
@@ -602,13 +602,13 @@ PT virtual_space::imp_peek(qword va,PDPT const* pdpt_table){
 	return pt;
 }
 
-bool virtual_space::new_pdt(PDPT& pdpt,map_view& view){
+bool virtual_space::new_pdt(PDPTE& pdpt,map_view& view){
 	assert(!pdpt.present);
 	auto phy_addr = pm.allocate();
 	if (!phy_addr)
 		return false;
 	view.map(phy_addr);
-	PDT* table = (PDT*)view;
+	PDTE* table = (PDTE*)view;
 	zeromemory(table,PAGE_SIZE);
 
 	pdpt = {0};
@@ -621,13 +621,13 @@ bool virtual_space::new_pdt(PDPT& pdpt,map_view& view){
 	return true;
 }
 
-bool virtual_space::new_pt(PDT& pdt,map_view& view,bool take){
+bool virtual_space::new_pt(PDTE& pdt,map_view& view,bool take){
 	assert(!pdt.present && !pdt.bypass);
 	auto phy_addr = pm.allocate(take ? PM::TAKE : PM::NONE);
 	if (!phy_addr)
 		return false;
 	view.map(phy_addr);
-	PT* table = (PT*)view;
+	PTE* table = (PTE*)view;
 	zeromemory(table,PAGE_SIZE);
 	pdt = {0};
 	pdt.pt_addr = phy_addr >> 12;
@@ -644,32 +644,32 @@ bool virtual_space::new_pt(PDT& pdt,map_view& view,bool take){
 	return true;
 }
 
-qword virtual_space::reserve_any(PDPT* pdpt_table,dword page_count){
+qword virtual_space::reserve_any(PDPTE* pdpt_table,dword page_count){
 	assert(is_locked());
 	assert(page_count <= 0x200);
 	map_view pdt_view;
 	map_view pt_view;
 	for (unsigned pdpt_index = 0;pdpt_index < 0x200;++pdpt_index){
-		if (!pdpt_table[pdpt_index].present){   //allocate new PDT
+		if (!pdpt_table[pdpt_index].present){   //allocate new PDTE
 			if (!new_pdt(pdpt_table[pdpt_index],pdt_view))
 				break;
 		}
 		else{
 			pdt_view.map(pdpt_table[pdpt_index].pdt_addr << 12);
 		}
-		PDT* pdt_table = (PDT*)pdt_view;
+		PDTE* pdt_table = (PDTE*)pdt_view;
 		for (unsigned i = 0;i < 0x200;++i){
 			auto& cur = pdt_table[i];
 			if (cur.bypass)
 				continue;
-			if (!cur.present){  //allocate new PT
+			if (!cur.present){  //allocate new PTE
 				if (!new_pt(cur,pt_view,false))
 					continue;
 			}
 			else{
 				pt_view.map(cur.pt_addr << 12);
 			}
-			PT* table = (PT*)pt_view;
+			PTE* table = (PTE*)pt_view;
 			qword base_addr = pdpt_index*0x40000000 + i*0x200000;
 			auto res = imp_reserve_any(cur,table,base_addr,page_count);
 			if (res)
@@ -679,7 +679,7 @@ qword virtual_space::reserve_any(PDPT* pdpt_table,dword page_count){
 	return 0;
 }
 
-bool virtual_space::reserve_fixed(PDPT* pdpt_table,qword base_addr,dword page_count){
+bool virtual_space::reserve_fixed(PDPTE* pdpt_table,qword base_addr,dword page_count){
 	assert(is_locked());
 	assert(base_addr && page_count);
 	assert(0 == (base_addr & PAGE_MASK));
@@ -699,7 +699,7 @@ bool virtual_space::reserve_fixed(PDPT* pdpt_table,qword base_addr,dword page_co
 		else{
 			pdt_view.map(pdpt_table[pdpt_index].pdt_addr << 12);
 		}
-		PDT* pdt_table = (PDT*)pdt_view;
+		PDTE* pdt_table = (PDTE*)pdt_view;
 		while(count < page_count){
 			auto& cur = pdt_table[pdt_index];
 			if (cur.bypass){
@@ -712,7 +712,7 @@ bool virtual_space::reserve_fixed(PDPT* pdpt_table,qword base_addr,dword page_co
 			else{
 				pt_view.map(cur.pt_addr << 12);
 			}
-			PT* table = (PT*)pt_view;
+			PTE* table = (PTE*)pt_view;
 			dword off = (addr >> 12) & 0x1FF;
 			auto size = min(page_count - count,0x200 - off);
 
@@ -739,7 +739,7 @@ rollback:
 	return false;
 }
 
-qword virtual_space::reserve_big(PDPT* pdpt_table,dword pagecount){
+qword virtual_space::reserve_big(PDPTE* pdpt_table,dword pagecount){
 	assert(is_locked());
 	auto aligned_count = align_up(pagecount,0x200) / 0x200;
 	map_view pdt_view;
@@ -751,7 +751,7 @@ qword virtual_space::reserve_big(PDPT* pdpt_table,dword pagecount){
 		else{
 			pdt_view.map(pdpt_table[pdpt_index].pdt_addr << 12);
 		}
-		PDT* pdt_table = (PDT*)pdt_view;
+		PDTE* pdt_table = (PDTE*)pdt_view;
 		unsigned avl_base = 0;
 		dword avl_pages = 0;
 		dword reserve_count = 0;
@@ -794,7 +794,7 @@ qword virtual_space::reserve_big(PDPT* pdpt_table,dword pagecount){
 					new_pt(cur,pt_view,true);
 					--reserve_count;
 				}
-				PT* table = (PT*)pt_view;
+				PTE* table = (PTE*)pt_view;
 				auto res = imp_reserve_fixed(cur,table,0,min((dword)0x200,pagecount));
 				if (!res)
 					bugcheck("imp_reserve_fixed failed @ %p",cur);
@@ -807,7 +807,7 @@ qword virtual_space::reserve_big(PDPT* pdpt_table,dword pagecount){
 	return 0;
 }
 
-void virtual_space::safe_release(PDPT* pdpt_table,qword base_addr,dword page_count){
+void virtual_space::safe_release(PDPTE* pdpt_table,qword base_addr,dword page_count){
 	assert(is_locked());
 	assert(base_addr && page_count);
 	assert(0 == (base_addr & PAGE_MASK));
@@ -821,17 +821,17 @@ void virtual_space::safe_release(PDPT* pdpt_table,qword base_addr,dword page_cou
 	dword count = 0;
 	while(count < page_count){
 		if (!pdpt_table[pdpt_index].present){
-			bugcheck("PDT not present %x",pdpt_table[pdpt_index]);
+			bugcheck("PDTE not present %x",pdpt_table[pdpt_index]);
 		}
 		pdt_view.map(pdpt_table[pdpt_index].pdt_addr << 12);
-		PDT* pdt_table = (PDT*)pdt_view;
+		PDTE* pdt_table = (PDTE*)pdt_view;
 		while(count < page_count){
 			auto& cur = pdt_table[pdt_index];
 			if (cur.bypass || !cur.present){
 				bugcheck("cannot release page %x",cur);
 			}
 			pt_view.map(cur.pt_addr << 12);
-			PT* table = (PT*)pt_view;
+			PTE* table = (PTE*)pt_view;
 			dword off = (addr >> 12) & 0x1FF;
 			auto size = min(page_count - count,0x200 - off);
 

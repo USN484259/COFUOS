@@ -4,7 +4,6 @@
 #include "util.hpp"
 #include "vector.hpp"
 #include "hash.hpp"
-#include "assert.hpp"
 
 
 namespace UOS{

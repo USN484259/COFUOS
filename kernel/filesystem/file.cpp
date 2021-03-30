@@ -32,6 +32,7 @@ file_stub* file_stub::open(literal&& filename){
 		if (filename == (const char*)list->name){
 			return new file_stub(move(filename),list->base,list->size);
 		}
+		++list;
 	}
 	return nullptr;
 }

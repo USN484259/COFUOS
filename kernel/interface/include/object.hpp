@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "process/include/waitable.hpp"
+#include "assert.hpp"
 #include "literal.hpp"
 #include "span.hpp"
 #include "hash_set.hpp"
@@ -43,6 +44,7 @@ namespace UOS{
 		
 	public:
 		object_manager(void) = default;
+		object_manager(const object_manager&) = delete;
 		bool put(literal&& name,waitable* obj,dword properties);
 		const object* get(const span<char>& name);
 		void erase(waitable* obj);

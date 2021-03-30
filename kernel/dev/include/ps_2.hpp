@@ -35,7 +35,7 @@ namespace UOS{
 			safe_queue queue;
 		}channel[2];
 		callback volatile func = nullptr;
-		void* volatile userdata = nullptr;
+		void* userdata = nullptr;
 
 		static void on_irq(byte,void*);
 		static void thread_ps2(qword,qword,qword,qword);

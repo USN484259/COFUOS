@@ -2,9 +2,9 @@
 #include "types.h"
 #include "container.hpp"
 #include "util.hpp"
+#include "hash.hpp"
 #include "vector.hpp"
 #include "linked_list.hpp"
-#include "assert.hpp"
 
 namespace UOS{
 	template<typename T,typename H,typename E>

@@ -64,15 +64,11 @@ REASON semaphore::wait(qword us,wait_callback func){
 
 bool semaphore::signal(void){
 	thread* th;
+	interrupt_guard<spin_lock> guard(objlock);
+	count = min(count + 1,total);
 	do{
-		interrupt_guard<spin_lock> guard(objlock);
-		if (count){
-			count = min(count + 1,total);
-			return false;
-		}
 		th = wait_queue.get();
 		if (th == nullptr){
-			++count;
 			return false;
 		}
 	}while(0 == imp_notify(th,NOTIFY));

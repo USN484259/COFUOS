@@ -9,7 +9,8 @@ namespace UOS{
 	struct thread_queue{
 		thread* head = nullptr;
 		thread* tail = nullptr;
-	
+
+		bool empty(void) const;
 		void put(thread*);
 		thread* get(void);
 		void clear(void);

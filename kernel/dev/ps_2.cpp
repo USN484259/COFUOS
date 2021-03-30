@@ -201,10 +201,9 @@ PS_2::PS_2(void){
 }
 
 void PS_2::set_handler(callback cb,void* ud){
-	if (func)
-		bugcheck("invalid PS_2::set_handler call from %p",return_address());
 	userdata = ud;
-	func = cb;
+	if (nullptr != cmpxchg_ptr(&func,cb,(callback)nullptr))
+		bugcheck("invalid PS_2::set_handler call from %p",return_address());
 }
 
 void PS_2::on_irq(byte irq,void* ptr){

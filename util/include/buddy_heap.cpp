@@ -1,4 +1,4 @@
-#include "paired_heap.hpp"
+#include "buddy_heap.hpp"
 #include "util.hpp"
 #include "lock_guard.hpp"
 
@@ -8,19 +8,19 @@ using namespace UOS;
 #define lock_guard interrupt_guard
 #endif
 
-paired_heap::paired_heap(EXPANDER xp) : callback(xp) {}
+buddy_heap::buddy_heap(EXPANDER xp) : callback(xp) {}
 
-inline size_t paired_heap::align_mask(BLOCK index){
+inline size_t buddy_heap::align_mask(BLOCK index){
 	return ((size_t)1<<(index+bitoff))-1;
 }
 
-inline size_t paired_heap::align_size(BLOCK index){
+inline size_t buddy_heap::align_size(BLOCK index){
 	return (qword)1<<(index+bitoff);
 }
 
 //get level of size ( size <= level )
 //greater than 1M not supported
-paired_heap::BLOCK paired_heap::category(size_t req){
+buddy_heap::BLOCK buddy_heap::category(size_t req){
 	assert(0 != req);
 	if (req > align_size(nomem - 1))
 		return nomem;
@@ -40,7 +40,7 @@ paired_heap::BLOCK paired_heap::category(size_t req){
 }
 
 //get level of given memory range
-paired_heap::BLOCK paired_heap::category(void* p, size_t len) {
+buddy_heap::BLOCK buddy_heap::category(void* p, size_t len) {
 	BLOCK res = nomem;
 	BLOCK cur = 0;
 	qword base = reinterpret_cast<qword>(p);
@@ -61,7 +61,7 @@ paired_heap::BLOCK paired_heap::category(void* p, size_t len) {
 }
 
 
-void* paired_heap::get(BLOCK index){
+void* buddy_heap::get(BLOCK index){
 	assert(index < nomem);
 	node* cur = nullptr;
 	if (pool[index]){
@@ -102,7 +102,7 @@ void* paired_heap::get(BLOCK index){
 	
 }
 
-void paired_heap::put(void* base,BLOCK index){
+void buddy_heap::put(void* base,BLOCK index){
 	assert(0 == (reinterpret_cast<qword>(base) & align_mask(index)));
 	
 	node* block = static_cast<node*>(base);
@@ -168,7 +168,7 @@ void paired_heap::put(void* base,BLOCK index){
 
 
 
-bool paired_heap::expand(void* base,size_t len) {
+bool buddy_heap::expand(void* base,size_t len) {
 	if (!base && !len)
 		return false;
 
@@ -196,11 +196,11 @@ bool paired_heap::expand(void* base,size_t len) {
 	return true;	
 }
 
-size_t paired_heap::capacity(void) const {
+size_t buddy_heap::capacity(void) const {
 	return cap_size;
 }
 
-size_t paired_heap::max_size(void) const {
+size_t buddy_heap::max_size(void) const {
 	BLOCK res = nomem;
 	for (BLOCK i = 0; i < nomem; i++) {
 		if (pool[i])
@@ -210,7 +210,7 @@ size_t paired_heap::max_size(void) const {
 }
 
 
-void* paired_heap::allocate(size_t req) {
+void* buddy_heap::allocate(size_t req) {
 	assert(0 != req);
 	if (req > align_size(15))	//m1
 		return nullptr;
@@ -234,7 +234,7 @@ void* paired_heap::allocate(size_t req) {
 
 }
 
-void paired_heap::release(void* base,size_t req) {
+void buddy_heap::release(void* base,size_t req) {
 	assert(nullptr != base);
 	assert(0 != req);
 	//assertless(req, align_size(15) + 1);

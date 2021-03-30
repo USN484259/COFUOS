@@ -9,27 +9,30 @@
 namespace UOS{
 	class memory_lock{
 		virtual_space* vspace = nullptr;
-		bool state = false;
+		bool state = true;
 	public:
 		memory_lock(void const* va,dword length,bool write = false);
 		~memory_lock(void);
 		inline bool get(void) const{
 			return state;
 		}
+		void append(void const* va,dword length,bool write = false);
 	};
 
 	class handle_lock{
 		handle_table* table = nullptr;
 		waitable* obj = nullptr;
 	public:
-		handle_lock(HANDLE handle,OBJTYPE type);
+		handle_lock(void);
 		~handle_lock(void);
 		inline void drop(void){
 			table = nullptr;
 		}
-		inline waitable* get(void) const{
-			return obj;
+		inline void upgrade(void){
+			if(table)
+				table->upgrade();
 		}
+		waitable* get(HANDLE handle,OBJTYPE type = UNKNOWN) const;
 	};
 
 	struct service_provider{
@@ -42,8 +45,8 @@ namespace UOS{
 		qword os_info(void* buffer,dword limit);
 		qword get_time(void);
 		qword enum_process(dword id);
-		STATUS display_fill(dword color,qword lt,qword rb);
-		STATUS display_draw(void const* buffer,qword lt,qword rb);
+		STATUS display_fill(dword color,qword val);
+		STATUS display_draw(void const* buffer,qword val,word advance);
 		HANDLE get_thread(void);
 		dword thread_id(HANDLE handle);
 		qword get_handler(void);

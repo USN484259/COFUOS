@@ -36,6 +36,13 @@ int isspace(int ch){
 	return 0;
 }
 extern "C"
+int isupper(int ch){
+	return (ch >= 'A' && ch <= 'Z');
+}
+int islower(int ch){
+	return (ch >= 'a' && ch <= 'z');
+}
+extern "C"
 int isalpha(int ch){
 	ch &= (~0x20);
 	return (ch >= 'A' && ch <= 'Z');
@@ -318,7 +325,6 @@ bool imp_printf(const char* format,va_list args,F func){
 	return true;
 }
 
-
 extern "C"
 int snprintf(char* buffer,size_t limit,const char* format,...){
 	if (buffer == nullptr || limit == 0){
@@ -340,9 +346,69 @@ int snprintf(char* buffer,size_t limit,const char* format,...){
 	return res ? count : (-1);
 }
 
+bool block_write(HANDLE h,const char* ptr,dword length){
+	do{
+		dword size = length;
+		if (0 != write(h,ptr,&size))
+			return false;
+		length -= size;
+		if (length == 0)
+			break;
+		ptr += size;
+		switch(wait_for(h,0)){
+			case PASSED:
+			case NOTIFY:
+				break;
+			default:
+				return false;
+		}
+	}while(true);
+	return true;
+}
+
+extern "C"
+int fprintf(HANDLE stream,const char* format,...){
+	if (stream == 0 || format == nullptr)
+		return -1;
+	va_list args;
+	va_start(args,format);
+	unsigned count = 0;
+
+	constexpr dword limit = 0x100;
+	char buffer[limit];
+	dword index = 0;
+
+	auto res = imp_printf(format,args,[&,stream,limit](char ch) -> bool{
+		buffer[index++] = ch;
+		if (index < limit)
+			return true;
+		count += index;
+		index = 0;
+		return block_write(stream,buffer,limit);
+	});
+	va_end(args);
+	if (index){
+		res = res && block_write(stream,buffer,index);
+	}
+	return res ? (count + index) : (-1);
+}
+
+extern "C"
+int fputs(const char* str,HANDLE stream){
+	dword len = strlen(str);
+	return block_write(stream,str,len) ? len : EOF;
+}
+
+extern "C"
+int fputc(int ch,HANDLE stream){
+	return block_write(stream,(const char*)&ch,1) ? ch : EOF;
+}
+
 extern "C"
 [[ noreturn ]]
 void abort(void){
+	fprintf(stderr,"abort @ %p\n",__builtin_return_address(0));
+
 	exit_process(0x80000000);
 }
 
@@ -437,15 +503,41 @@ void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
 	exit(return_value);
 }
 
+constexpr size_t huge_size = 0x10000;
+
 void* operator new(size_t size){
-	auto ptr = heap.allocate(size);
-	if (!ptr)
-		abort();
-	return ptr;
+	if (size < huge_size){
+		auto ptr = heap.allocate(size);
+		if (ptr)
+			return ptr;
+	}
+	else{
+		auto page_count = align_up(size,PAGE_SIZE)/PAGE_SIZE;
+		auto va = vm_reserve(0,page_count);
+		if (va){
+			if (SUCCESS == vm_commit(va,page_count)){
+				return va;
+			}
+			vm_release(va,page_count);
+		}
+	}
+	abort();
+}
+
+void* operator new(size_t,void* pos){
+	return pos;
 }
 
 void operator delete(void* ptr,size_t size){
-	heap.release(ptr,size);
+	if (!ptr)
+		return;
+	if (size < huge_size){
+		heap.release(ptr,size);
+	}
+	else{
+		auto page_count = align_up(size,PAGE_SIZE)/PAGE_SIZE;
+		vm_release(ptr,page_count);
+	}
 }
 
 void* malloc(size_t size){

@@ -9,7 +9,7 @@
 
 using namespace UOS;
 
-static PDPT* const pdpt_table = (PDPT *)HIGHADDR(PDPT8_PBASE);
+static PDPTE* const pdpt_table = (PDPTE *)HIGHADDR(PDPT8_PBASE);
 
 kernel_vspace::kernel_vspace(void){
 	assert(pe_kernel);
@@ -17,8 +17,8 @@ kernel_vspace::kernel_vspace(void){
 	auto stk_commit = pe_kernel->stk_commit;
 	auto stk_reserve = pe_kernel->stk_reserve;
 	assert(module_base >= HIGHADDR(0x01000000) && stk_commit <= stk_reserve && stk_reserve <= 0x100*PAGE_SIZE);
-	PDT* pdt_table = (PDT*)HIGHADDR(PDT0_PBASE);
-	PT* pt0_table = (PT*)HIGHADDR(PT0_PBASE);
+	PDTE* pdt_table = (PDTE*)HIGHADDR(PDT0_PBASE);
+	PTE* pt0_table = (PTE*)HIGHADDR(PT0_PBASE);
 
 	stk_reserve = align_up(stk_reserve,PAGE_SIZE) >> 12;
 	stk_commit = align_up(stk_commit,PAGE_SIZE) >> 12;
@@ -128,7 +128,7 @@ bool kernel_vspace::release(qword addr,dword page_count){
 	if (!common_check(addr,page_count))
 		return false;
 	interrupt_guard<spin_lock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,addr,page_count,[](PT& pt,qword,qword) -> bool{
+	auto res = imp_iterate(pdpt_table,addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		if (pt.bypass)
 			return false;
 		if (pt.present){
@@ -151,7 +151,7 @@ bool kernel_vspace::commit(qword base_addr,dword page_count){
 		return false;
 	}
 	interrupt_guard<spin_lock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
+	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		return (pt.preserve && !pt.bypass && !pt.present);
 	});
 	if (res != page_count)
@@ -159,7 +159,7 @@ bool kernel_vspace::commit(qword base_addr,dword page_count){
 	res = pm.reserve(page_count);
 	if (!res)
 		return false;
-	res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
+	res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		assert(pt.preserve && !pt.bypass && !pt.present);
 		pt.page_addr = pm.allocate(PM::TAKE) >> 12;
 		pt.xd = 1;
@@ -183,13 +183,13 @@ bool kernel_vspace::protect(qword base_addr,dword page_count,qword attrib){
 	if (attrib & ~mask)
 		return false;
 	interrupt_guard<spin_lock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
+	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		return (pt.present && !pt.bypass && !pt.user && pt.page_addr);
 	});
 	if (res != page_count)
 		return false;
 
-	PTE_CALLBACK fun = [](PT& pt,qword addr,qword attrib) -> bool{
+	PTE_CALLBACK fun = [](PTE& pt,qword addr,qword attrib) -> bool{
 		assert(pt.present && !pt.bypass && !pt.user && pt.page_addr);
 		pt.xd = (attrib & PAGE_XD) ? 1 : 0;
 		pt.global = (attrib & PAGE_GLOBAL) ? 1 : 0;
@@ -209,7 +209,7 @@ bool kernel_vspace::assign(qword base_addr,qword phy_addr,dword page_count){
 	if (!common_check(base_addr,page_count) || !phy_addr)
 		return false;
 	interrupt_guard<spin_lock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword){
+	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword){
 		return (pt.preserve && !pt.present) ? true : false;
 	});
 	if (res != page_count)
@@ -219,7 +219,7 @@ bool kernel_vspace::assign(qword base_addr,qword phy_addr,dword page_count){
 	if (base_addr < phy_addr)
 		bugcheck("assume phy_addr is far lower than base_addr (%x,%x)",phy_addr,base_addr);
 	
-	PTE_CALLBACK fun = [](PT& pt,qword addr,qword delta) -> bool{
+	PTE_CALLBACK fun = [](PTE& pt,qword addr,qword delta) -> bool{
 		assert(pt.preserve && !pt.present);
 		assert(addr >= delta);
 		pt.page_addr = (addr - delta) >> 12;
@@ -240,8 +240,8 @@ bool kernel_vspace::assign(qword base_addr,qword phy_addr,dword page_count){
 	return true;
 }
 
-PT kernel_vspace::peek(qword va){
+PTE kernel_vspace::peek(qword va){
 	if (!IS_HIGHADDR(va) || LOWADDR(va) >= size_512G)
-		return PT{0};
+		return PTE{0};
 	return imp_peek(va,pdpt_table);
 }

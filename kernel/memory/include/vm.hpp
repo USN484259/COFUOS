@@ -23,7 +23,7 @@ namespace UOS{
 
 	};
 
-	struct PT {
+	struct PTE {
 		qword present : 1;
 		qword write : 1;
 		qword user : 1;
@@ -62,7 +62,7 @@ namespace UOS{
 		Free blocks linked, ordered by size, ascending
 	*/
 
-	struct PDT {
+	struct PDTE {
 		qword present : 1;
 		qword write : 1;
 		qword user : 1;
@@ -83,7 +83,7 @@ namespace UOS{
 		qword xd : 1;
 	};
 
-	struct PDPT{
+	struct PDPTE{
 		qword present : 1;
 		qword write : 1;
 		qword user : 1;
@@ -96,15 +96,15 @@ namespace UOS{
 		qword xd : 1;
 	};
 
-	static_assert(sizeof(PT) == 8,"PT size mismatch");
-	static_assert(sizeof(PDT) == 8,"PDT size mismatch");
-	static_assert(sizeof(PDPT) == 8,"PDPT size mismatch");
+	static_assert(sizeof(PTE) == 8,"PTE size mismatch");
+	static_assert(sizeof(PDTE) == 8,"PDTE size mismatch");
+	static_assert(sizeof(PDPTE) == 8,"PDPTE size mismatch");
 	class virtual_space{
 	public:
 		static constexpr qword size_512G = 0x008000000000ULL;
 	protected:
 		qword used_pages;
-		typedef bool (*PTE_CALLBACK)(PT& pt,qword addr,qword data);
+		typedef bool (*PTE_CALLBACK)(PTE& pt,qword addr,qword data);
 	public:
 		virtual_space(void) = default;
 		virtual_space(const virtual_space&) = delete;
@@ -114,7 +114,7 @@ namespace UOS{
 		virtual bool commit(qword addr,dword page_count) = 0;
 		virtual bool protect(qword addr,dword page_count,qword attrib) = 0;
 		virtual bool release(qword addr,dword page_count) = 0;
-		virtual PT peek(qword va) = 0;
+		virtual PTE peek(qword va) = 0;
 		inline qword usage(void) const{
 			return used_pages;
 		}
@@ -125,22 +125,22 @@ namespace UOS{
 		virtual bool is_exclusive(void) const = 0;
 	protected:
 		//low-level methods
-		qword imp_reserve_any(PDT& pdt,PT* table,qword base_addr,word count);
-		bool imp_reserve_fixed(PDT& pdt,PT* table,word index,word count);
-		void imp_release(PDT& pdt,PT* table,qword base_addr,word count);
-		dword imp_iterate(const PDPT* pdpt,qword base_addr,dword page_count,PTE_CALLBACK callback,qword data = 0);
-		PT imp_peek(qword va,PDPT const* pdpt_table);
+		qword imp_reserve_any(PDTE& pdt,PTE* table,qword base_addr,word count);
+		bool imp_reserve_fixed(PDTE& pdt,PTE* table,word index,word count);
+		void imp_release(PDTE& pdt,PTE* table,qword base_addr,word count);
+		dword imp_iterate(const PDPTE* pdpt,qword base_addr,dword page_count,PTE_CALLBACK callback,qword data = 0);
+		PTE imp_peek(qword va,PDPTE const* pdpt_table);
 	protected:
 		//generic helper methods
-		bool new_pdt(PDPT& pdpt,map_view& view);
-		bool new_pt(PDT& pdt,map_view& view,bool take);
-		bool reserve_fixed(PDPT* pdpt_table,qword addr,dword page_count);
-		qword reserve_any(PDPT* pdpt_table,dword page_count);
-		qword reserve_big(PDPT* pdpt_table,dword page_count);
-		void safe_release(PDPT* pdpt_table,qword addr,dword page_count);
+		bool new_pdt(PDPTE& pdpt,map_view& view);
+		bool new_pt(PDTE& pdt,map_view& view,bool take);
+		bool reserve_fixed(PDPTE* pdpt_table,qword addr,dword page_count);
+		qword reserve_any(PDPTE* pdpt_table,dword page_count);
+		qword reserve_big(PDPTE* pdpt_table,dword page_count);
+		void safe_release(PDPTE* pdpt_table,qword addr,dword page_count);
 
 
-		struct BLOCK{	//see struct PT
+		struct BLOCK{	//see struct PTE
 			word self;
 			word next;
 			word prev;
@@ -148,22 +148,22 @@ namespace UOS{
 			bool next_valid;
 			bool prev_valid;
 
-			void get(const PT* pt);
-			void put(PT* pt) const;
+			void get(const PTE* pt);
+			void put(PTE* pt) const;
 		};
-		static word get_max_size(const PDT& pdt);
-		static void put_max_size(PDT& pdt,word new_value);
-		static void resolve_prior(const PDT& pdt,const PT* table,BLOCK& block);
+		static word get_max_size(const PDTE& pdt);
+		static void put_max_size(PDTE& pdt,word new_value);
+		static void resolve_prior(const PDTE& pdt,const PTE* table,BLOCK& block);
 		//links kept
-		void erase(PDT& pdt,PT* table,BLOCK& block);
+		void erase(PDTE& pdt,PTE* table,BLOCK& block);
 		//links as hint
-		void insert(PDT& pdt,PT* table,BLOCK& block);
+		void insert(PDTE& pdt,PTE* table,BLOCK& block);
 
-		//void shift_left(PDT& pdt,PT* table,BLOCK& block);
-		//void shift_right(PDT& pdt,PT* table,BLOCK& block);
-		//void insert(PDT& pdt,PT* table,BLOCK& block);
+		//void shift_left(PDTE& pdt,PTE* table,BLOCK& block);
+		//void shift_right(PDTE& pdt,PTE* table,BLOCK& block);
+		//void insert(PDTE& pdt,PTE* table,BLOCK& block);
 #ifdef VM_TEST
-		void check_integrity(PDT& pdt,PT* table);
+		void check_integrity(PDTE& pdt,PTE* table);
 #endif
 	};
 
@@ -177,7 +177,7 @@ namespace UOS{
 		bool commit(qword addr,dword page_count) override;
 		bool protect(qword addr,dword page_count,qword attrib) override;
 		bool release(qword addr,dword page_count) override;
-		PT peek(qword va) override;
+		PTE peek(qword va) override;
 		bool assign(qword va,qword pa,dword page_count);
 		bool try_lock(void) override{
 			return objlock.try_lock(spin_lock::SHARED);
@@ -210,7 +210,7 @@ namespace UOS{
 		bool commit(qword addr,dword page_count) override;
 		bool protect(qword addr,dword page_count,qword attrib) override;
 		bool release(qword addr,dword page_count) override;
-		PT peek(qword va) override;
+		PTE peek(qword va) override;
 		bool try_lock(void) override{
 			return objlock.try_lock(rwlock::SHARED);
 		}

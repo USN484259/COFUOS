@@ -36,7 +36,16 @@ RTC::RTC(void){
 void RTC::on_irq(byte id,void* data){
 	IF_assert;
 	assert(id == APIC::IRQ_RTC);
-	((RTC*)data)->update();
+	auto self = (RTC*)data;
+	self->update();
+	if (self->func)
+		self->func(self->time,self->userdata);
+}
+
+void RTC::set_handler(callback cb,void* ud){
+	userdata = ud;
+	if (nullptr != cmpxchg_ptr(&func,cb,(callback)nullptr))
+		bugcheck("invalid RTC::set_handler call from %p",return_address());
 }
 
 void RTC::convert(byte& val){

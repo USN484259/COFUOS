@@ -4,6 +4,7 @@
 #include "sysinfo.hpp"
 #include "dev/include/cpu.hpp"
 #include "dev/include/ps_2.hpp"
+#include "dev/include/rtc.hpp"
 #include "dev/include/timer.hpp"
 #include "pe64.hpp"
 #include "process/include/core_state.hpp"
@@ -29,7 +30,7 @@ void thread_kdb(qword ptr,qword,qword,qword){
 		offset += len;
 		do{
 			for (;tail < offset;++tail){
-				if (buffer[tail] == 0){
+				if (buffer[tail] == 0 || buffer[tail] == '\n'){
 					dbgprint("%t",buffer,tail);
 					break;
 				}
@@ -60,10 +61,19 @@ void thread_shell(qword,qword,qword,qword){
 		auto p = reinterpret_cast<pipe*>(ud);
 		p->write(sor,len);
 	},reinterpret_cast<void*>(dev_pipe));
+	rtc.set_handler([](qword,void* ud){
+		auto p = reinterpret_cast<pipe*>(ud);
+		byte msg = 0x40;	//psudo 'on_second' key
+		p->write(&msg,1);
+	},reinterpret_cast<void*>(dev_pipe));
 	bool bad = false;
 	while(true){
+		this_process->handles.lock();
 		process::startup_info info = {SHELL,dev_pipe,nullptr,kdb_pipe};
-		HANDLE handle_shell = proc.spawn("/shell.exe","",info);
+		this_process->handles.upgrade();
+		HANDLE handle_shell = proc.spawn("shell","",info);
+		this_process->handles.unlock();
+
 		if (!handle_shell)
 			bugcheck("shell failed to launch");
 		process* shell = nullptr;

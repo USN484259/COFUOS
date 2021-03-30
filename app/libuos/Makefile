@@ -1,7 +1,7 @@
 all:	bin/libuos.a
 
 bin/libuos.a:	bin/syscall.o bin/libuos.o bin/uoscrt.o bin/crt_heap.o
-	$(MINGW_AR) -rcsv $@ $(wildcard bin/*.o)
+	$(MINGW_AR) -rcsv $@ $(wildcard bin/*.o) $(COFUOS_ROOT)/util/bin/mem.o
 
 bin/syscall.o:	syscall.asm
 	$(NASM) -f win64 $< -o $@

@@ -7,7 +7,6 @@
 #include "assert.hpp"
 #include "literal.hpp"
 #include "hash_set.hpp"
-#include "hash.hpp"
 #include "id_gen.hpp"
 #include "interface/include/bridge.hpp"
 #include "sync/include/rwlock.hpp"
@@ -26,7 +25,7 @@ namespace UOS{
 		handle_table(const handle_table&) = delete;
 		~handle_table(void);
 		void clear(void);
-		dword put(waitable*);
+		dword put(waitable*,bool already_locked = false);
 		bool assign(dword,waitable*);
 		bool close(dword);
 		waitable* operator[](dword) const;
@@ -40,8 +39,12 @@ namespace UOS{
 			objlock.lock(rwlock::SHARED);
 		}
 		inline void unlock(void){
-			assert(objlock.is_locked() && !objlock.is_exclusive());
+			assert(objlock.is_locked());
 			objlock.unlock();
+		}
+		inline void upgrade(void){
+			assert(objlock.is_locked() && !objlock.is_exclusive());
+			objlock.upgrade();
 		}
 		inline bool is_locked(void) const{
 			return objlock.is_locked();

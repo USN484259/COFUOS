@@ -6,14 +6,15 @@ using srv = UOS::service_code;
 extern "C"
 qword syscall(srv cmd,...);
 
-template<typename T>
-inline STATUS unpack_qword(qword val,T* res){
+template<typename T,typename S = STATUS>
+inline S unpack_qword(qword val,T* res){
 	*res = (T)(val >> 32);
-	return (STATUS)(dword)val;
+	return (S)(dword)val;
 }
-inline void pack_rect(const rectangle& rect,qword& lt,qword& rb){
-	lt = ((qword)rect.top << 32) | rect.left;
-	rb = ((qword)rect.bottom << 32) | rect.right;
+inline qword pack_rect(const rectangle& rect){ 
+	dword lt = ((dword)rect.top << 16) | rect.left;
+	dword rb = ((dword)rect.bottom << 16) | rect.right;
+	return ((qword)rb << 32) | lt;
 }
 
 STATUS os_info(OS_INFO* buffer,dword* length) {
@@ -28,14 +29,10 @@ STATUS enum_process(dword* id) {
 	return unpack_qword(res,id);
 }
 STATUS display_fill(dword color,const rectangle* rect) {
-	qword lt,rb;
-	pack_rect(*rect,lt,rb);
-	return (STATUS)syscall(srv::display_fill,color,lt,rb);
+	return (STATUS)syscall(srv::display_fill,color,pack_rect(*rect));
 }
-STATUS display_draw(const dword* buffer,const rectangle* rect) {
-	qword lt,rb;
-	pack_rect(*rect,lt,rb);
-	return (STATUS)syscall(srv::display_draw,buffer,lt,rb);
+STATUS display_draw(const dword* buffer,const rectangle* rect,word advance) {
+	return (STATUS)syscall(srv::display_draw,buffer,pack_rect(*rect),advance);
 }
 HANDLE get_thread(void) {
 	return syscall(srv::get_thread);
@@ -61,7 +58,7 @@ STATUS set_handler(void *func) {
 STATUS set_priority(HANDLE handle,byte priority) {
 	return (STATUS)syscall(srv::set_priority,handle,priority);
 }
-STATUS create_thread(void* func,void* arg,dword stk_size,HANDLE* handle) {
+STATUS create_thread(void (*func)(void*,void*),void* arg,dword stk_size,HANDLE* handle) {
 	auto res = syscall(srv::create_thread,func,arg,stk_size);
 	return unpack_qword(res,handle);
 }
@@ -143,9 +140,9 @@ dword iostate(HANDLE handle){
 }
 dword read(HANDLE handle,void* buffer,dword* length){
 	auto res = syscall(srv::read,handle,buffer,*length);
-	return unpack_qword(res,length);
+	return unpack_qword<dword,dword>(res,length);
 }
 dword write(HANDLE handle,const void* buffer,dword* length){
 	auto res = syscall(srv::write,handle,buffer,*length);
-	return unpack_qword(res,length);
+	return unpack_qword<dword,dword>(res,length);
 }

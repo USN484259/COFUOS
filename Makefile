@@ -8,14 +8,17 @@ export NASM=nasm
 export OBJCOPY=objcopy
 export STRIP=strip
 export CP=cp
+export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -nostdlib -m64
 
-
-all: boot font FAT32_editor COFUOS app
+all: boot util font FAT32_editor COFUOS app
 
 boot:
 	@cd boot && $(MAKE) $@
-	
-COFUOS: FAT32_editor app
+
+util:
+	@cd util && $(MAKE) $@
+
+COFUOS: FAT32_editor app util
 	@cd kernel && $(MAKE) $@
 
 font:
@@ -24,7 +27,7 @@ font:
 FAT32_editor:
 	@cd tools/FAT32_editor && $(MAKE) $@
 
-app:
+app:	util font
 	@cd app && $(MAKE) $@
 
 clean:
@@ -36,4 +39,4 @@ clean:
 help:
 	@echo "help text"
 
-.PHONY: all boot font FAT32_editor COFUOS app clean help
+.PHONY: all boot util font FAT32_editor COFUOS app clean help

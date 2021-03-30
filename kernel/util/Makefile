@@ -1,8 +1,4 @@
-all:	bin/fasthash.o bin/lang.o bin/sysinfo.o	bin/pe64.o
-
-bin/fasthash.o:	fasthash.c
-	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@
-	$(CP) $@ ../bin/
+all:	bin/lang.o bin/sysinfo.o	bin/pe64.o
 
 bin/%.o:	%.cpp
 	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@

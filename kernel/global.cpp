@@ -21,7 +21,7 @@ namespace UOS{
 	kdb_stub debug_stub(sysinfo->ports[0]);
 	PM pm;
 	kernel_vspace vm;
-	paired_heap heap([](size_t& req_size) -> void* {
+	buddy_heap heap([](size_t& req_size) -> void* {
 		req_size = align_up(max(req_size,PAGE_SIZE),PAGE_SIZE);
 		do{
 			auto req_page = req_size / PAGE_SIZE;

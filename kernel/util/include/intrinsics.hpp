@@ -245,7 +245,7 @@ namespace UOS{
 	template<typename T>
 	inline T* cmpxchg_ptr(T* volatile* dst,T* xchg,T* cmp){
 		return reinterpret_cast<T*>(
-			cmpxchg<qword>(
+			cmpxchg(
 				reinterpret_cast<qword volatile*>(dst),
 				reinterpret_cast<qword>(xchg),
 				reinterpret_cast<qword>(cmp)
@@ -255,7 +255,7 @@ namespace UOS{
 	template<typename T>
 	inline T* xchg_ptr(T* volatile* dst,T* val){
 		return reinterpret_cast<T*>(
-			xchg<qword>(
+			xchg(
 				reinterpret_cast<qword volatile*>(dst),
 				reinterpret_cast<qword>(val)
 			)

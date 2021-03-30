@@ -19,7 +19,7 @@ user_vspace::user_vspace(void) : cr3(pm.allocate(PM::MUST_SUCCEED)), pl4te(pm.al
 	view.map(pl4te);
 	qword pa_pdt = pm.allocate(PM::MUST_SUCCEED);
 	zeromemory((void*)view,PAGE_SIZE);
-	auto& pdpt = *(PDPT*)view;
+	auto& pdpt = *(PDPTE*)view;
 	pdpt.pdt_addr = pa_pdt >> 12;
 	pdpt.user = 1;
 	pdpt.write = 1;
@@ -27,7 +27,7 @@ user_vspace::user_vspace(void) : cr3(pm.allocate(PM::MUST_SUCCEED)), pl4te(pm.al
 	//bypass lowest 2M region
 	view.map(pa_pdt);
 	zeromemory((void*)view,PAGE_SIZE);
-	(*(PDT*)view).bypass = 1;
+	(*(PDTE*)view).bypass = 1;
 	used_pages = 3;
 }
 
@@ -35,19 +35,19 @@ user_vspace::~user_vspace(void){
 	interrupt_guard<rwlock> guard(objlock);
 	{
 		map_view pdpt_view(pl4te);
-		auto pdpt_table = (PDPT*)pdpt_view;
+		auto pdpt_table = (PDPTE*)pdpt_view;
 		for (unsigned pdpt_index = 0;pdpt_index < 0x200;++pdpt_index){
 			if (pdpt_table[pdpt_index].present){
 				qword pa_pdt = pdpt_table[pdpt_index].pdt_addr << 12;
 				{
 					map_view pdt_view(pa_pdt);
-					auto pdt_table = (PDT*)pdt_view;
+					auto pdt_table = (PDTE*)pdt_view;
 					for (unsigned pdt_index = 0;pdt_index < 0x200;++pdt_index){
 						if (pdt_table[pdt_index].present){
 							qword pa_pt = pdt_table[pdt_index].pt_addr << 12;
 							{
 								map_view pt_view(pa_pt);
-								auto pt_table = (PT*)pt_view;
+								auto pt_table = (PTE*)pt_view;
 								for (unsigned pt_index = 0;pt_index < 0x200;++pt_index){
 									auto& cur = pt_table[pt_index];
 									if (cur.present){
@@ -101,7 +101,7 @@ qword user_vspace::reserve(qword addr,dword page_count){
 		}
 	}
 	map_view view(pl4te);
-	auto pdpt_table = (PDPT*)view;
+	auto pdpt_table = (PDPTE*)view;
 	interrupt_guard<rwlock> guard(objlock);
 
 	if (addr){
@@ -118,9 +118,9 @@ bool user_vspace::release(qword addr,dword page_count){
 	if (!common_check(addr,page_count))
 		return false;
 	map_view view(pl4te);
-	auto pdpt_table = (PDPT*)view;
+	auto pdpt_table = (PDPTE*)view;
 	interrupt_guard<rwlock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,addr,page_count,[](PT& pt,qword,qword) -> bool{
+	auto res = imp_iterate(pdpt_table,addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		if (pt.bypass)
 			return false;
 		if (pt.present){
@@ -139,9 +139,9 @@ bool user_vspace::commit(qword base_addr,dword page_count){
 		return false;
 
 	map_view view(pl4te);
-	auto pdpt_table = (PDPT*)view;
+	auto pdpt_table = (PDPTE*)view;
 	interrupt_guard<rwlock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
+	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		return (pt.preserve && !pt.bypass && !pt.present);
 	});
 	if (res != page_count)
@@ -149,7 +149,7 @@ bool user_vspace::commit(qword base_addr,dword page_count){
 	res = pm.reserve(page_count);
 	if (!res)
 		return false;
-	res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
+	res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		assert(pt.preserve && !pt.bypass && !pt.present);
 		pt.page_addr = pm.allocate(PM::TAKE) >> 12;
 		pt.xd = 1;
@@ -172,15 +172,15 @@ bool user_vspace::protect(qword base_addr,dword page_count,qword attrib){
 	if (attrib & ~mask)
 		return false;
 	map_view view(pl4te);
-	auto pdpt_table = (PDPT*)view;
+	auto pdpt_table = (PDPTE*)view;
 	interrupt_guard<rwlock> guard(objlock);
-	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PT& pt,qword,qword) -> bool{
+	auto res = imp_iterate(pdpt_table,base_addr,page_count,[](PTE& pt,qword,qword) -> bool{
 		return (pt.present && !pt.bypass && pt.user && pt.page_addr);
 	});
 	if (res != page_count)
 		return false;
 	
-	PTE_CALLBACK fun = [](PT& pt,qword addr,qword attrib) -> bool{
+	PTE_CALLBACK fun = [](PTE& pt,qword addr,qword attrib) -> bool{
 		assert(pt.present && !pt.bypass && pt.user && pt.page_addr);
 		pt.xd = (attrib & PAGE_XD) ? 1 : 0;
 		pt.global = (attrib & PAGE_GLOBAL) ? 1 : 0;
@@ -196,10 +196,10 @@ bool user_vspace::protect(qword base_addr,dword page_count,qword attrib){
 	return true;
 }
 
-PT user_vspace::peek(qword va){
+PTE user_vspace::peek(qword va){
 	if (IS_HIGHADDR(va) || va >= size_512G)
-		return PT{0};
+		return PTE{0};
 	map_view view(pl4te);
-	auto pdpt_table = (PDPT*)view;
+	auto pdpt_table = (PDPTE*)view;
 	return imp_peek(va,pdpt_table);
 }

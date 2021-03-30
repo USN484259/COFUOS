@@ -1,8 +1,18 @@
 [bits 64]
 
-global compact_font
+global font_base
+global font_size
+global font_info
 
 section .rdata
 
-compact_font:
-incbin "bin/font.bin"
+align 0x10
+font_base:
+incbin "bin/font.bin",0x10
+font_end:
+
+align 0x10
+font_info:
+incbin "bin/font.bin",0,0x10
+
+font_size dd (font_end - font_base)

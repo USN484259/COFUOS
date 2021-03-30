@@ -40,8 +40,13 @@ void handle_table::clear(void){
 	assert(count == 0);
 }
 
-dword handle_table::put(waitable* ptr){
-	interrupt_guard<rwlock> guard(objlock);
+dword handle_table::put(waitable* ptr,bool already_locked){
+	interrupt_guard<void> ig;
+	if (already_locked)
+		assert(objlock.is_locked() && objlock.is_exclusive());
+	else
+		objlock.lock();
+	//interrupt_guard<rwlock> guard(objlock);
 	auto index = avl_base;
 	if (count*4 > top*3)
 		index = max(index,top);
@@ -66,9 +71,12 @@ dword handle_table::put(waitable* ptr){
 		slot = ptr;
 		++count;
 		top = max(top,index + 1);
-		return index;
+		break;
+		//return index;
 	}
-	return 0;
+	if (!already_locked)
+		objlock.unlock();
+	return (index < limit) ? index : 0;
 }
 
 bool handle_table::assign(dword index,waitable* ptr){
@@ -308,6 +316,8 @@ HANDLE process_manager::spawn(literal&& command,literal&& env,const process::sta
 	//TODO replace with real file-opening logic
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
+	assert(this_process->handles.is_locked() && this_process->handles.is_exclusive());
+
 	basic_file* file = nullptr;
 	HANDLE handle = 0;
 	do{
@@ -350,7 +360,7 @@ HANDLE process_manager::spawn(literal&& command,literal&& env,const process::sta
 		auto it = table.insert(move(command),file,info,args);
 		it->manage();
 		file = nullptr;
-		handle = this_process->handles.put(&*it);
+		handle = this_process->handles.put(&*it,true);
 		if (!handle)
 			it->relax();
 	}while(false);

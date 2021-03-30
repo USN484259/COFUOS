@@ -21,7 +21,7 @@ struct BLOCK{
 static_assert(sizeof(BLOCK) == sizeof(byte),"BLOCK size mismatch");
 
 PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
-	auto scan_base = (PMMSCAN* const)PMMSCAN_BASE;
+	PMMSCAN* const scan_base = (PMMSCAN*)PMMSCAN_BASE;
 	bmp_size = sysinfo->PMM_avl_top >> 12;
 
 	qword page_count = align_up(bmp_size,PAGE_SIZE) >> 12;

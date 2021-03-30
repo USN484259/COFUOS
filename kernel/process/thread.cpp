@@ -131,18 +131,8 @@ bool thread::set_state(thread::STATE st, qword arg, waitable* obj){
 		wait_for = obj;
 		timer_ticket = arg;
 		break;
-	case STOPPED:
-		if (state == WAITING){
-			if (wait_for){
-				wait_for->cancel(this);
-				wait_for = nullptr;
-			}
-			if (timer_ticket){
-				timer.cancel(timer_ticket);
-				timer_ticket = 0;
-			}
-		}
-		break;
+	default:
+		bugcheck("thread::set_state bad state @ %p",this);
 	}
 	state = st;
 	return true;
@@ -263,12 +253,29 @@ void thread::sleep(qword us){
 void thread::kill(thread* th){
 	this_core core;
 	thread* this_thread = core.this_thread();
+	bool kill_self = (this_thread == th);
 	interrupt_guard<void> ig;
 	{
 		lock_guard<thread> guard(*th);
-		th->set_state(STOPPED);
+		//th->set_state(STOPPED);
+		auto state = th->state;
+		th->state = STOPPED;
+		if (state == WAITING){
+			if (th->wait_for){
+				th->wait_for->cancel(th);
+				th->wait_for = nullptr;
+			}
+			if (th->timer_ticket){
+				timer.cancel(th->timer_ticket);
+				th->timer_ticket = 0;
+			}
+			if (!kill_self){
+				guard.drop();
+				th->on_stop();
+			}
+		}
 	}
-	if (this_thread == th){
+	if (kill_self){
 		core_manager::preempt(true);
 	}
 }

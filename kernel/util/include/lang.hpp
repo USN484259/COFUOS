@@ -15,10 +15,8 @@ extern "C"{
 
 void* operator new(size_t);
 void* operator new(size_t,void*);
-void* operator new[](size_t);
 
 void operator delete(void*,size_t);
-void operator delete[](void*);
 
 namespace UOS{
 	qword rand(void);

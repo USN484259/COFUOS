@@ -1,7 +1,7 @@
 #pragma once
 #include "types.h"
 #include "sysinfo.hpp"
-
+#include "assert.hpp"
 #include "vector.hpp"
 
 

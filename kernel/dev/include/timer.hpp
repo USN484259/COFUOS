@@ -2,7 +2,7 @@
 #include "types.h"
 #include "sync/include/spin_lock.hpp"
 #include "process/include/waitable.hpp"
-#include "hash.hpp"
+#include "assert.hpp"
 #include "hash_set.hpp"
 
 namespace UOS{

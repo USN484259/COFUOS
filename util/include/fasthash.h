@@ -30,11 +30,8 @@
 
 
 #include <stdint.h>
-#ifndef COFUOS
-#include <stdio.h>
-#else
 #include <stddef.h>
-#endif
+
 
 
 #ifdef __cplusplus

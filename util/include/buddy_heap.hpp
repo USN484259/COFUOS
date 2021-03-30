@@ -4,14 +4,13 @@
 
 namespace UOS{
 	//non-ring bi-directional linked list
-	class paired_heap {
+	class buddy_heap {
 	public:
 		typedef void* (*EXPANDER)(size_t&);
 	private:
 		struct node{
 			node* prev;
 			node* next;
-						
 		};
 		typedef unsigned BLOCK;
 		//enum BLOCK{b32=0,b64,b128,b256,b512,k1,k2,k4,k8,k16,k32,k64,k128,k256,k512,m1,nomem};
@@ -37,7 +36,7 @@ namespace UOS{
 		
 
 	public:
-		paired_heap(EXPANDER = nullptr);
+		buddy_heap(EXPANDER = nullptr);
 
 		size_t capacity(void) const;
 		size_t max_size(void) const;
@@ -47,7 +46,7 @@ namespace UOS{
 	
 	};
 	
-	extern paired_heap heap;
+	extern buddy_heap heap;
 	
 	
 }

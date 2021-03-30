@@ -79,6 +79,7 @@ REASON pipe::wait(qword us,wait_callback func){
 }
 
 dword pipe::read(void* dst,dword length){
+	interrupt_guard<spin_lock> guard(objlock);
 	if (iostate & BAD)
 		return 0;
 	bool is_owner_write = (mode & owner_write);
@@ -88,7 +89,7 @@ dword pipe::read(void* dst,dword length){
 		return 0;
 	}
 	dword count = 0;
-	interrupt_guard<spin_lock> guard(objlock);
+	//interrupt_guard<spin_lock> guard(objlock);
 	bool need_notify = is_full();
 	while(count < length){
 		if (is_empty())
@@ -105,6 +106,7 @@ dword pipe::read(void* dst,dword length){
 }
 
 dword pipe::write(void const* sor,dword length){
+	interrupt_guard<spin_lock> guard(objlock);
 	if (iostate & BAD)
 		return 0;
 	bool is_owner_write = (mode & owner_write);
@@ -114,7 +116,7 @@ dword pipe::write(void const* sor,dword length){
 		return 0;
 	}
 	dword count = 0;
-	interrupt_guard<spin_lock> guard(objlock);
+	//interrupt_guard<spin_lock> guard(objlock);
 	if (mode & atomic_write){
 		auto available = (head + limit - tail - 1) % limit;
 		if (available < length)
