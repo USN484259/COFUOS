@@ -105,19 +105,15 @@ REASON waitable::imp_wait(qword us){
 	if (this_thread->set_state(thread::WAITING,ticket,this)){
 		this_thread->put_slice(scheduler::max_slice);
 		wait_queue.put(this_thread);
-		this_thread->unlock();
-		objlock.unlock();
-		core.switch_to(next_thread);
-		return this_thread->get_reason();
+
 	}
-	else{
-		if (ticket)
-			timer.cancel(ticket);
-		this_thread->unlock();
-		objlock.unlock();
-		core.escape(next_thread);
-		bugcheck("escape in imp_wait failed @ %p",this);
+	else if (ticket){
+		timer.cancel(ticket);
 	}
+	this_thread->unlock();
+	objlock.unlock();
+	core.switch_to(next_thread);
+	return this_thread->get_reason();
 }
 
 REASON waitable::wait(qword us,wait_callback func){
@@ -147,13 +143,9 @@ void waitable::on_timer(qword ticket,void* ptr){
 		if (this_thread->set_state(thread::READY)){
 			this_thread->put_slice(scheduler::max_slice);
 			ready_queue.put(this_thread);
-			this_thread->unlock();
-			core.switch_to(th);
 		}
-		else{
-			this_thread->unlock();
-			core.escape(th);
-		}
+		this_thread->unlock();
+		core.switch_to(th);
 	}
 	else{
 		ready_queue.put(th);
@@ -211,9 +203,9 @@ size_t waitable::imp_notify(thread* th,REASON reason){
 		}
 		th = next;
 	}
-	this_core core;
-	if (!core.this_thread()->has_context())
-		core_manager::preempt(false);
+	// this_core core;
+	// if (!core.this_thread()->has_context())
+	// 	core_manager::preempt(false);
 	return count;
 }
 

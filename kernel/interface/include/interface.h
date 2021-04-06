@@ -79,3 +79,8 @@ struct rectangle{
 	word right;
 	word bottom;
 };
+enum osctl_code : dword {
+	bugcheck = 0,
+	halt,
+	disk_read
+};

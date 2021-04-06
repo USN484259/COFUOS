@@ -25,7 +25,7 @@ namespace UOS{
 		handle_table(const handle_table&) = delete;
 		~handle_table(void);
 		void clear(void);
-		dword put(waitable*,bool already_locked = false);
+		dword put(waitable*);
 		bool assign(dword,waitable*);
 		bool close(dword);
 		waitable* operator[](dword) const;
@@ -39,12 +39,8 @@ namespace UOS{
 			objlock.lock(rwlock::SHARED);
 		}
 		inline void unlock(void){
-			assert(objlock.is_locked());
-			objlock.unlock();
-		}
-		inline void upgrade(void){
 			assert(objlock.is_locked() && !objlock.is_exclusive());
-			objlock.upgrade();
+			objlock.unlock();
 		}
 		inline bool is_locked(void) const{
 			return objlock.is_locked();
@@ -113,10 +109,6 @@ namespace UOS{
 		inline size_t size(void) const{
 			return active_count;
 		}
-		inline thread* get_thread(dword tid){
-			auto it = threads.find(tid);
-			return (it == threads.end()) ? nullptr : &(*it);
-		}
 		inline PRIVILEGE get_privilege(void) const{
 			return privilege;
 		}
@@ -129,6 +121,7 @@ namespace UOS{
 			val = result;
 			return true;
 		}
+		thread* find(dword tid,bool acquire);
 		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
 		void manage(void* = nullptr) override;
@@ -146,16 +139,15 @@ namespace UOS{
 
 	public:
 		process_manager(void);
-		thread* get_initial_thread(void);
+		//thread* get_initial_thread(void);
 		inline size_t size(void) const{
 			return table.size();
 		}
-
+		// std streams should be acquired in advance
 		HANDLE spawn(literal&& command,literal&& env,const process::startup_info& info);
 		void erase(process* ps);
 		bool enumerate(dword& id);
-		//ref_count incremented
-		process* get(dword id);
+		process* find(dword id,bool acquire);
 	};
 	extern process_manager proc;
 	

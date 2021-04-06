@@ -44,7 +44,9 @@ void pipe::manage(void* ptr){
 
 inline bool pipe::is_owner(void) const{
 	this_core core;
-	auto this_process = core.this_thread()->get_process();
+	auto this_thread = core.this_thread();
+	auto this_process = this_thread->has_context() ? proc.find(0,false) : this_thread->get_process();
+	assert(this_process);
 	return this_process == owner;
 }
 

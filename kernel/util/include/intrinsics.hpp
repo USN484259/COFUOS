@@ -8,7 +8,7 @@ namespace UOS{
 	inline byte in_byte(word port){
 		byte data;
 		ASM (
-			"in al, dx"
+			"in %0,%1"
 			: "=a" (data)
 			: "d" (port)
 		);
@@ -17,7 +17,16 @@ namespace UOS{
 	inline word in_word(word port){
 		word data;
 		ASM (
-			"in ax,dx"
+			"in %0,%1"
+			: "=a" (data)
+			: "d" (port)
+		);
+		return data;
+	}
+	inline dword in_dword(word port){
+		dword data;
+		ASM (
+			"in %0,%1"
 			: "=a" (data)
 			: "d" (port)
 		);
@@ -26,14 +35,21 @@ namespace UOS{
  
 	inline void out_byte(word port,byte data){
 		ASM (
-			"out dx,al"
+			"out %0,%1"
 			:
 			: "d" (port), "a" (data)
 		);
 	}
 	inline void out_word(word port,word data){
 		ASM (
-			"out dx,ax"
+			"out %0,%1"
+			:
+			: "d" (port), "a" (data)
+		);
+	}
+	inline void out_dword(word port,dword data){
+		ASM (
+			"out %0,%1"
 			:
 			: "d" (port), "a" (data)
 		);
@@ -86,7 +102,7 @@ namespace UOS{
 		);
 		return ((qword)hi << 32) | lo;
 	}
-	inline void halt(void){
+	inline void hlt(void){
 		ASM (
 			"hlt"
 		);

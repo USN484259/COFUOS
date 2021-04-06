@@ -17,6 +17,11 @@ inline qword pack_rect(const rectangle& rect){
 	return ((qword)rb << 32) | lt;
 }
 
+STATUS osctl(osctl_code cmd,void* buffer,dword* length){
+	auto res = syscall(srv::osctl,cmd,buffer,*length);
+	return unpack_qword(res,length);
+}
+
 STATUS os_info(OS_INFO* buffer,dword* length) {
 	auto res = syscall(srv::os_info,buffer,*length);
 	return unpack_qword(res,length);

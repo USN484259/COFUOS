@@ -40,12 +40,8 @@ void handle_table::clear(void){
 	assert(count == 0);
 }
 
-dword handle_table::put(waitable* ptr,bool already_locked){
-	interrupt_guard<void> ig;
-	if (already_locked)
-		assert(objlock.is_locked() && objlock.is_exclusive());
-	else
-		objlock.lock();
+dword handle_table::put(waitable* ptr){
+	interrupt_guard<rwlock> guard(objlock);
 	//interrupt_guard<rwlock> guard(objlock);
 	auto index = avl_base;
 	if (count*4 > top*3)
@@ -71,12 +67,9 @@ dword handle_table::put(waitable* ptr,bool already_locked){
 		slot = ptr;
 		++count;
 		top = max(top,index + 1);
-		break;
-		//return index;
+		return index;
 	}
-	if (!already_locked)
-		objlock.unlock();
-	return (index < limit) ? index : 0;
+	return 0;
 }
 
 bool handle_table::assign(dword index,waitable* ptr){
@@ -178,7 +171,7 @@ process::process(literal&& cmd,basic_file* file,const startup_info& info,const q
 	for (unsigned i = 0;i < 3;++i){
 		auto st = info.std_stream[i];
 		if (st){
-			st->acquire();
+			//st->acquire();
 			handles.assign(i + 1,st);
 		}
 	}
@@ -222,6 +215,7 @@ HANDLE process::spawn(thread::procedure entry,const qword* args,qword stk_size){
 }
 
 void process::kill(dword ret_val){
+	dbgprint("killing process %d @ %p",id,this);
 	this_core core;
 	auto this_thread = core.this_thread();
 	bool kill_self = false;
@@ -272,6 +266,16 @@ void process::erase(thread* th){
 	relax();
 }
 
+thread* process::find(dword tid,bool acq){
+	interrupt_guard<spin_lock> guard(objlock);
+	auto it = threads.find(tid);
+	if (it == threads.end())
+		return nullptr;
+	if (acq && !it->acquire())
+		return nullptr;
+	return &(*it);
+}
+
 REASON process::wait(qword us,wait_callback func){
 	if (state == STOPPED){
 		if (func){
@@ -303,23 +307,21 @@ process_manager::process_manager(void){
 	auto it = table.insert(process::initial_process_tag());
 	it->manage();
 }
-
+/*
 thread* process_manager::get_initial_thread(void){
 	interrupt_guard<spin_lock> guard(lock);
 	auto it = table.find(0);
 	assert(it != table.end());
 	return it->get_thread(0);
 }
-
+*/
 HANDLE process_manager::spawn(literal&& command,literal&& env,const process::startup_info& info){
 	assert(command);
 	//TODO replace with real file-opening logic
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
-	assert(this_process->handles.is_locked() && this_process->handles.is_exclusive());
-
+	// WARNING memory leak (lose file object) when get killed in this function
 	basic_file* file = nullptr;
-	HANDLE handle = 0;
 	do{
 		if (info.privilege < this_process->get_privilege())
 			break;
@@ -359,16 +361,22 @@ HANDLE process_manager::spawn(literal&& command,literal&& env,const process::sta
 		interrupt_guard<spin_lock> guard(lock);
 		auto it = table.insert(move(command),file,info,args);
 		it->manage();
-		file = nullptr;
-		handle = this_process->handles.put(&*it,true);
-		if (!handle)
-			it->relax();
+		HANDLE handle = this_process->handles.put(&*it);
+		if (handle)
+			return handle;
+		it->relax();
+		return 0;
 	}while(false);
-
+	
 	if (file)
 		delete file;
+	
+	for (auto i = 0;i < 3;++i){
+		if (info.std_stream[i])
+			info.std_stream[i]->relax();
+	}
 
-	return handle;
+	return 0;
 }
 
 void process_manager::erase(process* ps){
@@ -402,12 +410,12 @@ bool process_manager::enumerate(dword& id){
 	return true;
 }
 
-process* process_manager::get(dword id){
+process* process_manager::find(dword id,bool acq){
 	interrupt_guard<spin_lock> guard(lock);
 	auto it = table.find(id);
 	if (it == table.end())
 		return nullptr;
-	if (!it->acquire())
+	if (acq && !it->acquire())
 		return nullptr;
-	return &*it;
+	return &(*it);
 }

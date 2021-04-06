@@ -2,6 +2,7 @@
 #include "types.h"
 #include "thread.hpp"
 #include "dev/include/cpu.hpp"
+#include "sync/include/event.hpp"
 #include "intrinsics.hpp"
 
 namespace UOS{
@@ -20,9 +21,10 @@ namespace UOS{
 		static constexpr qword slice_us = 4*1000;
 		static constexpr byte max_slice = 8;
 		static constexpr byte max_priority = 0x10;
-		// [0] [1..3] [4..6] [7]
+		// [0] [1..4] [5] [6..E] [F]
 		static constexpr byte realtime_priority = 0;
 		static constexpr byte kernel_priority = 3;
+		static constexpr byte service_priority = 4;
 		static constexpr byte shell_priority = 5;
 		static constexpr byte user_priority = 0x0A;
 		static constexpr byte idle_priority = 0x0F;
@@ -55,7 +57,7 @@ namespace UOS{
 	class this_core{
 		friend class core_manager;
 		static void irq_switch_to(byte,void*);
-		void gc_service(void);
+		//void gc_step(void);
 	public:
 		this_core(void)
 #ifdef NDEBUG
@@ -85,10 +87,23 @@ namespace UOS{
 		//locks 'th' before calling, unlocks inside
 		void switch_to(thread* th);
 		//locks 'th' before calling, unlocks inside
-		void escape(thread* th);
+		//void escape(thread* th);
+	};
+
+	class gc_service{
+		spin_lock lock;
+		thread_queue queue;
+		event ev;
+
+		static void thread_gc(qword,qword,qword,qword);
+
+	public:
+		gc_service(void);
+		void put(thread* th);
 	};
 
 	extern scheduler ready_queue;
 	extern core_manager cores;
+	extern gc_service gc;
 }
 

@@ -7,7 +7,7 @@
 
 using namespace UOS;
 
-screen_buffer::screen_buffer(void){
+video_memory::video_memory(void){
 	if (sysinfo->VBE_bpp != 32)
 		bugcheck("bpp = %d not implemented",sysinfo->VBE_bpp);
 	auto aligned_pbase = align_down(sysinfo->VBE_addr,PAGE_SIZE);
@@ -36,7 +36,7 @@ screen_buffer::screen_buffer(void){
 	dbgprint("Video memory mapped to %p",vbe_memory);
 }
 
-bool screen_buffer::fill(const rectangle& rect,dword color){
+bool video_memory::fill(const rectangle& rect,dword color){
 	if (rect.left >= rect.right || rect.top >= rect.bottom)
 		return false;
 	if (rect.right > width || rect.bottom > height)
@@ -53,7 +53,7 @@ bool screen_buffer::fill(const rectangle& rect,dword color){
 	return true;
 }
 
-bool screen_buffer::draw(const rectangle& rect,const dword* sor,word advance){
+bool video_memory::draw(const rectangle& rect,const dword* sor,word advance){
 	if (!sor)
 		return false;
 	if (rect.left >= rect.right || rect.top >= rect.bottom)

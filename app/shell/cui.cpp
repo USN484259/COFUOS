@@ -23,30 +23,33 @@ inline void merge(rectangle& dst,const rectangle& sor){
 	dst.bottom = max(dst.bottom,sor.bottom);
 }
 
-CUI::CUI(word w,word h,dword* buffer,word linesize) : \
-	width(w),height(h), \
-	limit(align_up(sys_fnt.line_height()*width,PAGE_SIZE)), \
-	text_buffer((char*)operator new(limit)), \
-	back_buffer(buffer),line_size(linesize)
+text_buffer::text_buffer(dword lim) : \
+	buffer((char*)operator new(lim)), limit(lim)
 {
 	clear();
 }
 
-void CUI::set_focus(bool f){
-	if (f && !focus)
-		redraw = true;
-	focus = f;
+text_buffer::~text_buffer(void){
+	operator delete(buffer,(size_t)limit);
 }
 
-void CUI::put(char ch,bool input){
+void text_buffer::clear(void){
+	tail = edit = 0;
+}
+
+text_buffer::iterator text_buffer::end(bool input) const{
+	return iterator(this,input ? edit : tail);
+}
+
+char text_buffer::at(iterator it) const{
+	assert(it.pos < limit);
+	return buffer[it.pos];
+}
+
+text_buffer::iterator text_buffer::push(char ch,bool input){
 	auto pos = edit;
 	if (input){
-		switch(ch){
-			case '\n':
-			case '\t':
-				return;
-		}
-		text_buffer[edit++] = ch;
+		buffer[edit++] = ch;
 		if (edit >= limit)
 			edit = 0;
 	}
@@ -56,31 +59,178 @@ void CUI::put(char ch,bool input){
 			do{
 				if (!it){
 					it = limit - 1;
-					text_buffer[0] = text_buffer[it];
+					buffer[0] = buffer[it];
 				}
 				else{
 					--it;
-					text_buffer[it + 1] = text_buffer[it];
+					buffer[it + 1] = buffer[it];
 				}
 			}while(it != tail);
-			redraw = true;
 		}
-		text_buffer[tail++] = ch;
+		buffer[tail++] = ch;
 		if (tail >= limit)
 			tail = 0;
 		if (++edit >= limit)
 			edit = 0;
 	}
-	draw(ch,pos);
+	return iterator(this,pos);
 }
 
-char CUI::back(void){
+char text_buffer::pop(void){
 	if (tail == edit)
 		return 0;
 	if (edit == 0)
 		edit = limit;
-	--edit;
-	auto ch = text_buffer[edit];
+	return buffer[--edit];
+}
+
+text_buffer::iterator text_buffer::commit(void){
+	auto pos = tail;
+	tail = edit;
+	return iterator(this,pos);
+}
+
+text_buffer::iterator::iterator(const text_buffer* o,dword p) : owner(o),pos(p) {}
+
+text_buffer::iterator& text_buffer::iterator::operator=(const iterator& other){
+	owner = other.owner;
+	pos = other.pos;
+	return *this;
+}
+bool text_buffer::iterator::operator==(const iterator& cmp) const{
+	return owner == cmp.owner && pos == cmp.pos;
+}
+bool text_buffer::iterator::operator!=(const iterator& cmp) const{
+	return ! operator==(cmp);
+}
+char text_buffer::iterator::operator*(void) const{
+	if (owner){
+		assert(pos < owner->limit);
+		return owner->buffer[pos];
+	}
+	return 0;
+}
+text_buffer::iterator& text_buffer::iterator::operator++(void){
+	assert(owner);
+	if (++pos >= owner->limit)
+		pos = 0;
+	return *this;
+}
+text_buffer::iterator& text_buffer::iterator::operator--(void){
+	assert(owner);
+	if (pos == 0)
+		pos = owner->limit;
+	--pos;
+	return *this;
+}
+
+screen_buffer::screen_buffer(dword* ptr,word ls,word lc,word ws) : \
+	buffer(ptr),line_size(ls),line_count(lc),window_size(ws)
+{
+	assert(window_size < line_size);
+}
+
+bool screen_buffer::set_focus(bool f){
+	auto old = focus;
+	focus = f;
+	return old;
+}
+
+bool screen_buffer::clear(void){
+	if (!focus)
+		return false;
+	zeromemory(buffer,sizeof(dword)*line_size*window_size);
+	head_line = 0;
+	return true;
+}
+
+bool screen_buffer::scroll(word dy){
+	if (!focus || 0 == dy)
+		return false;
+	// [head_line + window_size,head_line + window_size + dy)
+	auto tail = (head_line + window_size) % line_count;
+	if (tail + dy <= line_count){
+		zeromemory(buffer + line_size*tail,sizeof(dword)*line_size*dy);
+	}
+	else{
+		auto count = line_count - tail;
+		zeromemory(buffer + line_size*tail,sizeof(dword)*line_size*count);
+		zeromemory(buffer,sizeof(dword)*line_size*(dy - count));
+	}
+	head_line = (head_line + dy) % line_count;
+	return true;
+}
+
+bool screen_buffer::pixel(word x,word y,dword color){
+	if (!focus || x >= line_size || y >= window_size)
+		return false;
+	auto line = (head_line + y) % line_count;
+	buffer[line_size*line + x] = color;
+	return true;
+}
+
+bool screen_buffer::fill(const rectangle& rect){
+	if (!focus || rect.left >= rect.right || rect.top >= rect.bottom \
+		|| rect.right > line_size || rect.bottom > window_size)
+			return false;
+	auto line = (head_line + rect.top) % line_count;
+	for (auto cnt = rect.top;cnt != rect.bottom;++cnt){
+		zeromemory(buffer + line_size*line + rect.left,sizeof(dword)*(rect.right - rect.left));
+		if (++line >= line_count)
+			line = 0;
+	}
+	return true;
+}
+
+void screen_buffer::imp_render(word xoff,word yoff,rectangle& rect,dword* line_base){
+	rect.left += xoff;
+	rect.top += yoff;
+	rect.right += xoff;
+	rect.bottom += yoff;
+	display_draw(line_base + rect.left,&rect,line_size);
+}
+
+bool screen_buffer::render(word xoff,word yoff,const rectangle& rect){
+	if (!focus || rect.left >= rect.right || rect.top >= rect.bottom)
+		return false;
+	rectangle region(rect);
+	auto line = (head_line + rect.top) % line_count;
+	if (line + (rect.bottom - rect.top) <= line_count){
+		imp_render(xoff,yoff,region,buffer + line_size*line);
+	}
+	else{
+		auto slice = line_count - line;
+		region.bottom = region.top + slice;
+		imp_render(xoff,yoff,region,buffer + line_size*line);
+		region.top = slice;
+		region.bottom = rect.bottom;
+		imp_render(xoff,yoff,region,buffer);
+	}
+	return true;
+}
+
+CUI::CUI(word w,word h,dword* buffer,word ls,word lc) : \
+	width(w),height(h),
+	text(align_up((dword)(h/sys_fnt.line_height()*width),PAGE_SIZE)),
+	screen(buffer,ls,lc,h)
+{
+	clear();
+}
+
+void CUI::set_focus(bool f){
+	if (f && !screen.set_focus(f))
+		redraw = true;
+}
+
+void CUI::put(char ch,bool input){
+	auto pos = text.push(ch,input);
+	draw(ch,pos);
+}
+
+char CUI::back(void){
+	if (!text.has_edit())
+		return 0;
+	auto ch = text.pop();
 	auto fc = sys_fnt.get(ch);
 	if (fc == nullptr)
 		return ch;
@@ -96,7 +246,7 @@ char CUI::back(void){
 	}
 
 	cursor.x -= fc->advance;
-	if (!focus)
+	if (!screen.has_focus())
 		return ch;
 	//clear current character
 	rectangle rect;
@@ -107,11 +257,9 @@ char CUI::back(void){
 	fill(rect);
 
 	//redraw previous character
-	dword it = edit;
-	while(it != tail){
-		if (it == 0)
-			it = limit;
-		fc = sys_fnt.get(text_buffer[--it]);
+	auto it = text.end(true);
+	while(it != text.end(false)){
+		fc = sys_fnt.get(text.at(--it));
 		if (fc == nullptr)
 			continue;
 		if (cursor.x < fc->advance)
@@ -124,51 +272,38 @@ char CUI::back(void){
 }
 
 dword CUI::get(char* dst,dword len){
-	dword top = (edit >= tail) ? edit : limit;
-	dword size = min(len,top - tail);
-	memcpy(dst,text_buffer + tail,size);
-	if (size < len && top == limit){
-		dst += size;
-		len -= size;
-		memcpy(dst,text_buffer,min(len,edit));
-		size += min(len,edit);
+	if (!text.has_edit())
+		return 0;
+	dword count = 0;
+	for (auto it = text.commit();count < len && it != text.end(false);++count,++it){
+		dst[count] = *it;
 	}
-	tail = edit;
-	return size;
+	return count;
 }
 
 void CUI::clear(void){
 	cursor = {0};
 	fill(rectangle{0,0,width,height});
-	tail = edit = 0;
+	text.clear();
 	lines.clear();
-	lines.push_back(line_info{0});
+	lines.push_back(line_info{text.end(false),0});
 }
 
 void CUI::fill(const rectangle& rect){
-	if (!focus)
-		return;
-	
-	auto dst = back_buffer + line_size*rect.top + rect.left;
-	for (unsigned y = 0;y < (rect.bottom - rect.top);++y){
-		zeromemory(dst,sizeof(dword)*(rect.right - rect.left));
-		dst += line_size;
-	}
-
-	merge(update_region,rect);
+	if (screen.fill(rect))
+		merge(update_region,rect);
 }
 
-void CUI::draw(char ch,dword pos){
+void CUI::draw(char ch,text_buffer::iterator pos){
 	switch(ch){
 		case '\n':
 		{
-			if (++pos >= limit)
-				pos = 0;
-			scroll(pos);
+			scroll(++pos);
 			return;
 		}
 		case '\t':
 		{
+			cursor.x += sys_fnt.get(' ')->advance;
 			auto tab_size = 4*sys_fnt.max_width();
 			cursor.x = (cursor.x / tab_size + 1)*tab_size;
 			return;
@@ -182,14 +317,12 @@ void CUI::draw(char ch,dword pos){
 	cursor.x = max<int>(-fc->xoff,cursor.x);
 	cursor.y = max<int>(-fc->yoff,cursor.y);
 
-	if (focus){
+	if (screen.has_focus()){
 		fc->render([=](const font::fontchar& obj,word px,word py,bool fg){
 			if (fg){
 				auto x = cursor.x + obj.xoff + px;
 				auto y = cursor.y + obj.yoff + py;
-				if (x >= width || y >= height)
-					return;
-				back_buffer[line_size*y + x] = color;
+				screen.pixel(x,y,color);
 			}
 		});
 		rectangle rect;
@@ -203,7 +336,7 @@ void CUI::draw(char ch,dword pos){
 	return;
 }
 
-void CUI::scroll(dword pos){
+void CUI::scroll(text_buffer::iterator pos){
 	auto length = cursor.x;
 	cursor.y += sys_fnt.line_height();
 	cursor.x = 0;
@@ -223,46 +356,27 @@ void CUI::scroll(dword pos){
 		}
 		lines.back() = line_info{pos,length};
 	}
-	
-	if (focus){
-		for (auto line = 0;line + dy < height;++line){
-			memcpy(back_buffer + line_size*line,
-				back_buffer + line_size*(line + dy),
-				sizeof(dword)*line_size);
-		}
-		zeromemory(back_buffer + line_size*cursor.y,
-			sizeof(dword)*line_size*(height - cursor.y));
-	}
+	screen.scroll(dy);
 	assign(update_region,rectangle{0,0,width,height});
 }
 
 void CUI::render(word xoff,word yoff){
-	if (!focus)
+	if (!screen.has_focus())
 		return;
 	if (redraw){
 		auto head = lines.front().head;
 		lines.clear();
 		cursor = {0};
-		zeromemory(back_buffer,sizeof(dword)*line_size*height);
+		screen.clear();
 		redraw = false;
 		lines.push_back(line_info{head,0});
-		while(head != edit){
-			auto pos = head;
-			auto ch = text_buffer[head++];
-			if (head == limit)
-				head = 0;
-			draw(ch,pos);
+		for (;head != text.end(true);++head){
+			auto ch = text.at(head);
+			draw(ch,head);
 		}
-
 		assign(update_region,rectangle{0,0,width,height});
 	}
-	rectangle rect(update_region);
-	rect.left += xoff;
-	rect.top += yoff;
-	rect.right += xoff;
-	rect.bottom += yoff;
-	display_draw(back_buffer + line_size*update_region.top + update_region.left,&rect,line_size);
-
+	screen.render(xoff,yoff,update_region);
 	assign(update_region,rectangle{0});
 }
 
@@ -296,8 +410,6 @@ bool label::put(char ch){
 		if (fg){
 			auto x = cursor + obj.xoff + px;
 			auto y = max<int>(obj.yoff,0) + py;
-			if (x >= limit || y >= sys_fnt.line_height())
-				return;
 			buffer[limit*y + x] = 0x00FFFFFF;
 		}
 	});

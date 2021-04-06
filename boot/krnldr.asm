@@ -3,14 +3,14 @@ IA32_APIC_BASE equ 0x1B
 
 HIGHADDR equ 0xFFFF_8000_0000_0000
 
+SYSINFO_BASE equ 0x0500
+SYSINFO_LEN equ 0x100
+
 GDT_BASE equ 0x0600
 GDT_LIM equ 0x600	;96 entries
 
 IDT_BASE equ 0x0C00
 IDT_LIM equ 0x400	;64 entries
-
-SYSINFO_BASE equ 0x0500
-SYSINFO_LEN equ 0x100
 
 PAGE_SIZE equ 0x1000
 SECTOR_SIZE equ 0x200
@@ -35,16 +35,16 @@ PMMSCAN_LEN equ 0x0F00
 
 ;	physical Memory layout
 
-;	000000		001000		RW	GDT & IDT
-;	001000		002000		RW	PMMSCAN & VBE_scan & fatal ISR & loader stk
+;	000000		001000		RWT	GDT & IDT
+;	001000		002000		RWT	PMMSCAN & VBE_scan & fatal ISR & loader stk
 ;	002000		003000		RX	loader & MP entry & sysinfo
-;	003000		004000		RW	PL4T
-;	004000		005000		RW	PDPT low
-;	005000		006000		RW	PDPT high
-;	006000		007000		RW	PDT
-;	007000		008000		RW	PT0
-;	008000		009000		RW	krnl PT
-;	009000		00A000		RW	mapper PT
+;	003000		004000		RWT	PL4T
+;	004000		005000		RWT	PDPT low
+;	005000		006000		RWT	PDPT high
+;	006000		007000		RWT	PDT
+;	007000		008000		RWT	PT0
+;	008000		009000		RWT	krnl PT
+;	009000		00A000		RWT	mapper PT
 ;	00A000		010000		RW	avl
 ;-------------direct map---------------------
 ;	010000		?			?	kernel pages
@@ -103,8 +103,8 @@ align 4
 strvberr db 'No proper video mode',0
 align 4
 strnoacpi db 'ACPI not found',0
-; align 4
-; strnopci db 'PCI not found',0
+align 4
+strnopci db 'PCI not found',0
 
 align 16
 
@@ -342,19 +342,19 @@ mov di,SYSINFO_BASE+sysinfo.FAT_header
 mov cx,7
 es rep movsw
 
-; PCI_scan:
-; mov ax,0xB101
-; int 0x1A
-; jc .fail
-; and al,1
-; cmp edx,0x20494350
-; jnz .fail
-; cmp ax,1
-; jz .end
-; .fail:
-; mov si,strnopci
-; jmp abort16
-; .end:
+PCI_scan:
+mov ax,0xB101
+int 0x1A
+jc .fail
+and al,1
+cmp edx,0x20494350
+jnz .fail
+cmp ax,1
+jz .end
+.fail:
+mov si,strnopci
+jmp abort16
+.end:
 
 ACPI_scan:
 
@@ -1380,14 +1380,27 @@ ReadSector:
 push rdi
 
 
-mov r9,rdx		;LBA
-mov rax,r8		;cnt
+mov r9d,edx		;LBA
 mov rdi,rcx		;dst
 
-mov dx,0x1F2
+mov dx,0x1F6
+in al,dx
+bt al,4			;drive select
+mov eax,r9d
+setc cl
+shr eax,24
+shl cl,4
+and al,0x0F		;LBA 27..24
+or cl,0xE0
+
+or al,cl
 out dx,al
 
-mov rax,r9
+mov dx,0x1F2
+mov al,r8b		;cnt
+out dx,al
+
+mov eax,r9d
 inc dx
 out dx,al		;0x1F3
 
@@ -1399,15 +1412,9 @@ shr eax,8
 inc dx
 out dx,al		;0x1F5
 
-shr eax,8
-inc dx
-btr eax,4
-or al,0xE0
-out dx,al		;0x1F6
-
-mov al,0x20
-inc dx
-out dx,al		;0x1F7
+mov al,0x20		;read sector
+mov dx,0x1F7
+out dx,al
 
 xor ecx,ecx
 .wait:
@@ -1416,7 +1423,7 @@ inc ecx
 jz .fail
 
 pause
-
+;dx == 0x1F7
 in al,dx
 test al,0x80
 jnz .wait

@@ -5,14 +5,17 @@
 #include "memory/include/heap.hpp"
 #include "memory/include/pm.hpp"
 #include "memory/include/vm.hpp"
-#include "dev/include/acpi.hpp"
 #include "process/include/process.hpp"
 #include "process/include/core_state.hpp"
+#include "dev/include/acpi.hpp"
 #include "dev/include/apic.hpp"
 #include "dev/include/timer.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/ps_2.hpp"
+#include "dev/include/pci.hpp"
+#include "dev/include/ide.hpp"
+#include "dev/include/disk_cache.hpp"
 #include "interface/include/object.hpp"
 
 namespace UOS{
@@ -39,6 +42,7 @@ namespace UOS{
 		}while(true);
 	});
 	ACPI acpi;
+	PCI pci;
 	process_manager proc;
 	scheduler ready_queue;
 
@@ -46,7 +50,15 @@ namespace UOS{
 	basic_timer timer;
 	RTC rtc;
 	core_manager cores;
+	gc_service gc;
 	object_manager named_obj;
-	screen_buffer display;
+	video_memory display;
 	PS_2 ps2_device;
+	IDE ide;
+	disk_cache dm([](qword total) -> word{
+		total /= 0x100;
+		total = max<qword>(total,8);
+		total = min<qword>(total,64);
+		return total;
+	}(pm.capacity()));
 }

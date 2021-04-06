@@ -174,6 +174,13 @@ void thread::on_stop(void){
 		}
 		hold_lock = 0;
 	}
+	objlock.unlock();
+	gc.put(this);
+}
+
+void thread::on_gc(void){
+	interrupt_guard<spin_lock> guard(objlock);
+	guard.drop();
 	notify();
 	ps->on_exit();
 	relax();
@@ -225,32 +232,25 @@ void thread::sleep(qword us){
 			break;
 		next_thread->on_stop();
 	}while(true);
-	bool res;
 	this_thread->lock();
 	if (us){
 		auto ticket = timer.wait(us,on_timer,this_thread);
-		res = this_thread->set_state(thread::WAITING,ticket,nullptr);
-		if (!res){
+		if (!this_thread->set_state(thread::WAITING,ticket,nullptr)){
 			timer.cancel(ticket);
 		}
 	}
 	else{
-		res = this_thread->set_state(thread::READY);
-		if (res){
+		if (this_thread->set_state(thread::READY)){
 			this_thread->put_slice(scheduler::max_slice);
 			ready_queue.put(this_thread);
 		}
 	}
 	this_thread->unlock();
-	if (res){
-		core.switch_to(next_thread);
-	}
-	else{
-		core.escape(next_thread);
-	}	
+	core.switch_to(next_thread);
 }
 
 void thread::kill(thread* th){
+	dbgprint("killing thread %d @ %p",th->id,th);
 	this_core core;
 	thread* this_thread = core.this_thread();
 	bool kill_self = (this_thread == th);
@@ -260,6 +260,7 @@ void thread::kill(thread* th){
 		//th->set_state(STOPPED);
 		auto state = th->state;
 		th->state = STOPPED;
+		assert(!kill_self || state == RUNNING);
 		if (state == WAITING){
 			if (th->wait_for){
 				th->wait_for->cancel(th);
@@ -277,5 +278,6 @@ void thread::kill(thread* th){
 	}
 	if (kill_self){
 		core_manager::preempt(true);
+		bugcheck("failed to escape @ %p",th);
 	}
 }

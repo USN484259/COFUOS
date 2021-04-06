@@ -183,6 +183,6 @@ void dispatch_exception(byte id,qword errcode,context* context){
 	}
 	cli();
 	while(true){
-		halt();
+		hlt();
 	}
 }

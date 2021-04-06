@@ -3,9 +3,11 @@
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
 #include "lock_guard.hpp"
+#include "dev/include/acpi.hpp"
 #include "dev/include/display.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/timer.hpp"
+#include "dev/include/disk_cache.hpp"
 #include "object.hpp"
 #include "sync/include/semaphore.hpp"
 #include "sync/include/event.hpp"
@@ -109,6 +111,43 @@ service_provider::service_provider(void){
 	this_thread = core.this_thread();
 	this_process = this_thread->get_process();
 	vspace = this_process->vspace;
+}
+
+qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
+	if (this_process->get_privilege() > SHELL)
+		return DENIED;
+	bool write;
+	switch(cmd){
+		case bugcheck:
+			write = false;
+			break;
+		case disk_read:
+			write = true;
+			break;
+		case halt:
+			shutdown();
+		default:
+			return BAD_PARAM;
+	}
+	memory_lock lock(buffer,length,write);
+	if (!lock.get())
+		return BAD_BUFFER;
+	
+	switch(cmd){
+		case bugcheck:
+			bugcheck("%t",buffer,length);
+			return FAILED;
+		case disk_read:
+		{
+			if (length < SECTOR_SIZE)
+				return TOO_SMALL;
+			auto lba = *(qword*)buffer;
+			if (!dm.read(lba,1,buffer))
+				return FAILED;
+			return pack_qword(SUCCESS,1);
+		}
+	}
+	bugcheck("unknown osctl %x",(qword)cmd);
 }
 
 qword service_provider::os_info(void* buffer,dword limit){
@@ -216,7 +255,7 @@ STATUS service_provider::set_priority(HANDLE handle,byte val){
 	auto th = static_cast<thread*>(lock.get(handle,THREAD));
 	if (th == nullptr)
 		return BAD_HANDLE;
-	if (val >= scheduler::idle_priority || val <= scheduler::kernel_priority)
+	if (val >= scheduler::idle_priority || val < scheduler::shell_priority)
 		return BAD_PARAM;
 	if (val <= scheduler::shell_priority && this_process->get_privilege() > SHELL)
 		return DENIED;
@@ -388,24 +427,28 @@ qword service_provider::create_process(void const* ptr,dword length){
 	process::startup_info ps_info;
 	ps_info.privilege = info->flags ? (PRIVILEGE)info->flags : this_process->get_privilege();
 
-	handle_lock hlock;
-	for (auto i = 0;i < 3;++i){
-		if (0 == info->std_handle[i]){
-			ps_info.std_stream[i] = 0;
-			continue;
+	{
+		handle_lock hlock;
+		for (auto i = 0;i < 3;++i){
+			if (0 == info->std_handle[i]){
+				ps_info.std_stream[i] = 0;
+				continue;
+			}
+			auto st = hlock.get(info->std_handle[i],STREAM);
+			if (st == nullptr)
+				return BAD_HANDLE;
+			ps_info.std_stream[i] = static_cast<stream*>(st);
 		}
-		auto st = hlock.get(info->std_handle[i],STREAM);
-		if (st == nullptr)
-			return BAD_HANDLE;
-		ps_info.std_stream[i] = static_cast<stream*>(st);
+		for (auto i = 0;i < 3;++i){
+			if (ps_info.std_stream[i])
+				ps_info.std_stream[i]->acquire();
+		}
 	}
-
 	literal cmd(info->commandline,info->commandline + info->cmd_length);
 	literal env;
 	if (info->environment)
 		env.assign(info->environment,info->environment + info->env_length);
 	
-	hlock.upgrade();
 	auto hproc = proc.spawn(move(cmd),move(env),ps_info);
 	if (hproc)
 		return pack_qword(SUCCESS,hproc);
@@ -413,7 +456,7 @@ qword service_provider::create_process(void const* ptr,dword length){
 }
 qword service_provider::open_process(dword id){
 	interrupt_guard<void> ig;
-	auto ps = proc.get(id);
+	auto ps = proc.find(id,true);
 	if (ps == nullptr)
 		return BAD_PARAM;
 	if (this_process->get_privilege() > ps->get_privilege()){

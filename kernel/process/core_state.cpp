@@ -54,7 +54,10 @@ core_manager::core_manager(void){
 	core_list[0] = (core_state*)va;
 	auto& self = *core_list[0];
 	self.uid = apic.id();
-	auto th = proc.get_initial_thread();
+	auto ps = proc.find(0,false);
+	assert(ps);
+	auto th = ps->find(0,false);
+	assert(th);
 	self.this_thread = th;
 	self.fpu_owner = th;
 	self.gc_ptr = nullptr;
@@ -126,13 +129,9 @@ void core_manager::preempt(bool lower){
 		this_thread->lock();
 		if (this_thread->set_state(thread::READY)){
 			ready_queue.put(this_thread);
-			this_thread->unlock();
-			core.switch_to(next_thread);
 		}
-		else{
-			this_thread->unlock();
-			core.escape(next_thread);
-		}
+		this_thread->unlock();
+		core.switch_to(next_thread);
 	}
 	else if (this_thread->get_state() == thread::STOPPED){
 		do{
@@ -144,7 +143,9 @@ void core_manager::preempt(bool lower){
 				break;
 			next_thread->on_stop();
 		}while(true);
-		core.escape(next_thread);
+		// core.escape(next_thread);
+		core.switch_to(next_thread);
+		bugcheck("failed to escape @ %p",this_thread);
 	}
 }
 
@@ -162,6 +163,22 @@ void this_core::irq_switch_to(byte,void* data){
 	assert(cur_thread->has_context());
 	auto time_tick = timer.running_time();
 	lock_add(&cur_thread->get_process()->cpu_time,time_tick - cur_thread->slice_timestamp);
+
+	bool need_gc = (cur_thread->get_state() == thread::STOPPED);
+	//gc step
+	auto gc_th = reinterpret_cast<thread*>(
+			read_gs<qword>(offsetof(core_state,gc_ptr))
+		);
+	if (gc_th){
+		gc_th->lock();
+		gc_th->on_stop();
+		dbgprint("gc relaxed %p",gc_th);
+		if (!need_gc)
+			write_gs<qword>(offsetof(core_state,gc_ptr),0);
+	}
+	if (need_gc){
+		write_gs(offsetof(core_state,gc_ptr),reinterpret_cast<qword>(cur_thread));
+	}
 
 	thread* target;
 	if (data){
@@ -194,8 +211,8 @@ inline void context_trap(qword data){
 		: "i" (APIC::IRQ_CONTEXT_TRAP), "c" (data)
 	);
 }
-
-void this_core::gc_service(void){
+/*
+void this_core::gc_step(void){
 	auto gc_thread = reinterpret_cast<thread*>(
 			read_gs<qword>(offsetof(core_state,gc_ptr))
 		);
@@ -206,13 +223,13 @@ void this_core::gc_service(void){
 		write_gs<qword>(offsetof(core_state,gc_ptr),0);
 	}
 }
-
+*/
 void this_core::switch_to(thread* th){
 	IF_assert;
 	assert(th && th->is_locked() && th->has_context());
 	assert(th->get_state() == thread::RUNNING);
-	assert(this_thread()->get_state() != thread::RUNNING);
-	gc_service();
+	//assert(this_thread()->get_state() != thread::RUNNING);
+	//gc_step();
 	//dbgprint("%d --> %d", this_thread()->id, th->id);
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
@@ -221,13 +238,13 @@ void this_core::switch_to(thread* th){
 		context_trap(reinterpret_cast<qword>(th));
 	}
 }
-
+/*
 void this_core::escape(thread* th){
 	IF_assert;
 	assert(th && th->is_locked() && th->has_context());
 	assert(th->get_state() == thread::RUNNING);
 	assert(this_thread()->get_state() == thread::STOPPED);
-	gc_service();
+	gc_step();
 	write_gs(offsetof(core_state,gc_ptr),this_thread());
 	//dbgprint("%d --> %d", this_thread()->id, th->id);
 	if (this_thread()->has_context()){
@@ -235,5 +252,44 @@ void this_core::escape(thread* th){
 	}
 	else{
 		context_trap(reinterpret_cast<qword>(th));
+	}
+}
+*/
+
+gc_service::gc_service(void){
+	this_core core;
+	auto this_process = core.this_thread()->get_process();
+	qword args[4] = {reinterpret_cast<qword>(this)};
+	this_process->spawn(thread_gc,args);
+}
+
+void gc_service::put(thread* th){
+	assert(th->get_state() == thread::STOPPED);
+	{
+		interrupt_guard<spin_lock> guard(lock);
+		queue.put(th);
+	}
+	ev.signal_one();
+}
+
+void gc_service::thread_gc(qword arg,qword,qword,qword){
+	{
+		this_core core;
+		core.this_thread()->set_priority(scheduler::service_priority);
+	}
+	auto self = reinterpret_cast<gc_service*>(arg);
+	while(true){
+		self->ev.wait();
+		do{
+			thread* th;
+			{
+				interrupt_guard<spin_lock> guard(self->lock);
+				th = self->queue.get();
+			}
+			if (th == nullptr)
+				break;
+			dbgprint("gc service on %p",th);
+			th->on_gc();
+		}while(true);
 	}
 }

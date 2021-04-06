@@ -18,6 +18,8 @@
 
 #define PAGE_SIZE ((qword)0x1000)
 #define PAGE_MASK ((qword)0x0FFF)
+#define SECTOR_SIZE ((qword)0x200)
+#define SECTOR_MASK ((qword)0x1FF)
 
 #define FATAL_STK_TOP HIGHADDR(0x2000)
 
@@ -26,6 +28,7 @@
 #define IDT_BASE HIGHADDR(0x0C00)
 #define IDT_LIM ((qword)0x400)
 #define SYSINFO_BASE HIGHADDR(0x0500)
+#define PRDT_PBASE ((qword)0x1000)
 
 #define PL4T_PBASE ((qword)0x3000)
 #define PDPT0_PBASE ((qword)0x4000)
@@ -56,3 +59,6 @@
 #define PAGE_USER ((qword)0x04)
 #define PAGE_WRITE ((qword)0x02)
 #define PAGE_PRESENT ((qword)0x01)
+
+#define PCI_CONFIG_ADDRESS 0xCF8
+#define PCI_CONFIG_DATA 0xCFC

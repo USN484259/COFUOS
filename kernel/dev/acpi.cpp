@@ -13,7 +13,7 @@ void UOS::shutdown(void){
 	while (true){
 		out_word(0xB004, 0x2000);	//Bochs shutdown
 		out_word(0x4004, 0x3400);	//VirtualBox shutdown
-		halt();
+		hlt();
 	}
 }
 

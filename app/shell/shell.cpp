@@ -15,11 +15,14 @@ word clock_pos = 0;
 label* wall_clock = nullptr;
 terminal* term = nullptr;
 
+inline word count_line(word height){
+	return align_up(height + sys_fnt.line_height()*2,0x10);
+}
 
 terminal::terminal(word w,word h,const char* msg) : \
 	width(w),height(h),line_size(align_up(w,0x10)), \
-	back_buffer((dword*)operator new(sizeof(dword)*line_size*height)), \
-	cui(width,height,back_buffer,line_size)
+	back_buffer((dword*)operator new(sizeof(dword)*line_size*count_line(h))), \
+	cui(width,height,back_buffer,line_size,count_line(h))
 {
 	dword res;
 	res = create_object(SEMAPHORE,1,0,&lock);
@@ -115,32 +118,61 @@ void terminal::dispatch(void){
 		in_pipe_dirty = true;
 	}
 	else{
+		bool sudo = false;
+		auto cmd = buffer;
+		if (size > 5 && match<const char*>(buffer,"sudo ",5) == 5){
+			cmd += 5;
+			size -= 5;
+			sudo = true;
+		}
+
+		if (size >= 5 && match<const char*>(cmd,"abort",5) == 5){
+			abort();
+			return;
+		}
+		if (size >= 5 && match<const char*>(cmd,"clear",5) == 5){
+			cui.clear();
+			show_shell();
+			return;
+		}
+		if (size >= 6 && match<const char*>(cmd,"reload",6) == 6){
+			cui.set_focus(false);
+			cui.set_focus(true);
+			show_shell();
+			return;
+		}
+		if (size >= 4 && match<const char*>(cmd,"halt",4) == 4){
+			dword size = 0;
+			osctl(halt,nullptr,&size);
+			abort();
+		}
+
 		STARTUP_INFO info = {0};
-		info.commandline = buffer;
+		info.commandline = cmd;
 		info.cmd_length = size;
-		info.flags = NORMAL;
+		info.flags = sudo ? SHELL : NORMAL;
 		info.std_handle[0] = in_pipe;
 		info.std_handle[1] = out_pipe;
 		info.std_handle[2] = stderr;
 
 		if (SUCCESS == create_process(&info,sizeof(STARTUP_INFO),&ps)){
 			signal(barrier,1);
-			fprintf(stderr,"handle %x, process $%d",ps,process_id(ps));
+			fprintf(stderr,"handle %x, process $%d\n",ps,process_id(ps));
 		}
 		else{
 			ps = 0;
 			if (size){
 				unsigned i;
 				for (i = 0;i < size;++i){
-					if (buffer[i] == ' ')
+					if (cmd[i] == ' ')
 						break;
 				}
-				if (i == sizeof(buffer))
+				if (cmd + i == buffer + sizeof(buffer))
 					--i;
-				buffer[i] = 0;
+				cmd[i] = 0;
 
 				print("command \'");
-				print(buffer);
+				print(cmd);
 				print("\' not found");
 			}
 			show_shell();
@@ -182,7 +214,7 @@ void terminal::put(char ch){
 	else{
 		if (ch == 0x0A)	//enter
 			dispatch();
-		else
+		else if (ch != '\t')
 			cui.put(ch,true);
 	}
 }
@@ -275,7 +307,7 @@ void update_clock(void){
 }
 
 int main(int argc,char** argv){
-	fprintf(stderr,"%s",argv[0]);
+	fprintf(stderr,"%s\n",argv[0]);
 	{
 		char str[0x80];
 		OS_INFO info[2];

@@ -18,7 +18,7 @@ bin/COFUOS.sys: $(MODULES) bin/hal.o bin/embed_test.o $(COFUOS_ROOT)/util/includ
 $(MODULES):
 	@cd $@ && $(MAKE)
 
-bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/shell/bin/shell.exe $(COFUOS_ROOT)/app/test/bin/echo.exe
+bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/shell/bin/shell.exe $(wildcard $(COFUOS_ROOT)/app/test/bin/*.exe)
 	$(NASM) -f win64 $< -o $@
 
 bin/hal.o:	hal.asm

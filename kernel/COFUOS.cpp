@@ -6,6 +6,7 @@
 #include "dev/include/ps_2.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/timer.hpp"
+#include "dev/include/ide.hpp"
 #include "pe64.hpp"
 #include "process/include/core_state.hpp"
 #include "process/include/thread.hpp"
@@ -68,11 +69,10 @@ void thread_shell(qword,qword,qword,qword){
 	},reinterpret_cast<void*>(dev_pipe));
 	bool bad = false;
 	while(true){
-		this_process->handles.lock();
 		process::startup_info info = {SHELL,dev_pipe,nullptr,kdb_pipe};
-		this_process->handles.upgrade();
+		dev_pipe->acquire();
+		kdb_pipe->acquire();
 		HANDLE handle_shell = proc.spawn("shell","",info);
-		this_process->handles.unlock();
 
 		if (!handle_shell)
 			bugcheck("shell failed to launch");
@@ -98,6 +98,19 @@ void thread_shell(qword,qword,qword,qword){
 	bugcheck("shell not stable");
 }
 
+void thread_ide_test(qword,qword,qword,qword){
+	this_core core;
+	auto this_thread = core.this_thread();
+	auto phy_addr = pm.allocate(PM::MUST_SUCCEED);
+	dword samples[] = {0,0x0FFFFFFF,sysinfo->FAT_header};
+	for (auto lba : samples){
+		if (ide.read(lba,phy_addr,SECTOR_SIZE)){
+			map_view view(phy_addr);
+			dbgprint("IDE read LBA %x : %x",(qword)lba,(qword)*((const word*)view + 255));
+		}
+	}
+	thread::kill(this_thread);
+}
 
 typedef void (*global_constructor)(void);
 
@@ -137,7 +150,9 @@ void krnlentry(void* module_base){
 		HANDLE th = this_process->spawn(thread_shell,args);
 		if (th == 0)
 			bugcheck("failed to spawn shell thread");
-		this_process->handles.close(th);
+
+		th = this_process->spawn(thread_ide_test,args);
+		assert(th);
 	}
 
 /*
@@ -180,6 +195,6 @@ void krnlentry(void* module_base){
 
 	//as idle thread
 	while(true){
-		halt();
+		hlt();
 	}
 }

@@ -28,10 +28,6 @@ namespace UOS{
 		inline void drop(void){
 			table = nullptr;
 		}
-		inline void upgrade(void){
-			if(table)
-				table->upgrade();
-		}
 		waitable* get(HANDLE handle,OBJTYPE type = UNKNOWN) const;
 	};
 
@@ -42,6 +38,7 @@ namespace UOS{
 		virtual_space* vspace;
 		service_provider(void);
 
+		qword osctl(osctl_code cmd,void* buffer,dword length);
 		qword os_info(void* buffer,dword limit);
 		qword get_time(void);
 		qword enum_process(dword id);

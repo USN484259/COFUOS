@@ -3,8 +3,9 @@
 
 namespace UOS{
 	enum service_code : word {
-		os_info			= 0x0000,
-		get_time		= 0x0008,
+		osctl			= 0x0000,
+		os_info			= 0x0008,
+		get_time		= 0x000C,
 		enum_process	= 0x0010,
 		display_fill	= 0x0020,
 		display_draw	= 0x0028,

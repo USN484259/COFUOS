@@ -6,6 +6,7 @@
 extern "C" {
 #endif
 
+enum STATUS		osctl(enum osctl_code cmd,void* buffer,dword* length);
 enum STATUS		os_info(struct OS_INFO* buffer,dword* length);
 qword			get_time(void);
 enum STATUS		enum_process(dword* id);

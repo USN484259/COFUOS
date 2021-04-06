@@ -175,6 +175,8 @@ extern "C"
 qword kernel_service(dword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 	service_provider srv;
 	switch(cmd){
+		case osctl:
+			return srv.osctl((osctl_code)a1,(void*)a2,a3);
 		case os_info:
 			return srv.os_info((void*)a1,a2);
 		case get_time:

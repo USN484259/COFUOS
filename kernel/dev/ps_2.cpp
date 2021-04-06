@@ -1,6 +1,7 @@
 #include "ps_2.hpp"
-#include "dev/include/apic.hpp"
+#include "apic.hpp"
 #include "acpi.hpp"
+#include "rtc.hpp"
 #include "lock_guard.hpp"
 #include "intrinsics.hpp"
 #include "process/include/core_state.hpp"
@@ -69,7 +70,7 @@ inline byte translate(byte code,byte stat){
 
 PS_2::safe_queue::safe_queue(void) : buffer((byte*)operator new(QUEUE_SIZE)), head(0),tail(0) {}
 PS_2::safe_queue::~safe_queue(void){
-	operator delete(buffer,QUEUE_SIZE);
+	operator delete(buffer,(size_t)QUEUE_SIZE);
 }
 
 byte PS_2::safe_queue::get(void){

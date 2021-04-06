@@ -240,14 +240,17 @@ bt r11d,8	;TF
 mov r10,[gs:8]
 mov r11,rsp	;user rsp as context
 mov rsp,[r10+KSP_OFF]
-sti
 setc r10b
+sti
 sub rsp,0x40
-shl r10d,8
 mov [rsp+0x20],rcx	; user rip
-mov [rsp+0x28],r11	; user rsp
-mov [rsp+0x30],r10d	; user rflags
+shl r10d,8
 mov rcx,rax
+mov [rsp+0x28],r11	; user rsp
+mov ax,ss
+mov [rsp+0x30],r10d	; user rflags
+mov ds,ax
+mov es,ax
 call kernel_service
 cli
 mov r11d,0x202

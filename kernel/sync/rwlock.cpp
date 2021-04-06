@@ -71,6 +71,15 @@ void rwlock::upgrade(void){
 	bugcheck("upgrading deleted rwlock @ %p",this);
 }
 
+void rwlock::downgrade(void){
+	interrupt_guard<spin_lock> guard(objlock);
+	assert(owner && share_count == 0);
+	share_count = 1;
+	owner = nullptr;
+	guard.drop();
+	notify();
+}
+
 void rwlock::unlock(void){
 	interrupt_guard<spin_lock> guard(objlock);
 	if (owner){

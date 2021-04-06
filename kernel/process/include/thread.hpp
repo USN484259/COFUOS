@@ -126,6 +126,7 @@ namespace UOS{
 		void manage(void* = nullptr) override;
 		// lock before calling, unlocks inside
 		void on_stop(void);
+		void on_gc(void);
 		void save_sse(void);
 		void load_sse(void);
 		void hold(byte val);

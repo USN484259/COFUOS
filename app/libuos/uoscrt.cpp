@@ -137,13 +137,17 @@ unsigned long long strtoull(const char* str,char** end,int base){
 	unsigned long long val = 0;
 	while (*str && isspace(*str))
 		++str;
+	
+	if (base == 0){
+		if (*str =='0')
+			base = ((~0x20 & *(str+1)) == 'X') ? 0x10 : 8;
+		else
+			base = 10;
+	}
+	if (base == 0x10 && *str == '0' && (~0x20 & *(str+1)) == 'X')
+		str += 2;
+	
 	while(*str){
-		if (base == 0){
-			if (*str =='0')
-				base = ((~0x20 & *(str+1)) == 'X') ? 0x10 : 8;
-			else
-				base = 10;
-		}
 		byte digit = hex2bin(*str);
 		if (digit >= base)
 			break;

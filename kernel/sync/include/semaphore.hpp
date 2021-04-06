@@ -13,6 +13,9 @@ namespace UOS{
 		OBJTYPE type(void) const override{
 			return SEMAPHORE;
 		}
+		dword max_count(void) const{
+			return total;
+		}
 		bool check(void) override;
 		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool signal(void);
