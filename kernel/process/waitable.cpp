@@ -88,10 +88,16 @@ REASON waitable::imp_wait(qword us){
 			bugcheck("waiting on self @ %p",this);
 	}
 	thread* next_thread;
+	thread* put_back = nullptr;
 	do{
 		next_thread = ready_queue.get();
 		if (!next_thread)
 			bugcheck("no ready thread");
+		if (next_thread == this){
+			// corner case: when (whatever) waits on (this), and (this) is a ready thread
+			put_back = next_thread;
+			continue;
+		}
 		next_thread->lock();
 		if (next_thread->set_state(thread::RUNNING))
 			break;
@@ -111,6 +117,8 @@ REASON waitable::imp_wait(qword us){
 		timer.cancel(ticket);
 	}
 	this_thread->unlock();
+	if (put_back)
+		ready_queue.put(put_back);
 	objlock.unlock();
 	core.switch_to(next_thread);
 	return this_thread->get_reason();

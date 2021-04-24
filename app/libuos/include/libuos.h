@@ -43,7 +43,7 @@ enum STATUS		vm_protect(void* base,dword count,qword attrib);
 void*			vm_reserve(void* base,dword count);
 enum STATUS		vm_commit(void* base,dword count);
 enum STATUS		vm_release(void* base,dword count);
-dword			iostate(HANDLE handle);
+dword			iostate(HANDLE handle,dword* count);
 dword			read(HANDLE handle,void* buffer,dword* length);
 dword			write(HANDLE handle,const void* buffer,dword* length);
 

@@ -130,6 +130,8 @@ bool IDE::read(qword lba,dword pa,word size){
 				sync.signal();
 				return result;
 			}
+			default:
+				bugcheck("IDE event corrupted");
 		}
 	}while(false);
 	bugcheck("invalid IDE state");
@@ -140,11 +142,12 @@ bool IDE::write(qword lba,dword pa,word size){
 	return false;
 }
 
-void IDE::on_irq(byte irq,void* ptr){
+bool IDE::on_irq(byte irq,void* ptr){
 	auto self = (IDE*)ptr;
 	byte stat = in_byte(self->dma_base + 2);
 	if (0 == (stat & 4))	//not this device
-		return;
+		return false;
 	out_byte(self->dma_base + 0,0);	//halt the DMA
 	self->ev.signal_all();
+	return true;
 }

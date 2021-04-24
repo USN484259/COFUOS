@@ -24,7 +24,7 @@ namespace UOS{
 		semaphore sync;
 		event ev;
 
-		static void on_irq(byte irq,void* ptr);
+		static bool on_irq(byte irq,void* ptr);
 
 	public:
 		IDE(void);

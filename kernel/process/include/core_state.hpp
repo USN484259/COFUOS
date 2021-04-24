@@ -56,7 +56,7 @@ namespace UOS{
 
 	class this_core{
 		friend class core_manager;
-		static void irq_switch_to(byte,void*);
+		static bool irq_switch_to(byte,void*);
 		//void gc_step(void);
 	public:
 		this_core(void)

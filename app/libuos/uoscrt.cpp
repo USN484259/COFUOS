@@ -456,24 +456,31 @@ qword rdtsc(void){
 char** parse_commandline(char* const cmd,dword length,unsigned& argc){
 	argc = 1;
 	auto ptr = cmd;
+	char prev = 0;
 	for (unsigned i = 0;i < length;++i,++ptr){
-		if (*ptr == ' '){
+		if (!isspace(*ptr) && isspace(prev)){
 			++argc;
-			*ptr = 0;
 		}
+		prev = *ptr;
 	}
 	char** argv = (char**)operator new(sizeof(char*)*argc);
 	if (argv == nullptr)
 		return nullptr;
 	argv[0] = cmd;
 	ptr = cmd;
+	prev = 0;
 	unsigned pos = 1;
 	for (unsigned i = 0;i < length;++i,++ptr){
-		if (*ptr == 0){
+		auto ch = *ptr;
+		if (!isspace(ch) && isspace(prev)){
 			if (pos >= argc)
 				break;
-			argv[pos++] = ptr + 1;
+			argv[pos++] = ptr;
 		}
+		if (isspace(ch) && !isspace(prev)){
+			*ptr = 0;
+		}
+		prev = ch;
 	}
 	return (pos == argc) ? argv : nullptr;
 }
@@ -492,11 +499,13 @@ void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
 		dword commandline_size = 0;
 		if (get_command(ps,nullptr,&commandline_size) != TOO_SMALL)
 			break;
+		commandline_size = align_up(commandline_size + 1,0x10);
 		char* commandline = (char*)operator new(commandline_size);
 		if (commandline == nullptr)
 			break;
 		if (get_command(ps,commandline,&commandline_size) != SUCCESS)
 			break;
+		commandline[commandline_size] = 0;
 		close_handle(ps);
 		unsigned argc;
 		char** argv = parse_commandline(commandline,commandline_size,argc);
@@ -507,10 +516,10 @@ void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
 	exit(return_value);
 }
 
-constexpr size_t huge_size = 0x10000;
+constexpr size_t huge_size = PAGE_SIZE/2;
 
 void* operator new(size_t size){
-	if (size < huge_size){
+	if (size <= huge_size){
 		auto ptr = heap.allocate(size);
 		if (ptr)
 			return ptr;
@@ -535,7 +544,7 @@ void* operator new(size_t,void* pos){
 void operator delete(void* ptr,size_t size){
 	if (!ptr)
 		return;
-	if (size < huge_size){
+	if (size <= huge_size){
 		heap.release(ptr,size);
 	}
 	else{

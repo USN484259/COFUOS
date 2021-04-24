@@ -140,8 +140,9 @@ STATUS vm_commit(void* base,dword count) {
 STATUS vm_release(void* base,dword count) {
 	return (STATUS)syscall(srv::vm_release,base,count);
 }
-dword iostate(HANDLE handle){
-	return syscall(srv::iostate,handle);
+dword iostate(HANDLE handle,dword* count){
+	auto res = syscall(srv::iostate,handle);
+	return unpack_qword<dword,dword>(res,count);
 }
 dword read(HANDLE handle,void* buffer,dword* length){
 	auto res = syscall(srv::read,handle,buffer,*length);

@@ -191,12 +191,8 @@ PS_2::PS_2(void){
 			}
 			write(0xFF);
 			qword args[4] = {reinterpret_cast<qword>(this)};
-			HANDLE th = ps->spawn(thread_ps2,args);
-			assert(th);
-			lock_guard<handle_table> guard(ps->handles);
-			auto ptr = ps->handles[th];
-			assert(ptr && ptr->type() == THREAD);
-			channel[i].th = (thread*)ptr;
+			channel[i].th = ps->spawn(thread_ps2,args);
+			assert(channel[i].th);
 		}
 	}
 }
@@ -207,7 +203,7 @@ void PS_2::set_handler(callback cb,void* ud){
 		bugcheck("invalid PS_2::set_handler call from %p",return_address());
 }
 
-void PS_2::on_irq(byte irq,void* ptr){
+bool PS_2::on_irq(byte irq,void* ptr){
 	IF_assert;
 	//assume all IRQs handled on the same core, not locked
 	switch(irq){
@@ -222,6 +218,7 @@ void PS_2::on_irq(byte irq,void* ptr){
 	auto& channel = ((PS_2*)ptr)->channel[irq == APIC::IRQ_MOUSE ? 1 : 0];
 	if (channel.th)
 		channel.queue.put(data);
+	return true;
 }
 
 static constexpr qword ps2_wait_timeout = 1000*40;	//40ms

@@ -1,11 +1,38 @@
 [bits 64]
 
+global ___chkstk_ms
 global memset
 global memcpy
 global zeromemory
 
 section .text
 
+align 16
+___chkstk_ms:
+;rax as count
+;preserve all registers
+;assume no pre-allocated stack space
+push rcx
+push rax
+cmp rax,0x1000
+lea rcx,[rsp + 0x18]
+jbe .end
+
+.probe:
+sub rcx,0x1000
+xor qword [rcx],0
+sub rax,0x1000
+cmp rax,0x1000
+ja .probe
+
+.end:
+sub rcx,rax
+xor qword [rcx],0
+pop rax
+pop rcx
+ret
+
+align 16
 memset_val:
 test r8,r8
 mov [rsp+8],rdi

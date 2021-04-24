@@ -1,5 +1,8 @@
 #include "uos.h"
+#include "util.hpp"
 #include "crt_heap.hpp"
+
+using namespace UOS;
 
 mutex::mutex(void){
 	if (SUCCESS != create_object(SEMAPHORE,1,0,&semaphore))
@@ -18,9 +21,7 @@ void mutex::unlock(void){
 	signal(semaphore,0);
 }
 
-#include "buddy_heap.cpp"
-
-buddy_heap UOS::heap([](size_t& req_size) -> void* {
+UOS::buddy_heap<4,12,mutex> heap([](size_t& req_size) -> void* {
 	req_size = align_up(max(req_size,PAGE_SIZE),PAGE_SIZE);
 	do{
 		auto req_page = req_size / PAGE_SIZE;

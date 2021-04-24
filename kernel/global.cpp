@@ -1,6 +1,7 @@
 #include "types.h"
 #include "util.hpp"
 #include "sysinfo.hpp"
+#include "assert.hpp"
 #include "exception/include/kdb.hpp"
 #include "memory/include/heap.hpp"
 #include "memory/include/pm.hpp"
@@ -16,6 +17,7 @@
 #include "dev/include/pci.hpp"
 #include "dev/include/ide.hpp"
 #include "dev/include/disk_cache.hpp"
+#include "filesystem/include/fat32.hpp"
 #include "interface/include/object.hpp"
 
 namespace UOS{
@@ -24,7 +26,7 @@ namespace UOS{
 	kdb_stub debug_stub(sysinfo->ports[0]);
 	PM pm;
 	kernel_vspace vm;
-	buddy_heap heap([](size_t& req_size) -> void* {
+	buddy_heap<4,12,spin_lock> heap([](size_t& req_size) -> void* {
 		req_size = align_up(max(req_size,PAGE_SIZE),PAGE_SIZE);
 		do{
 			auto req_page = req_size / PAGE_SIZE;
@@ -61,4 +63,5 @@ namespace UOS{
 		total = min<qword>(total,64);
 		return total;
 	}(pm.capacity()));
+	FAT32 filesystem(0x10);
 }

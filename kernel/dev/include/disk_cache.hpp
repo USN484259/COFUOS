@@ -6,8 +6,9 @@
 
 namespace UOS{
 	class disk_cache{
-
-		struct slot{
+	public:
+		class slot{
+			friend class disk_cache;
 			void* const access;
 			const dword phy_page;
 			qword lba_base;
@@ -37,25 +38,32 @@ namespace UOS{
 			void flush(void);
 			//X locked before calling, downgrades to S lock
 			void reload(qword aligned_lba);
-			//S locked before calling
+			//X locked before calling, downgrades to S lock
 			void load(qword lba,byte count);
 			//X locked before calling
 			void store(qword lba,byte count);
-
+		public:
+			qword base(void) const{
+				return lba_base;
+			}
 			void* data(qword lba) const;
 		};
-
+	private:
 		event slot_guard;
 		const word slot_count;
 		//rwlock cache_guard;
 		slot* const table;
 
-		slot* get(qword lba,byte count,bool write);
-		void relax(slot* ptr);
+
 	public:
 		disk_cache(word slot_count);
-		byte read(qword lba,byte count,void* buffer);
-		byte write(qword lba,byte count,const void* buffer);
+		static byte count(qword lba);
+
+		slot* get(qword lba,byte count,bool write);
+		void relax(slot* ptr);
+
+		// byte read(qword lba,byte count,void* buffer);
+		// byte write(qword lba,byte count,const void* buffer);
 	};
 	extern disk_cache dm;
 }

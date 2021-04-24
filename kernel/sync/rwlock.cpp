@@ -36,8 +36,9 @@ bool rwlock::try_lock(MODE mode){
 }
 
 void rwlock::lock(MODE mode){
+	interrupt_guard<void> ig;
 	do{
-		interrupt_guard<spin_lock> guard(objlock);
+		lock_guard<spin_lock> guard(objlock);
 		if (mode == MODE::EXCLUSIVE){
 			if (owner == nullptr && share_count == 0){
 				this_core core;
@@ -55,7 +56,7 @@ void rwlock::lock(MODE mode){
 	}while(imp_wait(0) == NOTIFY);
 	bugcheck("locking deleted rwlock @ %p",this);
 }
-
+/*
 void rwlock::upgrade(void){
 	do{
 		interrupt_guard<spin_lock> guard(objlock);
@@ -70,7 +71,7 @@ void rwlock::upgrade(void){
 	}while(imp_wait(0) == NOTIFY);
 	bugcheck("upgrading deleted rwlock @ %p",this);
 }
-
+*/
 void rwlock::downgrade(void){
 	interrupt_guard<spin_lock> guard(objlock);
 	assert(owner && share_count == 0);

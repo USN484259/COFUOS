@@ -128,7 +128,7 @@ namespace UOS{
 		bool operator==(const T& str) const{
 			if (size() != str.size())
 				return false;
-			return size() == match(begin(),str.begin(),size());
+			return size() == match(begin(),str.begin(),size(),equal_to<C>());
 		}
 		template<typename T>
 		bool operator!=(const T& val) const{

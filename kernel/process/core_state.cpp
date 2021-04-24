@@ -130,6 +130,7 @@ void core_manager::preempt(bool lower){
 		if (this_thread->set_state(thread::READY)){
 			ready_queue.put(this_thread);
 		}
+		// this_thread->on_stop called in escape
 		this_thread->unlock();
 		core.switch_to(next_thread);
 	}
@@ -156,7 +157,7 @@ this_core::this_core(void){
 }
 #endif
 
-void this_core::irq_switch_to(byte,void* data){
+bool this_core::irq_switch_to(byte,void* data){
 	thread* cur_thread = reinterpret_cast<thread*>(
 			read_gs<qword>(offsetof(core_state,this_thread))
 	);
@@ -202,6 +203,7 @@ void this_core::irq_switch_to(byte,void* data){
 
 	write_gs(offsetof(core_state,this_thread),reinterpret_cast<qword>(target));
 	target->unlock();
+	return false;
 }
 
 inline void context_trap(qword data){

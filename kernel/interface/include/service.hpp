@@ -7,21 +7,19 @@
 #include "lock_guard.hpp"
 
 namespace UOS{
+/*
 	class memory_lock{
 		virtual_space* vspace = nullptr;
-		bool state = true;
 	public:
-		memory_lock(void const* va,dword length,bool write = false);
+		memory_lock(void);
 		~memory_lock(void);
-		inline bool get(void) const{
-			return state;
-		}
-		void append(void const* va,dword length,bool write = false);
+
+		bool check(void const* va,dword length,bool write = false);
 	};
 
 	class handle_lock{
 		handle_table* table = nullptr;
-		waitable* obj = nullptr;
+		//waitable* obj = nullptr;
 	public:
 		handle_lock(void);
 		~handle_lock(void);
@@ -30,14 +28,22 @@ namespace UOS{
 		}
 		waitable* get(HANDLE handle,OBJTYPE type = UNKNOWN) const;
 	};
-
+*/
 	struct service_provider{
 		this_core core;
 		thread* this_thread;
 		process* this_process;
 		virtual_space* vspace;
-		service_provider(void);
 
+		bool hold_memory = false;
+		bool hold_handle = false;
+
+		service_provider(void);
+		~service_provider(void);
+
+		bool check(void const* va,dword length,bool write = false);
+		waitable* get(HANDLE handle,OBJTYPE type = UNKNOWN);
+		
 		qword osctl(osctl_code cmd,void* buffer,dword length);
 		qword os_info(void* buffer,dword limit);
 		qword get_time(void);
@@ -77,7 +83,7 @@ namespace UOS{
 		qword vm_reserve(qword va,dword count);
 		STATUS vm_commit(qword va,dword count);
 		STATUS vm_release(qword va,dword count);
-		dword iostate(HANDLE handle);
+		qword iostate(HANDLE handle);
 		qword read(HANDLE handle,void* buffer,dword limit);
 		qword write(HANDLE handle,void const* buffer,dword length);
 	};

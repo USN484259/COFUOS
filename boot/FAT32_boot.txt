@@ -1,2 +1,3 @@
+boot bin/boot.bin
 put krnldr.bin bin/krnldr.bin
 list

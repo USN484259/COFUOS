@@ -156,16 +156,14 @@ process::process(initial_process_tag) : id (new_id()), vspace(&vm),\
 	it->manage();
 }
 
-process::process(literal&& cmd,basic_file* file,const startup_info& info,const qword* args) : \
+process::process(literal&& cmd,file* f,const startup_info& info,const qword* args) : \
 	id(new_id()),vspace(new user_vspace()),privilege(info.privilege),\
 	commandline(move(cmd)), start_time(timer.running_time())
 {
 	IF_assert;
-
 	//image file handle as handle 0, user not accessible
-	auto res = handles.assign(0,file);
+	auto res = handles.assign(0,file::duplicate(f,this));
 	assert(res);
-	file->manage();
 
 	//stream handles
 	for (unsigned i = 0;i < 3;++i){
@@ -177,10 +175,9 @@ process::process(literal&& cmd,basic_file* file,const startup_info& info,const q
 	}
 
 	dbgprint("spawned new process $%d @ %p",id,this);
-	HANDLE th = spawn(process_loader,args);
+	auto th = spawn(process_loader,args);
 	assert(th);
-	res = handles.close(th);
-	assert(res);
+	th->relax();
 }
 
 process::~process(void){
@@ -191,7 +188,7 @@ process::~process(void){
 	delete vspace;
 }
 
-HANDLE process::spawn(thread::procedure entry,const qword* args,qword stk_size){
+thread* process::spawn(thread::procedure entry,const qword* args,qword stk_size){
 	if (state == STOPPED)
 		return 0;
 	if (stk_size)
@@ -199,19 +196,11 @@ HANDLE process::spawn(thread::procedure entry,const qword* args,qword stk_size){
 	else
 		stk_size = pe_kernel->stk_reserve;
 
-	HANDLE handle;
-	thread* th;
-	{
-		interrupt_guard<spin_lock> guard(objlock);
-		auto it = threads.insert(this,entry,args,stk_size);
-		it->manage();
-		++active_count;
-		th = &*it;
-		handle = handles.put(th);
-	}
-	if (handle == 0)
-		th->relax();
-	return handle;
+	interrupt_guard<spin_lock> guard(objlock);
+	auto it = threads.insert(this,entry,args,stk_size);
+	it->manage();
+	++active_count;
+	return &*it;
 }
 
 void process::kill(dword ret_val){
@@ -315,27 +304,31 @@ thread* process_manager::get_initial_thread(void){
 	return it->get_thread(0);
 }
 */
-HANDLE process_manager::spawn(literal&& command,literal&& env,const process::startup_info& info){
+process* process_manager::spawn(literal&& command,literal&& env,const process::startup_info& info){
 	assert(command);
 	//TODO replace with real file-opening logic
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
-	// WARNING memory leak (lose file object) when get killed in this function
-	basic_file* file = nullptr;
+	
+	file* f = nullptr;
 	do{
 		if (info.privilege < this_process->get_privilege())
 			break;
 		auto sep = find_first_of(command.begin(),command.end(),' ');
-		literal filename(command.begin(),sep);
-		file = file_stub::open(move(filename));
-		if (file == nullptr)
+		span<char> filename(command.begin(),sep);
+		f = file::open(filename);
+		if (!f)
 			break;
+
 		//read & validate PE header
 		byte buffer[0x200];
-		if (0x200 != file->read(buffer,0x200))
+		f->read(buffer,0x200);
+		f->wait();
+
+		if (f->state() != 0 || 0x200 != f->result())
 			break;
-		if (!file->seek(0))
-			break;
+		// if (!f->seek(0))
+		// 	break;
 		auto header = PE64::construct(buffer,0x200);
 		if (header == nullptr || \
 			(0 == (header->img_type & 0x02)) || \
@@ -359,24 +352,21 @@ HANDLE process_manager::spawn(literal&& command,literal&& env,const process::sta
 
 		//create a process and load this image
 		interrupt_guard<spin_lock> guard(lock);
-		auto it = table.insert(move(command),file,info,args);
+		auto it = table.insert(move(command),f,info,args);
 		it->manage();
-		HANDLE handle = this_process->handles.put(&*it);
-		if (handle)
-			return handle;
-		it->relax();
-		return 0;
+		f->relax();
+		return &*it;
 	}while(false);
 	
-	if (file)
-		delete file;
+	if (f)
+		f->relax();
 	
 	for (auto i = 0;i < 3;++i){
 		if (info.std_stream[i])
 			info.std_stream[i]->relax();
 	}
 
-	return 0;
+	return nullptr;
 }
 
 void process_manager::erase(process* ps){

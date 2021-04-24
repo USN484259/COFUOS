@@ -28,6 +28,18 @@ enum IOSTATE : byte {
 	FAIL = 2,
 	BAD = 4
 };
+enum FILE_ATTRIBUTE : byte {
+	READONLY = 1,
+	HIDDEN = 2,
+	SYSTEM = 4,
+	//VID = 8,
+	FOLDER = 0x10,
+	ARCHIVE = 0x20
+};
+enum OPEN_MODE : byte {
+	SHARE_READ = 1,
+	SHARE_WRITE = 2
+};
 enum STATUS : dword {
 	SUCCESS			= 0,
 	FAILED			= 0x80000000,

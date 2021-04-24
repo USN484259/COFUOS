@@ -83,9 +83,9 @@ void terminal::thread_monitor(void*,void* ptr){
 		if (NOTIFY == res || PASSED == res){
 			sleep(0);
 			self->begin_paint();
-			dword id = process_id(self->ps);
-			dword exit_code = 0;
-			bool stopped = (SUCCESS == process_result(self->ps,&exit_code));
+			//dword id = process_id(self->ps);
+			//dword exit_code = 0;
+			//bool stopped = (SUCCESS == process_result(self->ps,&exit_code));
 			//fprintf(stderr,"process %u exited with 0%c%x",id,stopped ? 'x' : '?',exit_code);
 			
 			close_handle(self->ps);
@@ -108,41 +108,58 @@ void terminal::dispatch(void){
 	dword size = cui.get(buffer,sizeof(buffer));
 	cui.put('\n');
 
-	dword res;
 	if (ps){
 		if (size < sizeof(buffer)){
 			buffer[size++] = '\n';
 		}
-		res = write(in_pipe,buffer,&size);
+		dword res = write(in_pipe,buffer,&size);
 		assert(0 == res);
 		in_pipe_dirty = true;
+		return;
 	}
-	else{
-		bool sudo = false;
-		auto cmd = buffer;
-		if (size > 5 && match<const char*>(buffer,"sudo ",5) == 5){
-			cmd += 5;
-			size -= 5;
-			sudo = true;
-		}
+	do{
+		if (size == 0)
+			break;
 
-		if (size >= 5 && match<const char*>(cmd,"abort",5) == 5){
+		bool su = false;
+		bool bg = false;
+		auto cmd = buffer;
+		//parse modifier
+		do{
+			switch(*cmd){
+				case '!':
+					su = true;
+					continue;
+				case '~':
+					bg = true;
+					continue;
+			}
+			break;
+		}while(++cmd,--size);
+		if (size == 0)
+			break;
+		
+		//skip leading spaces
+		do{
+			if (*cmd != ' ')
+				break;
+		}while(++cmd,--size);
+		if (size == 0)
+			break;
+
+		if (size >= 5 && match<const char*>(cmd,"abort",5,equal_to<char>()) == 5){
 			abort();
-			return;
 		}
-		if (size >= 5 && match<const char*>(cmd,"clear",5) == 5){
+		if (size >= 5 && match<const char*>(cmd,"clear",5,equal_to<char>()) == 5){
 			cui.clear();
-			show_shell();
-			return;
+			break;
 		}
-		if (size >= 6 && match<const char*>(cmd,"reload",6) == 6){
+		if (size >= 6 && match<const char*>(cmd,"reload",6,equal_to<char>()) == 6){
 			cui.set_focus(false);
 			cui.set_focus(true);
-			show_shell();
-			return;
+			break;
 		}
-		if (size >= 4 && match<const char*>(cmd,"halt",4) == 4){
-			dword size = 0;
+		if (size >= 4 && match<const char*>(cmd,"halt",4,equal_to<char>()) == 4){
 			osctl(halt,nullptr,&size);
 			abort();
 		}
@@ -150,34 +167,42 @@ void terminal::dispatch(void){
 		STARTUP_INFO info = {0};
 		info.commandline = cmd;
 		info.cmd_length = size;
-		info.flags = sudo ? SHELL : NORMAL;
-		info.std_handle[0] = in_pipe;
+		info.flags = su ? SHELL : NORMAL;
+		info.std_handle[0] = bg ? 0 : in_pipe;
 		info.std_handle[1] = out_pipe;
 		info.std_handle[2] = stderr;
 
-		if (SUCCESS == create_process(&info,sizeof(STARTUP_INFO),&ps)){
-			signal(barrier,1);
-			fprintf(stderr,"handle %x, process $%d\n",ps,process_id(ps));
-		}
-		else{
-			ps = 0;
-			if (size){
-				unsigned i;
-				for (i = 0;i < size;++i){
-					if (cmd[i] == ' ')
-						break;
-				}
-				if (cmd + i == buffer + sizeof(buffer))
-					--i;
-				cmd[i] = 0;
-
-				print("command \'");
-				print(cmd);
-				print("\' not found");
+		HANDLE hps = 0;
+		assert(ps == 0);
+		if (SUCCESS == create_process(&info,sizeof(STARTUP_INFO),&hps)){
+			if (!bg){
+				ps = hps;
+				signal(barrier,1);
+				return;
 			}
-			show_shell();
+			else{
+				close_handle(hps);
+				sleep(0);
+				break;
+			}
 		}
-	}
+		if (size){
+			unsigned i;
+			for (i = 0;i < size;++i){
+				if (cmd[i] == ' ')
+					break;
+			}
+			if (cmd + i == buffer + sizeof(buffer))
+				--i;
+			cmd[i] = 0;
+
+			print("command \'");
+			print(cmd);
+			print("\' not found");
+		}
+
+	}while(false);
+	show_shell();
 }
 
 void terminal::begin_paint(void){

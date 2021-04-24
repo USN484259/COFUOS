@@ -1,7 +1,5 @@
 #!/bin/sh
 
-export WINEPATH="D:\\VC\\bin\\;D:\\bin\\"
-
 cmd="all"
 if [ $# -ne 0 ]
 then
@@ -11,8 +9,7 @@ fi
 if [ $cmd = "vbox" ]
 then
 	virtualboxvm --startvm COFUOS --start-running --debug &
-	#--start-running --debug
-	sleep 10s
+	sleep 8s
 	cd kernel/ && gdb
 elif [ $cmd = "bochs" ]
 then
@@ -20,7 +17,7 @@ then
 	gnome-terminal -- bochs -q
 	cd kernel/ && gdb
 else
-	export DEFINES=COFUOS VM_TEST
+	export DEFINES=COFUOS PM_TEST VM_TEST
 	make $@
 fi
 

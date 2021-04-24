@@ -12,7 +12,7 @@ export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions 
 
 all: boot util font FAT32_editor COFUOS app
 
-boot:
+boot:	FAT32_editor
 	@cd boot && $(MAKE) $@
 
 util:

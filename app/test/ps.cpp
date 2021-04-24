@@ -62,7 +62,7 @@ int process_detail(dword pid){
 
 		printf("pid\t%d\n",pid);
 		printf("cmd\t%s\n",size ? cmd : "<too long>");
-		printf("pri\t%s\n",info.privilege <= SHELL ? "SHELL" : "NORMAL");
+		printf("priv\t%s\n",info.privilege <= SHELL ? "SHELL" : "NORMAL");
 		{
 			char mem_unit = 'K';
 			dword mem_val = info.memory_usage / 0x400;

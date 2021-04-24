@@ -37,12 +37,13 @@ namespace UOS{
 	public:
 		typedef void (*procedure)(qword,qword,qword,qword);
 		enum STATE : byte {READY,RUNNING,WAITING,STOPPED};
-		enum : byte {HOLD_VSPACE = 1,HOLD_HANDLE = 2};
+		//enum : byte {HOLD_VSPACE = 1,HOLD_HANDLE = 2};
+		enum : byte {CRITICAL = 1, KILL = 2};
 	public:
 		const dword id;
 	private:
 		volatile STATE state : 4;
-		volatile byte hold_lock : 4;
+		byte critical : 4;
 		byte priority;
 		REASON reason;
 		byte slice;
@@ -129,8 +130,8 @@ namespace UOS{
 		void on_gc(void);
 		void save_sse(void);
 		void load_sse(void);
-		void hold(byte val);
-		void drop(byte val);
+		void hold(void);
+		void drop(void);
 		static void sleep(qword us);
 		static void kill(thread*);
 		//[[ noreturn ]]

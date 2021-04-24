@@ -16,9 +16,14 @@ namespace UOS{
 		span(It head,It tail) : ptr(&*head), len(tail - head) {}
 		template<typename It>
 		span(It head,size_t length) : ptr(&*head), len(length) {}
-
+		template<typename Ct>
+		span(const Ct& container) : ptr(container.begin()), len(container.size()) {}
+		
 		size_t size(void) const{
 			return len;
+		}
+		bool empty(void) const{
+			return len == 0;
 		}
 		iterator begin(void){
 			return ptr;

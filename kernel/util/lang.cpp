@@ -1,23 +1,23 @@
 #include "lang.hpp"
 #include "util.hpp"
 #include "intrinsics.hpp"
+#include "assert.hpp"
 #include "memory/include/heap.hpp"
 #include "memory/include/vm.hpp"
-#include "assert.hpp"
 #include "fasthash.h"
 
 using namespace UOS;
 
-constexpr size_t huge_size = 0x10000;
+constexpr size_t huge_size = PAGE_SIZE/2;
 
 
 void* operator new(size_t len){
 	if (!len)
-		bugcheck("new invalid size %x",len);
-	if (len < huge_size){
+		bugcheck("operator new invalid size %x",len);
+	if (len <= huge_size){
 		auto res = heap.allocate(len);
 		if (!res)
-			bugcheck("new bad alloc size %x",len);
+			bugcheck("operator new bad alloc size %x",len);
 		return res;
 	}
 	else{
@@ -30,7 +30,7 @@ void* operator new(size_t len){
 				return (void*)vbase;
 			vm.release(vbase,page_count);
 		}
-		bugcheck("new bad alloc size %x",len);
+		bugcheck("operator new bad alloc size %x",len);
 	}
 
 }
@@ -44,7 +44,7 @@ void operator delete(void* p,size_t len){
 	if (!p)
 		return;
 	assert(len);
-	if (len < huge_size){
+	if (len <= huge_size){
 		heap.release(p,len);
 	}
 	else{
@@ -53,23 +53,8 @@ void operator delete(void* p,size_t len){
 		vm.release((qword)p,page_count);
 	}
 }
-/*
-void* operator new[](size_t len){
-	qword* p=(qword*)operator new(len+sizeof(qword));
-	*p=(qword)len;	//place size in the first qword of block
-	return p+1;	//return the rest of block
-}
 
-void operator delete[](void* p){
-	if (!p)
-		return;
-	qword* b=(qword*)p;
-	--b;	//point back to the block head
-	operator delete(b,*b);	//block size at head
-}
-*/
 extern "C" {
-    //__chkstk in hal.asm
 
     int atexit(void (*)(void)){
         return 0;

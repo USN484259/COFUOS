@@ -4,18 +4,18 @@
 #include "util.hpp"
 
 namespace UOS{
-	template<typename T>
+	template<typename T,typename C = dword>
 	class vector{
 		T* buffer = nullptr;
-		size_t count = 0;
-		size_t cap = 0;
+		C count = 0;
+		C cap = 0;
 
 	public:
 		typedef T* iterator;
 		typedef T const* const_iterator;
 		vector(void) = default;
 		template<typename ... Arg>
-		vector(size_t cnt,Arg&& ... args){
+		vector(C cnt,Arg&& ... args){
 			reserve(cnt);
 			while(cnt--)
 				push_back(forward<Arg>(args)...);
@@ -33,11 +33,11 @@ namespace UOS{
 		~vector(void){
 			clear();
 		}
-		size_t size(void) const{
+		C size(void) const{
 			assert(count <= cap);
 			return count;
 		}
-		size_t capacity(void) const{
+		C capacity(void) const{
 			assert(count <= cap);
 			return cap;
 		}
@@ -59,12 +59,12 @@ namespace UOS{
 			swap(count,other.count);
 			swap(cap,other.cap);
 		}
-		void reserve(size_t new_size){
+		void reserve(C new_size){
 			assert(count <= cap);
 			if (new_size <= cap)
 				return;
 			T* new_buffer = (T*)operator new(new_size*sizeof(T));
-			for (size_t i = 0;i < count;++i){
+			for (C i = 0;i < count;++i){
 				new (new_buffer + i) T(move(buffer[i]));
 				buffer[i].~T();
 			}
@@ -90,20 +90,20 @@ namespace UOS{
 		const_iterator end(void) const{
 			return buffer + count;
 		}
-		T& at(size_t index){
+		T& at(C index){
 			if (index < count)
 				return buffer[index];
 			THROW("index %x out of range @ %p",index,this);
 		}
-		const T& at(size_t index) const{
+		const T& at(C index) const{
 			if (index < count)
 				return buffer[index];
 			THROW("index %x out of range @ %p",index,this);
 		}
-		T& operator[](size_t index){
+		T& operator[](C index){
 			return at(index);
 		}
-		const T& operator[](size_t index) const{
+		const T& operator[](C index) const{
 			return at(index);
 		}
 		T& front(void){
@@ -129,7 +129,7 @@ namespace UOS{
 		template<typename ... Arg>
 		void push_back(Arg&& ... args){
 			if (count == cap)
-				reserve(count ? 2*cap : max((size_t)0x40/sizeof(T),(size_t)2));
+				reserve(count ? 2*cap : max<C>(0x40/sizeof(T),2));
 			if (count >= cap)
 				THROW("vector expand failed @ %p",this);
 			new (buffer + count) T(forward<Arg>(args)...);

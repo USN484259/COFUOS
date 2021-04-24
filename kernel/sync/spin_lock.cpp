@@ -61,7 +61,7 @@ void spin_lock::unlock(void) {
 	}while(cnt++ < spin_timeout);
 	bugcheck("spinlock timeout %x",cnt);
 }
-
+/*
 void spin_lock::upgrade(void){
 	{
 		auto cur = state;
@@ -78,3 +78,4 @@ void spin_lock::upgrade(void){
 	}
 	assert(state == x_value);
 }
+*/

@@ -10,7 +10,7 @@ inline qword bitswap64(qword data){
 	return data;
 }
 
-MBR::MBR(const std::string& filename) : vhd(filename, ios::in | ios::out | ios::binary), lba_limit(0), partitions{ 0 } {
+MBR::MBR(const std::string& filename) : vhd(filename, ios::in | ios::out | ios::binary) {
 	if (!vhd.is_open())
 		throw runtime_error(string("cannot open vhd file\t")+filename);
 	vhd.exceptions(ios::badbit | ios::failbit | ios::eofbit);
@@ -31,18 +31,18 @@ MBR::MBR(const std::string& filename) : vhd(filename, ios::in | ios::out | ios::
 	if (*(qword*)(buffer + 0x10) != 0xFFFFFFFFFFFFFFFF)
 		throw runtime_error("not fixed VHD");
 
-
 	vhd.seekg(0, ios::beg);
 	vhd.read((char*)buffer, 0x200);
-	byte* pt = buffer + 0x1C2;
-	for (unsigned i = 0; i < 4;pt+=0x10, i++) {
-		if (*pt == 0x0C)
-			partitions[i] = new FAT32(*this, *(dword*)(pt + 4), *(dword*)(pt + 8));
+	byte* pt = buffer + 0x1BE;
+	for (unsigned i = 0; i < 4;pt += 0x10, i++) {
+		if (*pt == 0x80)
+			boot_index = i;
+		if (*(pt + 4) == 0x0C)
+			partitions[i] = new FAT32(*this, *(dword*)(pt + 8), *(dword*)(pt + 0x0C));
 
 	}
 
 }
-
 
 MBR::~MBR(void) {
 	for (unsigned i = 0; i < 4; i++) {
@@ -66,7 +66,7 @@ void MBR::write(qword lba, const void* buffer, size_t count) {
 
 FAT32* MBR::partition(unsigned index) {
 	if (index >= 4)
-		throw runtime_error("partation overflow");
+		throw runtime_error("partition overflow");
 	return partitions[index];
 }
 

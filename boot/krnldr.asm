@@ -978,13 +978,13 @@ mov cr4,rdx
 ;mov rdx,cr3
 ;mov cr3,rdx
 
-mov ax,[r12+sysinfo.FAT_cluster]
-cmp ax,8
-jbe .cluster_fine
-call BugCheck
-int3
+; mov ax,[r12+sysinfo.FAT_cluster]
+; cmp ax,8
+; jbe .cluster_fine
+; call BugCheck
+; int3
 
-.cluster_fine:
+; .cluster_fine:
 sub rsp,0x40
 
 call PmmAlloc
@@ -1049,7 +1049,7 @@ mov edx,[rsi]
 ;edx filesize
 
 cmp edx,0x70000
-ja .fail	; over 448k, possilby overwrite BIOS
+ja .fail	; over 448k, possibly overwrite BIOS
 
 test eax,eax
 jz .fail
@@ -1057,25 +1057,31 @@ jz .fail
 cmp eax,0x0FFFFFF8
 jae .fail
 
+xor ebx,ebx
 mov rdi,FAT_KRNL_CLUSTER
 mov rsi,CMN_BUF_VBASE
-
+not ebx
 .load_cluster:
 xor r8,r8
-mov ebx,eax
+mov r14d,eax
 stosd	;save cluster number
 mov edx,[r12+sysinfo.FAT_table]
-and ebx,0x7F	; % 128
 shr eax,7		; / 128
+and r14,0x7F	; % 128
+cmp eax,ebx
 mov rcx,rsi		;CMN_BUF_VBASE
+jz .skip
+
 add edx,eax
 inc r8
+mov ebx,eax
 call ReadSector
 
-mov eax,[rsi+4*rbx]
+.skip:
+mov eax,[rsi+4*r14]
 
-test eax,eax
-jz .fail
+cmp eax,2
+jb .fail
 
 cmp eax,0x0FFFFFF8
 jb .load_cluster
@@ -1374,7 +1380,6 @@ jmp BugCheck
 
 
 ;ReadSector dst,LBA,cnt
-;TODO get ports from PCI
 ReadSector:
 
 push rdi
@@ -1385,7 +1390,7 @@ mov rdi,rcx		;dst
 
 mov dx,0x1F6
 in al,dx
-bt al,4			;drive select
+bt ax,4			;drive select
 mov eax,r9d
 setc cl
 shr eax,24

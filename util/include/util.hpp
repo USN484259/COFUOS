@@ -148,11 +148,11 @@ namespace UOS{
 		}
 	};
 	
-	template<typename T>
-	size_t match(T a,T b,size_t cnt){
-		size_t i=0;
-		for (;i<cnt;i++){
-			if (*a==*b)
+	template<typename A,typename B,typename CMP>
+	size_t match(A a,B b,size_t cnt,CMP cmp){
+		size_t i = 0;
+		for (;i < cnt;i++){
+			if (cmp(*a,*b))
 				;
 			else
 				break;

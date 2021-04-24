@@ -304,7 +304,7 @@ void CUI::draw(char ch,text_buffer::iterator pos){
 		case '\t':
 		{
 			cursor.x += sys_fnt.get(' ')->advance;
-			auto tab_size = 4*sys_fnt.max_width();
+			auto tab_size = 2*sys_fnt.max_width();
 			cursor.x = (cursor.x / tab_size + 1)*tab_size;
 			return;
 		}

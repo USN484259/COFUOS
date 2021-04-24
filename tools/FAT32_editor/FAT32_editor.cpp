@@ -19,24 +19,24 @@ int main(int argc,char** argv) {
 
 	FAT32* fs = nullptr;
 	MBR* vhd = nullptr;
-	int result = -1;
+	int result = 0;
 
 	do {
 
 		try {
 			vhd = new MBR(filename);
 			//MBR vhd(string(argv[1]));
+			fs = vhd->partition(vhd->boot_partition());
 
-			for (auto i = 0; i < 4; i++) {
-				if (fs = vhd->partition(i))
-					break;
-			}
 		}
 		catch (exception& e) {
 			cerr << e.what() << endl;
+			result = 1;
+			break;
 		}
 		if (!fs) {
 			cerr << "No FAT32 partition found" << endl;
+			result = 2;
 			break;
 		}
 
@@ -65,7 +65,7 @@ int main(int argc,char** argv) {
 					while (it.step()) {
 
 						if (it.is_folder()) {
-							cout << it.fullname() << '\\' << endl;
+							cout << it.fullname() << '/' << endl;
 							continue;
 						}
 						cout << it.fullname() << '\t';
@@ -93,13 +93,9 @@ int main(int argc,char** argv) {
 								cout << setprecision(0);
 
 							cout << adjusted_size << ' ' << postfix[level] << 'B' << endl;
-
-
 						}
 
 					}
-
-
 					continue;
 				}
 
@@ -111,22 +107,40 @@ int main(int argc,char** argv) {
 					ifstream file(str, ios::in | ios::binary);
 					if (!file.is_open()) {
 						cerr << "cannot open file\t" << str << endl;
+						result = 3;
 						continue;
 					}
 
 					if (!fs->put(inner_name, file)) {
 						cerr << "error in FAT32::put\t" << inner_name << endl;
+						result = 4;
+					}
+					continue;
+				}
+
+				if (str == "boot") {
+					ss >> str;
+					ifstream file(str,ios::in | ios::binary);
+					if (!file.is_open()){
+						cerr << "cannot open file\t" << str << endl;
+						result = 3;
+						continue;
+					}
+					if (!fs->boot_code(file)){
+						cerr << "failed to flash boot code\t" << str << endl;
+						result = 5;
 					}
 					continue;
 				}
 				cerr << "unknown command" << endl;
+				result = 6;
 			}
 			catch (exception& e) {
 				cerr << e.what() << endl;
+				result = 1;
+				break;
 			}
-
 		}
-		result = 0;
 	} while (false);
 
 	delete vhd;

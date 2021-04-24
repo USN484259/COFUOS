@@ -7,7 +7,7 @@
 #include "linked_list.hpp"
 
 namespace UOS{
-	template<typename T,typename H,typename E>
+	template<typename T,typename H,typename E,typename C = dword>
 	class hash_set{
 		struct value_type{
 			qword hash_value;
@@ -18,11 +18,11 @@ namespace UOS{
 		};
 		typedef linked_list<value_type> chain_type;
 		typedef typename chain_type::iterator chain_iterator;
-		typedef vector<chain_type> bucket_type;
+		typedef vector<chain_type,C> bucket_type;
 		typedef typename bucket_type::iterator bucket_iterator;
 
 		mutable bucket_type bucket;
-		size_t count = 0;
+		C count = 0;
 		H obj_hash;
 		E obj_equal;
 
@@ -137,29 +137,37 @@ namespace UOS{
 		};
 
 	private:
-		hash_set(size_t fac,hash_set&& old) : bucket(fac,chain_type()), obj_hash(move(old.obj_hash)), obj_equal(move(old.obj_equal)) {
+		hash_set(C fac,hash_set&& old) : bucket(fac,chain_type()), obj_hash(move(old.obj_hash)), obj_equal(move(old.obj_equal)) {
+			for (chain_type& bkt : old.bucket){
+				while(!bkt.empty()){
+					chain_iterator it = bkt.begin();
+					bucket_iterator target = find_bucket(it->hash_value);
 
-			for (auto it = old.begin();it != old.end();++it){
-				bucket_iterator bucket = find_bucket(it->hash_value);
-				chain_type& old_chain = *it.bucket;
-				chain_iterator old_it = it.chain;
-
-				bucket->splice(bucket.end(),old_chain,old_it);
-				++count;
+					target->splice(target->end(),bkt,it);
+					++count;
+				}
 			}
+			// for (auto it = old.begin();it != old.end();++it){
+			// 	chain_type& old_chain = *it.bucket;
+			// 	chain_iterator old_it = it.chain;
+			// 	bucket_iterator bkt = find_bucket(old_it->hash_value);
+
+			// 	bkt->splice(bkt->end(),old_chain,old_it);
+			// 	++count;
+			// }
 			assert(count == old.count);
 			old.count = 0;
 			old.bucket.clear();	//??
 		}
 
 	public:
-		hash_set(size_t fac = 0x10) : bucket(fac,chain_type()) {}
-		hash_set(size_t fac,const H& h,const E& e) : bucket(fac,chain_type()), obj_hash(h), obj_equal(e) {}
+		hash_set(C fac = 0x10) : bucket(fac,chain_type()) { assert(fac); }
+		hash_set(C fac,const H& h,const E& e) : bucket(fac,chain_type()), obj_hash(h), obj_equal(e) { assert(fac); }
 		hash_set(const hash_set&) = delete;	//TODO
 		hash_set(hash_set&&) = delete;	//TODO
 		// ~hash_set(void);	//use ~vector
 
-		size_t size(void) const{
+		C size(void) const{
 			return count;
 		}
 		bool empty(void) const{
@@ -170,7 +178,7 @@ namespace UOS{
 				it->clear();
 			count = 0;
 		}
-		size_t bucket_count(void) const{
+		C bucket_count(void) const{
 			return bucket.size();
 		}
 		void swap(hash_set& other){
@@ -180,7 +188,8 @@ namespace UOS{
 			swap(obj_hash,other.obj_hash);
 			swap(obj_equal,other.obj_equal);
 		}
-		void rehash(size_t fac){
+		void rehash(C fac){
+			assert(fac);
 			hash_set tmp(fac,move(*this));
 			swap(tmp);
 		}
@@ -199,8 +208,8 @@ namespace UOS{
 		const_iterator end(void) const{
 			return const_iterator(bucket,bucket.end(),chain_iterator());
 		}
-		template<typename C>
-		iterator find(const C& key){
+		template<typename K>
+		iterator find(const K& key){
 			qword key_hash = obj_hash(key);
 			bucket_iterator bkt = find_bucket(key_hash);
 			for (chain_iterator it = bkt->begin();it != bkt->end();++it){
@@ -209,8 +218,8 @@ namespace UOS{
 			}
 			return end();
 		}
-		template<typename C>
-		const_iterator find(const C& key) const{
+		template<typename K>
+		const_iterator find(const K& key) const{
 			qword key_hash = obj_hash(key);
 			bucket_iterator bkt = find_bucket(key_hash);
 			for (chain_iterator it = bkt->begin();it != bkt->end();++it){
@@ -234,6 +243,8 @@ namespace UOS{
 
 		template<typename ... Arg>
 		iterator insert(Arg&& ... args){
+			if (bucket.size() <= count)
+				rehash(2*count);
 			auto node = new typename chain_type::node(forward<Arg>(args)...);
 			auto hash_value = obj_hash(node->payload.payload);
 			node->payload.hash_value = hash_value;

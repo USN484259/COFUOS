@@ -33,6 +33,9 @@ namespace UOS{
 		IOSTATE state(void) const override{
 			return (IOSTATE)iostate;
 		}
+		dword result(void) const override{
+			return 0;
+		}
 		inline dword capacity(void) const{
 			return limit;
 		}

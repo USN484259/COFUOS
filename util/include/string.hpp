@@ -55,6 +55,17 @@ namespace UOS{
 			assert(other.size() == 0);
 			return *this;
 		}
+		template<typename It>
+		basic_string& append(It head,It tail){
+			assert(buffer.back() == (C)0);
+			buffer.pop_back();
+			while(head != tail){
+				buffer.push_back(*head);
+				++head;
+			}
+			buffer.push_back((C)0);
+			return *this;
+		}
 		size_t size(void) const{
 			assert(buffer.size());
 			return buffer.size() - 1;
@@ -161,7 +172,7 @@ namespace UOS{
 		bool operator==(const T& str) const{
 			if (size() != str.size())
 				return false;
-			return size() == match(begin(),str.begin(),size());
+			return size() == match(begin(),str.begin(),size(),equal_to<C>());
 		}
 		template<typename T>
 		bool operator!=(const T& val) const{

@@ -66,17 +66,18 @@ void disk_cache::slot::reload(qword aligned_lba){
 }
 
 void disk_cache::slot::load(qword lba,byte count){
-	assert(objlock.is_locked() && !objlock.is_exclusive());
+	assert(objlock.is_locked() && objlock.is_exclusive());
 	assert(lba_base == page_lba(lba));
 	//non-0xFF page must come from previous writes
-	if (valid == 0xFF)
+	if (valid == 0xFF){
+		objlock.downgrade();
 		return;
+	}
 	
 	assert(dirty);
-	objlock.upgrade();
 	//just write dirty pages and read back
 	reload(lba_base);
-	objlock.downgrade();
+	//downgrade in reload
 }
 
 void disk_cache::slot::store(qword lba,byte count){
@@ -114,6 +115,11 @@ disk_cache::disk_cache(word count) : slot_count(count), \
 	dbgprint("disk_cache with %d slots @ %p",slot_count,va);
 }
 
+byte disk_cache::count(qword lba){
+	auto top = align_up(lba,PAGE_SIZE/SECTOR_SIZE);
+	return (top == lba) ? PAGE_SIZE/SECTOR_SIZE : top - lba;
+}
+
 disk_cache::slot* disk_cache::get(qword lba,byte count,bool write){
 	auto aligned_lba = page_lba(lba);
 	if (align_up(lba + count,PAGE_SIZE/SECTOR_SIZE) - aligned_lba != (PAGE_SIZE/SECTOR_SIZE)){
@@ -127,7 +133,7 @@ disk_cache::slot* disk_cache::get(qword lba,byte count,bool write){
 		for (unsigned index = 0;index < slot_count;++index){
 			auto& cur = table[index];
 			if (cur.match(aligned_lba)){
-				cur.lock(write ? rwlock::EXCLUSIVE : rwlock::SHARED);
+				cur.lock(rwlock::EXCLUSIVE);
 				if (cur.match(aligned_lba)){
 					if (write)
 						cur.store(lba,count);
@@ -168,6 +174,8 @@ void disk_cache::relax(slot* ptr){
 	}
 }
 
+
+/*
 byte disk_cache::read(qword lba,byte count,void* buffer){
 	//handles misaligned sectors
 	auto top = lba + count;
@@ -192,3 +200,4 @@ byte disk_cache::write(qword lba,byte count,const void* buffer){
 	dbgprint("disk_cache::write not implemented");
 	return 0;
 }
+*/

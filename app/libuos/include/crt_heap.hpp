@@ -1,5 +1,6 @@
 #pragma once
 #include "libuos.h"
+#include "buddy_heap.hpp"
 
 struct mutex{
 	HANDLE semaphore;
@@ -12,4 +13,4 @@ public:
 	void unlock(void);
 };
 
-#include "buddy_heap.hpp"
+extern UOS::buddy_heap<4,12,mutex> heap;

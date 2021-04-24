@@ -95,7 +95,7 @@ namespace UOS{
 		};
 	public:
 		process(initial_process_tag);
-		process(literal&& cmd,basic_file* file,const startup_info& info,const qword* args);
+		process(literal&& cmd,file* f,const startup_info& info,const qword* args);
 		~process(void);
 		OBJTYPE type(void) const override{
 			return PROCESS;
@@ -125,7 +125,7 @@ namespace UOS{
 		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
 		void manage(void* = nullptr) override;
-		HANDLE spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
+		thread* spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
 		void kill(dword ret_val);
 		//on thread exit
 		void on_exit(void);
@@ -144,7 +144,7 @@ namespace UOS{
 			return table.size();
 		}
 		// std streams should be acquired in advance
-		HANDLE spawn(literal&& command,literal&& env,const process::startup_info& info);
+		process* spawn(literal&& command,literal&& env,const process::startup_info& info);
 		void erase(process* ps);
 		bool enumerate(dword& id);
 		process* find(dword id,bool acquire);

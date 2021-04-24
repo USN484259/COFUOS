@@ -245,3 +245,13 @@ PTE kernel_vspace::peek(qword va){
 		return PTE{0};
 	return imp_peek(va,pdpt_table);
 }
+
+dword kernel_vspace::write(qword va,const void* data,dword length){
+	memcpy(reinterpret_cast<void*>(va),data,length);
+	return length;
+}
+
+dword kernel_vspace::read(qword va,void* buffer,dword length){
+	memcpy(buffer,reinterpret_cast<const void*>(va),length);
+	return length;
+}

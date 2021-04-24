@@ -189,9 +189,7 @@ qword PM::allocate(MODE mode){
 		}
 	}while (true);
 	next = page;
-#ifdef PM_TEST
-	dbgprint("page_count = %x, selected page = %x",page_count,page);
-#endif
+
 	qword head = 0,tail = PAGE_SIZE;
 	while (head + 1 < tail){
 		auto mid = (head + tail)/2;
@@ -208,9 +206,7 @@ qword PM::allocate(MODE mode){
 	if (0 == pmm_bmp[page*PAGE_SIZE + head].solid)
 		++head;
 	assert(head < PAGE_SIZE);
-#ifdef PM_TEST
-	dbgprint("selected %x",head);
-#endif
+
 	qword res_page = page*PAGE_SIZE + head;
 	assert(res_page < bmp_size);
 

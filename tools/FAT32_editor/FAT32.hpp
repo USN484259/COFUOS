@@ -12,8 +12,6 @@ class MBR;
 
 class FAT32 {
 
-#pragma pack(push)
-#pragma pack(1)
 	struct file_record {
 		char name[8];
 		char ext[3];
@@ -28,8 +26,8 @@ class FAT32 {
 		dword cluster(void) const;
 		void cluster(dword);
 		bool operator==(const std::string&) const;
-	};
-#pragma pack(pop)
+	}__attribute__((packed));
+	static_assert(sizeof(file_record) == 0x20,"file_record size mismatch");
 
 	class chain_writer {
 
@@ -111,7 +109,8 @@ public:
 	//void directory(const std::string&);
 
 	//size_t list(std::deque<std::string>&);
-
+	bool boot_code(std::istream& source);
+	
 	file_list list(void) const;
 
 	bool put(const std::string& name, std::istream& source);

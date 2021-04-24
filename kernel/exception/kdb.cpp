@@ -279,7 +279,7 @@ void kdb_stub::cmd_status(void){
 
 bool kdb_stub::cmd_query(void){
 	if (length >= 11 && \
-		11 == match((const char*)buffer,"qSupported:",11)){
+		11 == match((const char*)buffer,"qSupported:",11,equal_to<char>())){
 		send(feature_list);
 		return true;
 	}

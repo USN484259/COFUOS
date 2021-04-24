@@ -45,13 +45,15 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 	this_core core;
 	thread* this_thread = core.this_thread();
 	process* this_process = this_thread->get_process();
-	basic_file* file;
+	file* f;
 	{
-		interrupt_guard<handle_table> guard(this_process->handles);
+		lock_guard<handle_table> guard(this_process->handles);
 		auto obj = this_process->handles[0];
 		assert(obj && obj->type() == FILE);
-		file = (basic_file*)obj;
+		f = static_cast<file*>(obj);
 	}
+	auto res = f->seek(0);
+	assert(res && f->tell() == 0 && f->state() == 0);
 	do{
 		
 		//reserve image region
@@ -63,8 +65,9 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 		//read full PE header
 		if (!this_process->vspace->commit(image_base,align_up(header_size,PAGE_SIZE)/PAGE_SIZE))
 			break;
-		assert(file->tell() == 0);
-		if (header_size != file->read((void*)image_base,header_size))
+		f->read((void*)image_base,header_size);
+		f->wait();
+		if (f->state() != 0 || f->result() != header_size)
 			break;
 		this_process->image = PE64::construct((void*)image_base,header_size);
 		if (this_process->image == nullptr)
@@ -104,10 +107,13 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 			if (!this_process->vspace->commit(section_base,section_page_count))
 				break;
 			if (section->datasize){
-				if (!file->seek(section->fileoffset))
+				if (!f->seek(section->fileoffset))
 					break;
-				assert(file->tell() == section->fileoffset);
-				if (section->datasize != file->read((void*)section_base,section->datasize))
+				if (f->state() != 0 || f->tell() != section->fileoffset)
+					break;
+				f->read((void*)section_base,section->datasize);
+				f->wait();
+				if (f->state() != 0 || f->result() != section->datasize)
 					break;
 			}
 			zeromemory((void*)(section_base + section->datasize),section_page_count*PAGE_SIZE - section->datasize);

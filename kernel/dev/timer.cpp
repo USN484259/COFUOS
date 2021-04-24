@@ -61,7 +61,7 @@ basic_timer::basic_timer(void) : base(nullptr){
 		*(base + 0x10/sizeof(qword)) = main_switch;	//halt the counter
 		*(base + 0xF0/sizeof(qword)) = 0;	//reset counter
 
-		//channel 0 as heat beat
+		//channel 0 as heartbeat
 		auto count = set_timer(0,2,heartbeat_us);
 
 		for (unsigned i = 0;i < comarator_count;++i){
@@ -130,6 +130,7 @@ void basic_timer::step(unsigned count){
 
 		if (!cur.interval){
 			//one-shot
+			record.erase(rec);
 			delta_queue.pop_front();
 			continue;
 		}
@@ -175,9 +176,10 @@ void basic_timer::on_timer(void){
 	step(1);
 }
 
-void basic_timer::irq_timer(byte irq,void* ptr){
+bool basic_timer::irq_timer(byte irq,void* ptr){
 	IF_assert;
 	assert(irq == APIC::IRQ_PIT);
 	auto self = (basic_timer*)ptr;
 	self->on_timer();
+	return false;
 }

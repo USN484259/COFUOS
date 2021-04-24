@@ -10,12 +10,12 @@ FAT_INFO equ 0x7C00+0x200-0x10
 LOADER_BASE equ 0x2000
 
 
-section code vstart=0x7c5A
+section code vstart=0x7C5A
 
 ;segment init
 xor ax,ax
 mov ss,ax
-mov sp,0x7c00
+mov sp,0x7C00
 mov ds,ax
 mov es,ax
 cld
@@ -40,6 +40,10 @@ jnz lba_pass
 
 die:
 ;halt press ctrl alt del to reboot
+mov ax,0x0300
+mov si,str_fail
+xor bx,bx
+int 0x10
 die_loop:
 sti
 hlt
@@ -55,28 +59,37 @@ mov di,LOADER_BASE
 
 call readsector	;read MBR
 
-mov si,LOADER_BASE+0x1C2
+mov si,LOADER_BASE+0x1BE
+find_partition:
+lodsw
+cmp al,0x80		;active flag
+lodsw
+jz partition_info
+add si,0x0C
+cmp si,LOADER_BASE+0x1FE
+jae die
+jmp find_partition
+
+partition_info:
 lodsw
 cmp al,0x0C		;FAT32 with LBA
 jnz die
 
-;PAT => partition
-
 mov di,FAT_INFO
 
 lodsw	;skip 2 bytes
-lodsw	;LWORD of PAT
+lodsw	;LWORD of partition
 mov dx,ax
 stosw
-lodsw	;HWORD of PAT
+lodsw	;HWORD of partition
 push ax
 push dx
 stosw
 
-;assume PAT at 0x7C00
+;assume FAT32 head sector at 0x7C00
 
-mov si,0x0D+0x7c00
-lodsb	;sectors per cluster => SpC
+mov si,0x0D+0x7C00
+lodsb	;cluster size
 movzx bx,al
 lodsw	;reserved sectors
 ;mov cx,ax
@@ -126,7 +139,7 @@ xchg ax,dx
 
 call readsector	;read root directory
 
-push bx		;SpC
+push bx		;cluster size
 mov si,di
 jmp _findfile
 
@@ -212,26 +225,24 @@ lodsw	;dx:ax first cluster of file
 
 ;xchg ax,dx
 mov di,LOADER_BASE
-pop bx		;SpC
+pop bx		;cluster size
 
 
-loadfile:	;dx:ax cluster index	es:di target auto inc bx SpC
+loadfile:	;dx:ax cluster index	es:di target auto inc bx cluster size
 
 cmp ax,0xFFF8
 jb .pas
 cmp dx,0x0FFF
 jb .pas
 
-.break:
 push LOADER_BASE
 ret
 
 .pas:
-xor cx,cx
-cmp ax,cx
+test dx,dx
 jnz .pass
-cmp dx,cx
-jz .break
+cmp ax,2
+jb die
 
 .pass:
 mov bp,sp
@@ -240,38 +251,39 @@ push dx
 push ax
 
 mov cl,128
-xor dx,dx
+;xor dx,dx
 
 div cx
 push dx		;remainder
 
 xor cx,cx
-add ax,[FAT_INFO+4]
-mov dx,[FAT_INFO+6]
+add ax,[FAT_INFO+4]	;FAT_lo
+mov dx,[FAT_INFO+6]	;FAT_hi
 adc dx,cx
 
 call readsector
 
 mov cl,2
-pop si
-shl si,cl
+pop si		;remainder
+shl si,cl	;offset in sector
 
 add si,di
 
 lodsw
 mov dx,[si]
 
+;dx:ax	next cluster
 push dx
 push ax
 
-mov ax,[bp-4]
+mov ax,[bp-4]	;this_cluster_lo
 
 mul bx
 
 push ax
 push dx
 
-mov ax,[bp-2]
+mov ax,[bp-2]	;this_cluster_hi
 mul bx
 
 test dx,dx
@@ -285,10 +297,9 @@ jc die
 add ax,[FAT_INFO+8]
 adc dx,[FAT_INFO+0x0A]
 
-mov cx,bx
-shl cx,1
-sub ax,cx
-sbb dx,0
+xor cx,cx
+sub ax,2
+sbb dx,cx
 
 call readsector
 
@@ -303,3 +314,4 @@ pop dx
 mov sp,bp
 jmp loadfile
 
+str_fail db 'Boot failed',0

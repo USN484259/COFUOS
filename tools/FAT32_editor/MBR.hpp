@@ -8,13 +8,17 @@ class FAT32;
 
 class MBR {
 	std::fstream vhd;
-	qword lba_limit;
-	FAT32* partitions[4];
+	qword lba_limit = 0;
+	FAT32* partitions[4] = {0};
+	unsigned boot_index = 0;
 
 public:
 	MBR(const std::string& filename);
 	~MBR(void);
 
+	unsigned boot_partition(void) const{
+		return boot_index;
+	}
 	FAT32* partition(unsigned index);
 
 	qword size(void) const;

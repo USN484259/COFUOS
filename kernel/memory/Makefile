@@ -1,4 +1,4 @@
-all:	bin/pm.o bin/vm.o bin/kernel_vspace.o bin/heap.o bin/user_vspace.o
+all:	bin/pm.o bin/vm.o bin/kernel_vspace.o bin/user_vspace.o
 
 bin/%.o:	%.cpp
 	$(MINGW_CC) $(CPPFLAGS) -c $< -o $@

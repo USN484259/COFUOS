@@ -34,7 +34,7 @@ namespace UOS{
 		hash_set<qword,UOS::hash<qword>,UOS::equal_to<qword> > record;
 		linked_list<queue_type> delta_queue;
 
-		static void irq_timer(byte,void*);
+		static bool irq_timer(byte,void*);
 		void on_timer(void);
 		void on_second(void);
 		void step(unsigned count);

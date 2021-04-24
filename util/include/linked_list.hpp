@@ -5,7 +5,7 @@
 
 
 namespace UOS{
-	template<typename T>
+	template<typename T,typename C = dword>
 	class linked_list{
 	public:
 		class node{
@@ -21,7 +21,7 @@ namespace UOS{
 	private:
 		node* head = nullptr;
 		node* tail = nullptr;
-		size_t count = 0;
+		C count = 0;
 	public:
 		class iterator_base{
 		protected:
@@ -135,7 +135,7 @@ namespace UOS{
 		~linked_list(void){
 			clear();
 		}
-		size_t size(void) const{
+		C size(void) const{
 			return count;
 		}
 		bool empty(void) const{

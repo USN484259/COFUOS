@@ -28,17 +28,12 @@ inline void unpack_rect(rectangle& rect,qword val){
 inline qword pack_qword(dword a,dword b){
 	return (qword)a | ((qword)b << 32);
 }
-
-memory_lock::memory_lock(void const* ptr,dword length,bool write){
+/*
+memory_lock::memory_lock(void){
 	this_core core;
 	auto this_thread = core.this_thread();
-	{
-		interrupt_guard<thread> guard(*this_thread);
-		vspace = this_thread->get_process()->vspace;
-		vspace->lock();
-		this_thread->hold(thread::HOLD_VSPACE);
-	}
-	append(ptr,length,write);
+	vspace = this_thread->get_process()->vspace;
+	vspace->lock();
 }
 
 memory_lock::~memory_lock(void){
@@ -47,36 +42,31 @@ memory_lock::~memory_lock(void){
 	auto this_thread = core.this_thread();
 	assert(vspace == this_thread->get_process()->vspace);
 	assert(vspace->is_locked());
-	interrupt_guard<thread> guard(*this_thread);
 	vspace->unlock();
-	this_thread->drop(thread::HOLD_VSPACE);
 }
 
-void memory_lock::append(void const* ptr,dword length,bool write){
+bool memory_lock::check(void const* ptr,dword length,bool write){
 	auto va = reinterpret_cast<qword>(ptr);
 	auto tail = va + length;
 	va = align_down(va,PAGE_SIZE);
 	while(va < tail){
 		auto pt = vspace->peek(va);
 		if (!pt.present || !pt.user){
-			state = false;
-			return;
+			return false;
 		}
 		if (write && !pt.write){
-			state = false;
-			return;
+			return false;
 		}
 		va += PAGE_SIZE;
 	}
+	return true;
 }
 
 handle_lock::handle_lock(void){
 	this_core core;
 	auto this_thread = core.this_thread();
-	interrupt_guard<thread> guard(*this_thread);
 	table = &this_thread->get_process()->handles;
 	table->lock();
-	this_thread->hold(thread::HOLD_HANDLE);
 }
 
 handle_lock::~handle_lock(void){
@@ -85,9 +75,7 @@ handle_lock::~handle_lock(void){
 		auto this_thread = core.this_thread();
 		assert(table == &this_thread->get_process()->handles);
 		assert(table->is_locked());
-		interrupt_guard<thread> guard(*this_thread);
 		table->unlock();
-		this_thread->drop(thread::HOLD_HANDLE);
 	}
 }
 
@@ -106,11 +94,62 @@ waitable* handle_lock::get(HANDLE handle,OBJTYPE type) const{
 	}
 	return ptr;
 }
+*/
 
 service_provider::service_provider(void){
 	this_thread = core.this_thread();
 	this_process = this_thread->get_process();
 	vspace = this_process->vspace;
+	this_thread->hold();
+}
+
+service_provider::~service_provider(void){
+	if (hold_memory)
+		vspace->unlock();
+	if (hold_handle)
+		this_process->handles.unlock();
+	this_thread->drop();
+}
+
+bool service_provider::check(void const* ptr,dword length,bool write){
+	if (!hold_memory){
+		vspace->lock();
+		hold_memory = true;
+	}
+	auto va = reinterpret_cast<qword>(ptr);
+	auto tail = va + length;
+	va = align_down(va,PAGE_SIZE);
+	while(va < tail){
+		auto pt = vspace->peek(va);
+		if (!pt.present || !pt.user){
+			return false;
+		}
+		if (write && !pt.write){
+			return false;
+		}
+		va += PAGE_SIZE;
+	}
+	return true;
+}
+
+waitable* service_provider::get(HANDLE handle,OBJTYPE type){
+	if (!hold_handle){
+		this_process->handles.lock();
+		hold_handle = true;
+	}
+	if (handle == 0)
+		return nullptr;
+	auto ptr = (this_process->handles)[handle];
+	if (ptr == nullptr)
+		return nullptr;
+	if (type != UNKNOWN){
+		auto objtype = ptr->type();
+		if (objtype != type){
+			if (type != STREAM || (objtype != PIPE && objtype != FILE))
+				return nullptr;
+		}
+	}
+	return ptr;
 }
 
 qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
@@ -129,8 +168,7 @@ qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
 		default:
 			return BAD_PARAM;
 	}
-	memory_lock lock(buffer,length,write);
-	if (!lock.get())
+	if (!check(buffer,length,write))
 		return BAD_BUFFER;
 	
 	switch(cmd){
@@ -142,8 +180,14 @@ qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
 			if (length < SECTOR_SIZE)
 				return TOO_SMALL;
 			auto lba = *(qword*)buffer;
-			if (!dm.read(lba,1,buffer))
+			auto slot = dm.get(lba,1,false);
+			// FIXME leaking slot on kill
+			if (slot == nullptr)
 				return FAILED;
+			auto sor = slot->data(lba);
+			assert(sor);
+			memcpy(buffer,sor,SECTOR_SIZE);
+			dm.relax(slot);
 			return pack_qword(SUCCESS,1);
 		}
 	}
@@ -151,8 +195,7 @@ qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
 }
 
 qword service_provider::os_info(void* buffer,dword limit){
-	memory_lock lock(buffer,limit,true);
-	if (!lock.get())
+	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
 	auto size = sizeof(OS_INFO) + sizeof(OS_DESCRIPTION);
 	if (limit < sizeof(OS_INFO))
@@ -196,13 +239,11 @@ STATUS service_provider::display_draw(void const* buffer,qword val,word advance)
 	if (rect.right <= rect.left || rect.bottom <= rect.top || advance < (rect.right - rect.left))
 		return BAD_PARAM;
 	auto length = (rect.right - rect.left + advance*(rect.bottom - rect.top - 1) )*sizeof(dword);
-	memory_lock lock(buffer,length);
-	if (!lock.get())
+	if (!check(buffer,length))
 		return BAD_BUFFER;
 	return display.draw(rect,(dword const*)buffer,advance) ? SUCCESS : BAD_PARAM;
 }
 HANDLE service_provider::get_thread(void){
-	interrupt_guard<void> ig;
 	auto res = this_thread->acquire();
 	assert(res);
 	auto handle = this_process->handles.put(this_thread);
@@ -211,8 +252,7 @@ HANDLE service_provider::get_thread(void){
 	return handle;
 }
 dword service_provider::thread_id(HANDLE handle){
-	handle_lock lock;
-	auto th = static_cast<thread*>(lock.get(handle,THREAD));
+	auto th = static_cast<thread*>(get(handle,THREAD));
 	if (th == nullptr)
 		return 0;
 	return th->id;
@@ -221,8 +261,7 @@ qword service_provider::get_handler(void){
 	return this_thread->user_handler;
 }
 dword service_provider::get_priority(HANDLE handle){
-	handle_lock lock;
-	auto th = static_cast<thread*>(lock.get(handle,THREAD));
+	auto th = static_cast<thread*>(get(handle,THREAD));
 	if (th == nullptr)
 		return BAD_HANDLE;
 	return th->get_priority();
@@ -233,8 +272,7 @@ void service_provider::exit_thread(void){
 }
 STATUS service_provider::kill_thread(HANDLE handle){
 	do{
-		handle_lock lock;
-		auto th = static_cast<thread*>(lock.get(handle,THREAD));
+		auto th = static_cast<thread*>(get(handle,THREAD));
 		if (th == nullptr)
 			return BAD_HANDLE;
 		if (th == this_thread)
@@ -251,8 +289,7 @@ STATUS service_provider::set_handler(qword handler){
 	return SUCCESS;
 }
 STATUS service_provider::set_priority(HANDLE handle,byte val){
-	handle_lock lock;
-	auto th = static_cast<thread*>(lock.get(handle,THREAD));
+	auto th = static_cast<thread*>(get(handle,THREAD));
 	if (th == nullptr)
 		return BAD_HANDLE;
 	if (val >= scheduler::idle_priority || val < scheduler::shell_priority)
@@ -278,40 +315,44 @@ qword service_provider::create_thread(qword entry,qword arg,dword stk_size){
 	auto stk_top = stk_base + (count + 1)*PAGE_SIZE;
 	qword args[4] = {entry,arg,stk_top,stk_size};
 
-	auto handle = this_process->spawn(user_entry,args);
-	if (handle)
-		return pack_qword(SUCCESS,handle);
+	auto th = this_process->spawn(user_entry,args);
+	if (th){
+		HANDLE handle = this_process->handles.put(th);
+		if (handle)
+			return pack_qword(SUCCESS,handle);
+	}
+	th->relax();
 	return NO_RESOURCE;
 }
 void service_provider::sleep(qword us){
 	thread::sleep(us);
 }
 dword service_provider::check(HANDLE handle){
-	handle_lock lock;
-	auto obj = lock.get(handle);
+	auto obj = get(handle);
 	if (obj == nullptr)
 		return BAD_HANDLE;
 	return obj->check() ? 1 : 0;
 }
 dword service_provider::wait_for(HANDLE handle,qword us){
-	handle_lock lock;
-	auto obj = lock.get(handle);
+	auto obj = get(handle);
 	if (obj == nullptr)
 		return BAD_HANDLE;
-	lock.drop();
+	if (obj == this_thread)
+		return FAILED;
+
+	assert(hold_handle);
+	hold_handle = false;
+
 	return obj->wait(us,[](void){
 		this_core core;
 		auto this_thread = core.this_thread();
 		auto& table = this_thread->get_process()->handles;
 		assert(table.is_locked() && !table.is_exclusive());
-		interrupt_guard<thread> guard(*this_thread);
 		table.unlock();
-		this_thread->drop(thread::HOLD_HANDLE);
 	});
 }
 dword service_provider::signal(HANDLE handle,dword mode){
-	handle_lock lock;
-	auto obj = lock.get(handle);
+	auto obj = get(handle);
 	if (obj == nullptr)
 		return BAD_HANDLE;
 	switch(obj->type()){
@@ -335,7 +376,6 @@ dword service_provider::signal(HANDLE handle,dword mode){
 	}
 }
 HANDLE service_provider::get_process(void){
-	interrupt_guard<void> ig;
 	auto res = this_process->acquire();
 	assert(res);
 	auto handle = this_process->handles.put(this_process);
@@ -344,19 +384,16 @@ HANDLE service_provider::get_process(void){
 	return handle;
 }
 dword service_provider::process_id(HANDLE handle){
-	handle_lock lock;
-	auto ps = static_cast<process*>(lock.get(handle,PROCESS));
+	auto ps = static_cast<process*>(get(handle,PROCESS));
 	if (ps == nullptr)
 		return 0;
 	return ps->id;
 }
 qword service_provider::process_info(HANDLE handle,void* buffer,dword limit){
-	handle_lock hlock;
-	auto ps = static_cast<process*>(hlock.get(handle,PROCESS));
+	auto ps = static_cast<process*>(get(handle,PROCESS));
 	if (ps == nullptr)
 		return BAD_HANDLE;
-	memory_lock mlock(buffer,limit,true);
-	if (!mlock.get())
+	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
 	if (limit < sizeof(PROCESS_INFO))
 		return pack_qword(TOO_SMALL,sizeof(PROCESS_INFO));
@@ -372,14 +409,12 @@ qword service_provider::process_info(HANDLE handle,void* buffer,dword limit){
 	return pack_qword(SUCCESS,sizeof(PROCESS_INFO));
 }
 qword service_provider::get_command(HANDLE handle,void* buffer,dword limit){
-	handle_lock hlock;
-	auto ps = static_cast<process*>(hlock.get(handle,PROCESS));
+	auto ps = static_cast<process*>(get(handle,PROCESS));
 	if (ps == nullptr)
 		return BAD_HANDLE;
-	memory_lock mlock(buffer,limit,true);
-	if (!mlock.get())
+	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
-	auto size = ps->commandline.size() + 1;
+	auto size = ps->commandline.size();
 	if (limit < size)
 		return pack_qword(TOO_SMALL,size);
 	memcpy(buffer,ps->commandline.c_str(),size);
@@ -391,8 +426,7 @@ void service_provider::exit_process(dword result){
 }
 STATUS service_provider::kill_process(HANDLE handle,dword result){
 	do{
-		handle_lock lock;
-		auto ps = static_cast<process*>(lock.get(handle,PROCESS));
+		auto ps = static_cast<process*>(get(handle,PROCESS));
 		if (ps == nullptr)
 			return BAD_HANDLE;
 		if (ps == this_process)
@@ -403,8 +437,7 @@ STATUS service_provider::kill_process(HANDLE handle,dword result){
 	exit_process(result);
 }
 qword service_provider::process_result(HANDLE handle){
-	handle_lock lock;
-	auto ps = static_cast<process*>(lock.get(handle,PROCESS));
+	auto ps = static_cast<process*>(get(handle,PROCESS));
 	if (ps == nullptr)
 		return BAD_HANDLE;
 	dword result;
@@ -413,49 +446,57 @@ qword service_provider::process_result(HANDLE handle){
 	return pack_qword(SUCCESS,result);
 }
 qword service_provider::create_process(void const* ptr,dword length){
-	memory_lock mlock(ptr,length);
-	if (!mlock.get())
+	if (!check(ptr,length))
 		return BAD_BUFFER;
 	auto info = (const STARTUP_INFO*)ptr;
-	mlock.append(info->commandline,info->cmd_length);
-	if (info->environment)
-		mlock.append(info->environment,info->env_length);
-	if (!mlock.get())
+	if (!check(info->commandline,info->cmd_length))
 		return BAD_BUFFER;
+	if (info->environment){
+		if (!check(info->environment,info->env_length))
+			return BAD_BUFFER;
+	}
 	if (info->flags && info->flags < this_process->get_privilege())
 		return DENIED;
 	process::startup_info ps_info;
 	ps_info.privilege = info->flags ? (PRIVILEGE)info->flags : this_process->get_privilege();
 
-	{
-		handle_lock hlock;
-		for (auto i = 0;i < 3;++i){
-			if (0 == info->std_handle[i]){
-				ps_info.std_stream[i] = 0;
-				continue;
-			}
-			auto st = hlock.get(info->std_handle[i],STREAM);
-			if (st == nullptr)
-				return BAD_HANDLE;
-			ps_info.std_stream[i] = static_cast<stream*>(st);
+
+	for (auto i = 0;i < 3;++i){
+		if (0 == info->std_handle[i]){
+			ps_info.std_stream[i] = 0;
+			continue;
 		}
-		for (auto i = 0;i < 3;++i){
-			if (ps_info.std_stream[i])
-				ps_info.std_stream[i]->acquire();
-		}
+		auto st = get(info->std_handle[i],STREAM);
+		if (st == nullptr)
+			return BAD_HANDLE;
+		ps_info.std_stream[i] = static_cast<stream*>(st);
 	}
+	for (auto i = 0;i < 3;++i){
+		if (ps_info.std_stream[i])
+			ps_info.std_stream[i]->acquire();
+	}
+	if (hold_handle){
+		this_process->handles.unlock();
+		hold_handle = false;
+	}
+
+
 	literal cmd(info->commandline,info->commandline + info->cmd_length);
 	literal env;
 	if (info->environment)
 		env.assign(info->environment,info->environment + info->env_length);
 	
-	auto hproc = proc.spawn(move(cmd),move(env),ps_info);
-	if (hproc)
-		return pack_qword(SUCCESS,hproc);
-	return NO_RESOURCE;
+	auto ps = proc.spawn(move(cmd),move(env),ps_info);
+	if (ps){
+		HANDLE handle = this_process->handles.put(ps);
+		if (handle)
+			return pack_qword(SUCCESS,handle);
+		ps->relax();
+		return NO_RESOURCE;
+	}
+	return NOT_FOUND;
 }
 qword service_provider::open_process(dword id){
-	interrupt_guard<void> ig;
 	auto ps = proc.find(id,true);
 	if (ps == nullptr)
 		return BAD_PARAM;
@@ -470,8 +511,7 @@ qword service_provider::open_process(dword id){
 	return NO_RESOURCE;
 }
 OBJTYPE service_provider::handle_type(HANDLE handle){
-	handle_lock lock;
-	auto obj = lock.get(handle);
+	auto obj = get(handle);
 	if (obj == nullptr)
 		return UNKNOWN;
 	return obj->type();
@@ -481,14 +521,13 @@ qword service_provider::open_handle(const void* buffer,dword length){
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
 
-	memory_lock lock(buffer,length);
-	if (!lock.get())
+	if (!check(buffer,length))
 		return BAD_BUFFER;
 	span<char> name((char const*)buffer,length);
 
 	waitable* ptr = nullptr;
 	{
-		interrupt_guard<object_manager> guard(named_obj);
+		lock_guard<object_manager> guard(named_obj);
 		auto obj = named_obj.get(name);
 		if (obj == nullptr)
 			return NOT_FOUND;
@@ -511,7 +550,6 @@ STATUS service_provider::close_handle(HANDLE handle){
 }
 qword service_provider::create_object(OBJTYPE type,qword a1,qword a2){
 	waitable* ptr = nullptr;
-	interrupt_guard<void> ig;
 	switch(type){
 		case SEMAPHORE:
 			if (a1)
@@ -557,33 +595,29 @@ STATUS service_provider::vm_commit(qword va,dword count){
 STATUS service_provider::vm_release(qword va,dword count){
 	return vspace->release(va,count) ? SUCCESS : BAD_PARAM;
 }
-dword service_provider::iostate(HANDLE handle){
-	handle_lock lock;
-	auto obj = lock.get(handle,STREAM);
+qword service_provider::iostate(HANDLE handle){
+	auto obj = get(handle,STREAM);
 	if (obj == nullptr)
 		return BAD_HANDLE;
-	return static_cast<stream*>(obj)->state();
+	auto ptr = static_cast<stream*>(obj);
+	return pack_qword(ptr->state(),ptr->result());
 }
 qword service_provider::read(HANDLE handle,void* buffer,dword limit){
-	handle_lock hlock;
-	auto obj = hlock.get(handle,STREAM);
+	auto obj = get(handle,STREAM);
 	if (obj == nullptr)
 		return BAD_HANDLE;
 	auto f = static_cast<stream*>(obj);
-	memory_lock mlock(buffer,limit,true);
-	if (!mlock.get())
+	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
 	auto len = f->read(buffer,limit);
 	return pack_qword(f->state(),len);
 }
 qword service_provider::write(HANDLE handle,void const* buffer,dword length){
-	handle_lock hlock;
-	auto obj = hlock.get(handle,STREAM);
+	auto obj = get(handle,STREAM);
 	if (obj == nullptr)
 		return BAD_HANDLE;
 	auto f = static_cast<stream*>(obj);
-	memory_lock mlock(buffer,length);
-	if (!mlock.get())
+	if (!check(buffer,length))
 		return BAD_BUFFER;
 	auto len = f->write(buffer,length);
 	return pack_qword(f->state(),len);

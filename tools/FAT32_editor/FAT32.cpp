@@ -40,14 +40,11 @@ FAT32::~FAT32(void) {
 
 
 bool FAT32::file_record::valid(void) const {
-	for (auto i = 0; i < 11; i++) {	//trick: name+ext 11 bytes
-		if (!name[i])
-			return false;
-	}
-
-	if (!date_time)
+	if (name[0] == 0 || (byte)name[0] == 0xE5)
 		return false;
 
+	if (0x0F == (attrib & 0x0F))
+		return false;
 
 	return true;
 }
@@ -73,7 +70,7 @@ bool FAT32::file_record::operator==(const string& str) const {
 		if (toupper(*it) != toupper(name[i]))
 			return false;
 	}
-	
+
 	pos = 3;
 	while (pos && ext[--pos] == ' ');
 
@@ -440,6 +437,18 @@ dword FAT32::allocate(map<dword, dword>& record) {
 	throw bad_alloc();
 }
 
+bool FAT32::boot_code(istream& source){
+	byte code[0x200];
+	source.read((char*)code,sizeof(code));
+	auto len = source.gcount();
+	if (!len || len > 420)
+		return false;
+	byte header[0x200];
+	hdd.read(header,base,1);
+	memcpy(header + 0x5A,code,len);
+	hdd.write(base,header,1);
+	return true;
+}
 
 bool FAT32::put(const string& name, istream& source) {
 	auto it = find(dir_list.begin(), dir_list.end(), name);
@@ -455,7 +464,7 @@ bool FAT32::put(const string& name, istream& source) {
 		return false;
 
 	chain_writer writer(*this,it->cluster());
-	byte* buffer = new byte[0x200 * sector_per_cluster];
+	byte buffer[0x200 * sector_per_cluster];
 	dword new_size = 0;
 
 	while (true) {
@@ -473,7 +482,6 @@ bool FAT32::put(const string& name, istream& source) {
 		new_size += len;
 	}
 
-	delete[] buffer;
 
 	if (writer.head()) {
 		assert(it->size != new_size);

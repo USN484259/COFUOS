@@ -21,7 +21,7 @@ namespace UOS{
 	public:
 		typedef void (*wait_callback)(void);
 	protected:
-		spin_lock objlock;
+		mutable spin_lock objlock;
 		dword ref_count = 0;
 		thread_queue wait_queue;
 
@@ -58,6 +58,7 @@ namespace UOS{
 			return OBJTYPE::STREAM;
 		}
 		virtual IOSTATE state(void) const = 0;
+		virtual dword result(void) const = 0;
 		virtual dword read(void* dst,dword length) = 0;
 		virtual dword write(void const* sor,dword length) = 0;
 	};

@@ -9,12 +9,11 @@ namespace UOS{
 		qword time = 0;
 		byte mode;
 		byte century_index = 0;
-		bool reset = true;
+		bool reload = true;
 		callback volatile func = nullptr;
 		void* userdata = nullptr;
 
-		static void on_irq(byte id,void* data);
-		//could handle 'overflowed' BCD
+		static bool on_irq(byte id,void* data);
 		void convert(byte&);
 		void update(void);
 	public:
@@ -22,8 +21,8 @@ namespace UOS{
 		inline qword get_time(void) const{
 			return time;
 		}
-		inline void reload(void){
-			reset = true;
+		inline void set_reload(void){
+			reload = true;
 		}
 		void set_handler(callback cb,void* ud);
 	};

@@ -14,16 +14,16 @@ using namespace UOS;
 id_gen<dword> thread::new_id;
 
 //initial thread
-thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), hold_lock(0), priority(scheduler::idle_priority), slice(scheduler::max_slice), ps(p) {
+thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), critical(0), priority(scheduler::idle_priority), slice(scheduler::max_slice), ps(p) {
 	assert(ps && id == 0);
 	krnl_stk_top = 0;	//???
 	krnl_stk_reserved = pe_kernel->stk_reserve;
 }
 
-thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), state(READY), hold_lock(0), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), state(READY), critical(0), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
 	IF_assert;
 	assert(ps && krnl_stk_reserved >= PAGE_SIZE);
-	acquire();
+	//acquire();
 	lock_guard<spin_lock> guard(objlock);
 	auto va = vm.reserve(0,2 + krnl_stk_reserved/PAGE_SIZE);
 	if (!va)
@@ -50,8 +50,8 @@ thread::thread(process* p, procedure entry, const qword* args, qword stk_size) :
 thread::~thread(void){
 	if (state != STOPPED)
 		bugcheck("deleting non-stop thread #%d @ %p",id,this);
-	if (hold_lock)
-		bugcheck("deleting thread #%d @ %p while holding lock %x",id,this,hold_lock);
+	// if (hold_lock)
+	// 	bugcheck("deleting thread #%d @ %p while holding lock %x",id,this,hold_lock);
 	dbgprint("deleted thread #%d @ %p",id,this);
 	if (sse){
 		//flush FPU state from this core
@@ -160,7 +160,7 @@ void thread::on_stop(void){
 	assert(state == thread::STOPPED);
 
 	assert(wait_for == nullptr && timer_ticket == 0);
-
+	/*
 	if (hold_lock){
 		if (hold_lock & HOLD_VSPACE){
 			auto vspace = get_process()->vspace;
@@ -174,6 +174,7 @@ void thread::on_stop(void){
 		}
 		hold_lock = 0;
 	}
+	*/
 	objlock.unlock();
 	gc.put(this);
 }
@@ -202,27 +203,39 @@ void thread::load_sse(void){
 	}
 }
 
-void thread::hold(byte val){
-	IF_assert;
-	assert(is_locked());
-	assert(val == HOLD_HANDLE || val == HOLD_VSPACE);
-	assert(0 == (hold_lock & val));
-	hold_lock |= val;
+void thread::hold(void){
+	interrupt_guard<spin_lock> guard(objlock);
+	assert(critical == 0);
+	critical = CRITICAL;
 }
 
-void thread::drop(byte val){
-	IF_assert;
-	assert(is_locked());
-	assert(val == HOLD_HANDLE || val == HOLD_VSPACE);
-	assert(hold_lock & val);
-	hold_lock &= (~val);
+void thread::drop(void){
+	interrupt_guard<spin_lock> guard(objlock);
+	assert(critical & CRITICAL);
+	critical &= ~CRITICAL;
+	if (critical & KILL){
+		assert(state == RUNNING);
+		state = STOPPED;
+		guard.drop();
+		core_manager::preempt(true);
+		bugcheck("failed to escape @ %p",this);
+	}
 }
 
 void thread::sleep(qword us){
 	this_core core;
 	thread* this_thread = core.this_thread();
-	thread* next_thread;
 	interrupt_guard<void> ig;
+	if (this_thread->has_context())
+		bugcheck("sleep called in IRQ @ %p",this_thread);
+	
+	if (us == 0){
+		this_thread->put_slice(scheduler::max_slice);
+		core_manager::preempt(true);
+		return;
+	}
+
+	thread* next_thread;
 	do{
 		next_thread = ready_queue.get();
 		if (!next_thread)
@@ -232,18 +245,11 @@ void thread::sleep(qword us){
 			break;
 		next_thread->on_stop();
 	}while(true);
+
 	this_thread->lock();
-	if (us){
-		auto ticket = timer.wait(us,on_timer,this_thread);
-		if (!this_thread->set_state(thread::WAITING,ticket,nullptr)){
-			timer.cancel(ticket);
-		}
-	}
-	else{
-		if (this_thread->set_state(thread::READY)){
-			this_thread->put_slice(scheduler::max_slice);
-			ready_queue.put(this_thread);
-		}
+	auto ticket = timer.wait(us,on_timer,this_thread);
+	if (!this_thread->set_state(thread::WAITING,ticket,nullptr)){
+		timer.cancel(ticket);
 	}
 	this_thread->unlock();
 	core.switch_to(next_thread);
@@ -257,6 +263,11 @@ void thread::kill(thread* th){
 	interrupt_guard<void> ig;
 	{
 		lock_guard<thread> guard(*th);
+		if (th->critical & CRITICAL){
+			assert(this_thread != th);
+			th->critical |= KILL;
+			return;
+		}
 		//th->set_state(STOPPED);
 		auto state = th->state;
 		th->state = STOPPED;

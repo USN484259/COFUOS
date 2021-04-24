@@ -51,10 +51,20 @@ void thread_kdb(qword ptr,qword,qword,qword){
 void thread_shell(qword,qword,qword,qword){
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
+	filesystem.wait();
+
+	//open & lock kernel images
+	literal name("/COFUOS.sys");
+	auto kernel_image = file::open(name);
+	if (kernel_image == nullptr)
+		bugcheck("cannot open %s",name.c_str());
+	this_process->handles.assign(0,kernel_image);
+	dbgprint("kernel image locked");
+
 	auto kdb_pipe = new pipe(PAGE_SIZE,pipe::atomic_write);
 	kdb_pipe->manage(nullptr);
 	qword args[4] = {reinterpret_cast<qword>(kdb_pipe)};
-	HANDLE th = this_process->spawn(thread_kdb,args);
+	auto th = this_process->spawn(thread_kdb,args);
 	assert(th);
 	auto dev_pipe = new pipe(0x400,pipe::owner_write | pipe::atomic_write);
 	dev_pipe->manage(nullptr);
@@ -72,20 +82,15 @@ void thread_shell(qword,qword,qword,qword){
 		process::startup_info info = {SHELL,dev_pipe,nullptr,kdb_pipe};
 		dev_pipe->acquire();
 		kdb_pipe->acquire();
-		HANDLE handle_shell = proc.spawn("shell","",info);
+		process* shell = proc.spawn("/shell.exe","",info);
 
-		if (!handle_shell)
+		if (!shell)
 			bugcheck("shell failed to launch");
-		process* shell = nullptr;
+		
 		auto launch_time = timer.running_time();
-		{
-			lock_guard<handle_table> guard(this_process->handles);
-			shell = (process*)this_process->handles[handle_shell];
-			assert(shell);
-		}
 		shell->wait();
 		dbgprint("WARNING shell exited with %x",(qword)shell->result);
-		this_process->handles.close(handle_shell);
+		shell->relax();
 		if (timer.running_time() - launch_time < 0x800000){	//about 8 seconds
 			if (bad)
 				break;
@@ -147,12 +152,12 @@ void krnlentry(void* module_base){
 		this_core core;
 		auto this_process = core.this_thread()->get_process();
 		qword args[4];
-		HANDLE th = this_process->spawn(thread_shell,args);
-		if (th == 0)
+		auto th = this_process->spawn(thread_shell,args);
+		if (!th)
 			bugcheck("failed to spawn shell thread");
 
-		th = this_process->spawn(thread_ide_test,args);
-		assert(th);
+		// th = this_process->spawn(thread_ide_test,args);
+		// assert(th);
 	}
 
 /*

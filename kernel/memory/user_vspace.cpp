@@ -203,3 +203,45 @@ PTE user_vspace::peek(qword va){
 	auto pdpt_table = (PDPTE*)view;
 	return imp_peek(va,pdpt_table);
 }
+
+dword user_vspace::write(qword va,const void* data,dword length){
+	lock_guard<rwlock> guard(objlock,rwlock::SHARED);
+	dword count = 0;
+	map_view view;
+	auto sor = static_cast<const byte*>(data);
+	while(count < length){
+		auto pt = peek(va);
+		if (!pt.present || !pt.user || !pt.write)
+			break;
+		view.map(pt.page_addr << 12);
+		auto off = va & PAGE_MASK;
+		auto len = min<dword>(length - count,PAGE_SIZE - off);
+		auto dst = (byte*)view + off;
+		memcpy(dst,sor,len);
+		sor += len;
+		va += len;
+		count += len;
+	}
+	return count;
+}
+
+dword user_vspace::read(qword va,void* buffer,dword length){
+	lock_guard<rwlock> guard(objlock,rwlock::SHARED);
+	dword count = 0;
+	map_view view;
+	auto dst = static_cast<byte*>(buffer);
+	while(count < length){
+		auto pt = peek(va);
+		if (!pt.present || !pt.user)
+			break;
+		view.map(pt.page_addr << 12);
+		auto off = va & PAGE_MASK;
+		auto len = min<dword>(length - count,PAGE_SIZE - off);
+		auto sor = (const byte*)view + off;
+		memcpy(dst,sor,len);
+		dst += len;
+		va += len;
+		count += len;
+	}
+	return count;
+}

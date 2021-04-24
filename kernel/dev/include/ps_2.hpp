@@ -37,7 +37,7 @@ namespace UOS{
 		callback volatile func = nullptr;
 		void* userdata = nullptr;
 
-		static void on_irq(byte,void*);
+		static bool on_irq(byte,void*);
 		static void thread_ps2(qword,qword,qword,qword);
 		static bool device_keybd(PS_2&,byte);
 		static bool device_mouse(PS_2&,byte,byte);

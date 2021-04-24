@@ -9,7 +9,7 @@ extern "C" void dispatch_irq(byte);
 namespace UOS{
     class APIC{
 	public:
-		typedef void (*CALLBACK)(byte, void*);
+		typedef bool (*CALLBACK)(byte, void*);
 		static constexpr size_t IRQ_MIN = 0x20;		//min handled IRQ
 		static constexpr size_t IRQ_MAX = IDT_LIM/0x10;		//max handled IRQ
 		static constexpr byte IRQ_OFFSET = IRQ_MIN + 4;	//offset for external IRQ

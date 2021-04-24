@@ -10,19 +10,19 @@
 using namespace UOS;
 
 RTC::RTC(void){
-	interrupt_guard<void> guard;
+	IF_assert;
 	if (acpi.get_version() && acpi.get_fadt()->BootArchitectureFlags & 0x20){
 		//RTC not present
 		bugcheck("RTC not present");
 	}
 	apic.set(APIC::IRQ_RTC,on_irq,this);
-	out_byte(0x70,0x8A);  //RTC Status Register A & disable NMI
-	byte val = in_byte(0x71);
-	val &= 0xF0;	//disable divider output
-	out_byte(0x70,0x8A);
-	out_byte(0x71,val);
+	// out_byte(0x70,0x8A);  //RTC Status Register A & disable NMI
+	// byte val = in_byte(0x71);
+	// val &= 0xF0;	//disable divider output
+	// out_byte(0x70,0x8A);
+	// out_byte(0x71,val);
 
-	out_byte(0x70,0x8B);  //RTC Status Register B
+	out_byte(0x70,0x8B);  //RTC Status Register B & disable NMI
 	mode = in_byte(0x71);
 	mode = (mode & 0x1E) | 0x10;    //disable alarm & periodic, enable update_end
 	out_byte(0x70,0x8B);
@@ -33,13 +33,14 @@ RTC::RTC(void){
 	century_index = acpi.get_fadt()->Century;
 }
 
-void RTC::on_irq(byte id,void* data){
+bool RTC::on_irq(byte id,void* data){
 	IF_assert;
 	assert(id == APIC::IRQ_RTC);
 	auto self = (RTC*)data;
 	self->update();
 	if (self->func)
 		self->func(self->time,self->userdata);
+	return false;
 }
 
 void RTC::set_handler(callback cb,void* ud){
@@ -59,15 +60,11 @@ void RTC::update(void){
 	out_byte(0x70,0x0C);
 	byte reason = in_byte(0x71);
 	if (reason & 0x10){ 	//update ended interrupt
-		// out_byte(0x70,0x0A);
-		// byte stat = in_byte(0x71);
-		// if (stat & 0x80)
-		// 	dbgprint("RTC warning: non-stable state");
 	
 		out_byte(0x70,0); //seconds
 		byte second = in_byte(0x71);
 		convert(second);
-		if (reset || (++time & 0x03) != (second & 0x03)){    //not sync, reload
+		if (reload || (++time & 0x03) != (second & 0x03)){    //not sync, reload
 
 			out_byte(0x70,2); //minute
 			byte minute = in_byte(0x71);
@@ -76,16 +73,17 @@ void RTC::update(void){
 			out_byte(0x70,4); //hour
 			byte hour = in_byte(0x71);
 			if (mode & 0x02){   //24h
-				;
+				convert(hour);
 			}
 			else{   //12h
-				if (hour & 0x80){   //p.m.
-					hour = (hour & 0x7F) + 0x12;    //TRICK: convert could handle 'overflowed' BCD
-					if (hour == 0x24)   //special case
-						hour = 0;
-				}
+				bool pm = hour & 0x80;
+				hour &= 0x7F;
+				convert(hour);
+				if (pm)
+					hour += 12;
+				if (hour == 24)
+					hour = 0;
 			}
-			convert(hour);
 
 			out_byte(0x70,7); //day of month
 			byte date = in_byte(0x71);
@@ -135,7 +133,7 @@ void RTC::update(void){
 			}
 			auto total_days = (cur_year - 1970)*365 + leap_count + days_of_year;
 			time = (qword)total_days*86400 + hour*3600 + minute*60 + second;
-			reset = false;
+			reload = false;
 			dbgprint("RTC update: POSIX time = %d",time);
 		}
 		timer.on_second();

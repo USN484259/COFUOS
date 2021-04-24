@@ -3,6 +3,7 @@
 #include "memory/include/vm.hpp"
 #include "intrinsics.hpp"
 #include "dev/include/acpi.hpp"
+#include "process/include/core_state.hpp"
 #include "lock_guard.hpp"
 #include "assert.hpp"
 
@@ -39,6 +40,12 @@ inline dword apic_read(word offset){
 APIC::APIC(void) : table{0}{
 	qword stat = rdmsr(MSR_APIC_BASE);
 	qword base = stat & (~PAGE_MASK);
+
+	auto madt = acpi.get_madt();
+	if (madt->local_apic_pbase != base){
+		bugcheck("ACPI base mismatch (%p,%p)",madt->local_apic_pbase,base);
+	}
+
 	if (stat & 0x400){
 		//x2APIC, reset
 		stat &= (~0xC00);
@@ -47,10 +54,6 @@ APIC::APIC(void) : table{0}{
 	wrmsr(MSR_APIC_BASE,stat | 0x800);
 
 	//maps local APIC
-	auto madt = acpi.get_madt();
-	if (madt->local_apic_pbase != base){
-		bugcheck("ACPI base mismatch (%p,%p)",madt->local_apic_pbase,base);
-	}
 	auto res = vm.assign(LOCAL_APIC_VBASE,base,1);
 	if (!res)
 		bugcheck("vm.assign failed @ %p",base);
@@ -227,8 +230,13 @@ void APIC::dispatch(byte off_id){
 		entry.callback = table[off_id].callback;
 		entry.data = table[off_id].data;
 	}
-	if (entry.callback)
-		entry.callback(IRQ_MIN + off_id,entry.data);
+	bool preempt = false;
+	if (entry.callback){
+		preempt = entry.callback(IRQ_MIN + off_id,entry.data);
+	}
+	if (preempt){
+		core_manager::preempt(false);
+	}
 }
 
 extern "C"
