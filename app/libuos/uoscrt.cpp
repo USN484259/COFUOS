@@ -488,6 +488,14 @@ char** parse_commandline(char* const cmd,dword length,unsigned& argc){
 extern "C"
 [[ noreturn ]]
 void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
+	__asm__ volatile (
+		"mov ax,ss\n\
+		mov ds,ax\n\
+		mov es,ax"
+		:
+		:
+		: "ax"
+	);
 	image_base = imgbase;
 	environment = (const char*)env;
 	guard_value = get_time() ^ rdtsc();

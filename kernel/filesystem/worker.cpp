@@ -1,23 +1,23 @@
-#include "fat32.hpp"
+#include "exfat.hpp"
 #include "lock_guard.hpp"
 #include "process/include/core_state.hpp"
 #include "process/include/process.hpp"
-#include "dev/include/disk_cache.hpp"
+#include "dev/include/disk_interface.hpp"
 
 using namespace UOS;
 
-void FAT32::thread_pool::launch(unsigned count){
+void exfat::thread_pool::launch(exfat* fs,unsigned count){
 	lock_add<dword>(&worker_count,count);
 	this_core core;
 	auto this_proceess = core.this_thread()->get_process();
-	qword args[4] = { reinterpret_cast<qword>(&fs) };
+	qword args[4] = { reinterpret_cast<qword>(fs) };
 	while(count--){
-		auto th = this_proceess->spawn(FAT32::thread_worker,args);
+		auto th = this_proceess->spawn(exfat::thread_worker,args);
 		assert(th);
 	}
 }
 
-void FAT32::thread_pool::put(file* f){
+void exfat::thread_pool::put(file* f){
 	assert(f && f->command);
 	f->acquire();
 	f->host->acquire();
@@ -38,7 +38,7 @@ void FAT32::thread_pool::put(file* f){
 	barrier.signal_one();
 }
 
-file* FAT32::thread_pool::get(void){
+file* exfat::thread_pool::get(void){
 	do{
 		{
 			lock_guard<rwlock> guard(objlock);
@@ -62,8 +62,8 @@ file* FAT32::thread_pool::get(void){
 	}while(true);
 }
 
-void FAT32::thread_worker(qword arg,qword,qword,qword){
-	auto self = reinterpret_cast<FAT32*>(arg);
+void exfat::thread_worker(qword arg,qword,qword,qword){
+	auto self = reinterpret_cast<exfat*>(arg);
 
 	while(true){
 		auto f = self->workers.get();
@@ -90,7 +90,7 @@ void FAT32::thread_worker(qword arg,qword,qword,qword){
 	}
 }
 
-void FAT32::worker_read(file* f){
+void exfat::worker_read(file* f){
 	assert(f->command == file::COMMAND_READ);
 	auto dst = reinterpret_cast<qword>(f->buffer);
 	dword len = 0;
@@ -140,6 +140,6 @@ void FAT32::worker_read(file* f){
 	f->length = len;
 }
 
-void FAT32::worker_write(file* f){
+void exfat::worker_write(file* f){
 	bugcheck("FAT32::worker_write not implemented");
 }

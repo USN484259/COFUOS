@@ -163,6 +163,10 @@ void terminal::dispatch(void){
 			osctl(halt,nullptr,&size);
 			abort();
 		}
+		if (size >= 5 && match<const char*>(cmd,"break",5,equal_to<char>()) == 5){
+			osctl(dbgbreak,nullptr,&size);
+			break;
+		}
 
 		STARTUP_INFO info = {0};
 		info.commandline = cmd;

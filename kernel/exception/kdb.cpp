@@ -38,12 +38,9 @@ void print_sysinfo(void){
 	dbgprint("%cSDT @ %p",sysinfo->rsdp.version ? 'X' : 'R', sysinfo->rsdp.address);
 	dbgprint("PMM_avl_top @ %p",sysinfo->PMM_avl_top);
 	dbgprint("kernel image %d pages",sysinfo->kernel_page);
-	dbgprint("cpuid (eax == 7) -> 0x%x",(qword)sysinfo->cpuinfo);
-	dbgprint("MAXPHYADDR %d",sysinfo->addrwidth & 0xFF);
 	dbgprint("Video %d*%d*%d line_size = %d @ %p",\
 		sysinfo->VBE_width,sysinfo->VBE_height,sysinfo->VBE_bpp,sysinfo->VBE_scanline,(qword)sysinfo->VBE_addr);
-	dbgprint("FAT32 header @ %d, table @ %d, data @ %d, cluster %d",\
-		sysinfo->FAT_header,sysinfo->FAT_table,sysinfo->FAT_data,sysinfo->FAT_cluster);
+	dbgprint("exFAT volume @ 0x%x",sysinfo->volume_base);
 	assert(pe_kernel);
 	//since image has already loaded, it is safe to access section table
 	for (unsigned i = 0;i < pe_kernel->section_count;++i){

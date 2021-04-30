@@ -94,5 +94,6 @@ struct rectangle{
 enum osctl_code : dword {
 	bugcheck = 0,
 	halt,
-	disk_read
+	disk_read,
+	dbgbreak = 3,
 };

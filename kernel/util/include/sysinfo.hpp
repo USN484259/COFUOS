@@ -19,24 +19,20 @@ namespace UOS{
 		} rsdp;
 
 		qword PMM_avl_top;
-		dword kernel_page;
-		dword cpuinfo;
-		
-		word addrwidth;
+		qword volume_base;
+
+		word kernel_page;
 		word ports[7];
-		
+
+		dword VBE_addr;
 		word VBE_mode;
 		word VBE_scanline;
 		word VBE_width;
 		word VBE_height;
 		word VBE_bpp;
-		word reserved_2;
-		dword VBE_addr;
-		
-		dword FAT_header;
-		dword FAT_table;
-		dword FAT_data;
-		dword FAT_cluster;
+
+
+
 	} __attribute__((packed));
 
 	extern system_feature features;

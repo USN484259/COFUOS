@@ -16,8 +16,8 @@
 #include "dev/include/ps_2.hpp"
 #include "dev/include/pci.hpp"
 #include "dev/include/ide.hpp"
-#include "dev/include/disk_cache.hpp"
-#include "filesystem/include/fat32.hpp"
+#include "dev/include/disk_interface.hpp"
+#include "filesystem/include/exfat.hpp"
 #include "interface/include/object.hpp"
 
 namespace UOS{
@@ -57,11 +57,11 @@ namespace UOS{
 	video_memory display;
 	PS_2 ps2_device;
 	IDE ide;
-	disk_cache dm([](qword total) -> word{
+	disk_interface dm([](qword total) -> word{
 		total /= 0x100;
 		total = max<qword>(total,8);
 		total = min<qword>(total,64);
 		return total;
 	}(pm.capacity()));
-	FAT32 filesystem(0x10);
+	exfat filesystem(0x10);
 }

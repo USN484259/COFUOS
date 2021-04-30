@@ -1,5 +1,5 @@
 boot: bin/boot.bin bin/krnldr.bin
-	../tools/FAT32_editor/bin/FAT32_editor ../COFUOS.vhd < FAT32_boot.txt
+	../tools/make_boot/bin/make_boot ../COFUOS.vhd bin/boot.bin bin/krnldr.bin
 
 clean:
 	@echo boot clean no op

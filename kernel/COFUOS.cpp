@@ -54,7 +54,7 @@ void thread_shell(qword,qword,qword,qword){
 	filesystem.wait();
 
 	//open & lock kernel images
-	literal name("/COFUOS.sys");
+	literal name("/boot/COFUOS");
 	auto kernel_image = file::open(name);
 	if (kernel_image == nullptr)
 		bugcheck("cannot open %s",name.c_str());
@@ -82,7 +82,7 @@ void thread_shell(qword,qword,qword,qword){
 		process::startup_info info = {SHELL,dev_pipe,nullptr,kdb_pipe};
 		dev_pipe->acquire();
 		kdb_pipe->acquire();
-		process* shell = proc.spawn("/shell.exe","",info);
+		process* shell = proc.spawn("/bin/shell","",info);
 
 		if (!shell)
 			bugcheck("shell failed to launch");
@@ -107,7 +107,7 @@ void thread_ide_test(qword,qword,qword,qword){
 	this_core core;
 	auto this_thread = core.this_thread();
 	auto phy_addr = pm.allocate(PM::MUST_SUCCEED);
-	dword samples[] = {0,0x0FFFFFFF,sysinfo->FAT_header};
+	dword samples[] = {0,0x0FFFFFFF};
 	for (auto lba : samples){
 		if (ide.read(lba,phy_addr,SECTOR_SIZE)){
 			map_view view(phy_addr);
@@ -156,8 +156,8 @@ void krnlentry(void* module_base){
 		if (!th)
 			bugcheck("failed to spawn shell thread");
 
-		// th = this_process->spawn(thread_ide_test,args);
-		// assert(th);
+		th = this_process->spawn(thread_ide_test,args);
+		assert(th);
 	}
 
 /*

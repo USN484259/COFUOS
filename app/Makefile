@@ -6,7 +6,13 @@ export LIB_PATH:=$(addprefix -L,$(LIB_PATH))
 export DEFINES:=$(addprefix -D,$(DEFINES))
 export CPPFLAGS=$(CC_OPTIONS) $(INC_PATH) $(LIB_PATH) $(DEFINES)
 
-app:	libuos shell test
+SRC_LIST = $(wildcard *.cpp)
+
+PROG_LIST = $(patsubst %.cpp,bin/%.exe,$(SRC_LIST))
+
+app:	libuos shell $(PROG_LIST)
+	guestfish < guestfish_script
+
 
 libuos:
 	@cd $@ && $(MAKE)
@@ -14,8 +20,12 @@ libuos:
 shell:	libuos
 	@cd $@ && $(MAKE)
 
-test:	libuos
-	@cd $@ && $(MAKE)
+# bin/%.exe.clean:	bin/%.exe
+# 	$(OBJCOPY) -S $< $@
+
+bin/%.exe:	%.cpp
+	$(MINGW_CC) $(CPPFLAGS) -e uos_entry $< -o $@ -luos -Wl,--relax,--stack=0x4000,--no-seh
+	$(OBJCOPY) -S $@ $@.clean
 
 # bin/test.exe:	bin/test.o
 # 	$(MINGW_LD) -b pei-x86-64 -nostdlib $< -o $@
@@ -23,4 +33,4 @@ test:	libuos
 # bin/test.o:	test.asm
 # 	$(NASM) -f win64 $< -o $@
 
-.PHONY:	app libuos shell test
+.PHONY:	app libuos shell

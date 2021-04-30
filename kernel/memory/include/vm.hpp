@@ -115,8 +115,8 @@ namespace UOS{
 		virtual bool protect(qword addr,dword page_count,qword attrib) = 0;
 		virtual bool release(qword addr,dword page_count) = 0;
 
-		virtual dword write(qword va,const void* data,dword length) = 0;
-		virtual dword read(qword va,void* buffer,dword length) = 0;
+		virtual dword write(qword va,const void* data,dword length);
+		virtual dword read(qword va,void* buffer,dword length);
 		virtual PTE peek(qword va) = 0;
 		inline qword usage(void) const{
 			return used_pages;

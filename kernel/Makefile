@@ -8,18 +8,17 @@ export CPPFLAGS=$(CC_OPTIONS) $(INC_PATH) $(DEFINES)
 
 MODULES= util sync exception memory dev process filesystem interface
 
-COFUOS:	bin/COFUOS.sys
+COFUOS:	bin/COFUOS.sys.clean
+	guestfish add ../COFUOS.vhd : launch : mount /dev/sda / : upload $< /boot/$@
+
+bin/COFUOS.sys.clean:	bin/COFUOS.sys
+	$(OBJCOPY) -S $< $@
 
 bin/COFUOS.sys: $(MODULES) bin/hal.o $(COFUOS_ROOT)/util/include/*.hpp $(MODULES)/include/*.hpp
-	$(MINGW_CC) $(CPPFLAGS) $(wildcard *.cpp) $(wildcard $(COFUOS_ROOT)/util/bin/*.o) $(wildcard bin/*.o) -o bin/COFUOS.sys -e krnlentry -Wl,--relax,--image-base=0xFFFF800002000000,--stack=0x4000,--no-seh
-	$(OBJCOPY) -S bin/COFUOS.sys bin/COFUOS.sys.clean
-	../tools/FAT32_editor/bin/FAT32_editor ../COFUOS.vhd < FAT32_kernel.txt
+	$(MINGW_CC) $(CPPFLAGS) $(wildcard *.cpp) $(wildcard $(COFUOS_ROOT)/util/bin/*.o) $(wildcard bin/*.o) -o $@ -e krnlentry -Wl,--relax,--image-base=0xFFFF800002000000,--stack=0x4000,--no-seh
 
 $(MODULES):
 	@cd $@ && $(MAKE)
-
-# bin/embed_test.o: embed_test.asm $(COFUOS_ROOT)/app/shell/bin/shell.exe $(wildcard $(COFUOS_ROOT)/app/test/bin/*.exe)
-#	$(NASM) -f win64 $< -o $@
 
 bin/hal.o:	hal.asm
 	$(NASM) -f win64 $(DEFINES) $< -o $@

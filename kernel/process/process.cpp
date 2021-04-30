@@ -190,7 +190,7 @@ process::~process(void){
 
 thread* process::spawn(thread::procedure entry,const qword* args,qword stk_size){
 	if (state == STOPPED)
-		return 0;
+		return nullptr;
 	if (stk_size)
 		stk_size = max(stk_size,PAGE_SIZE);
 	else

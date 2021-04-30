@@ -5,10 +5,10 @@
 #include "sync/include/event.hpp"
 
 namespace UOS{
-	class disk_cache{
+	class disk_interface{
 	public:
 		class slot{
-			friend class disk_cache;
+			friend class disk_interface;
 			void* const access;
 			const dword phy_page;
 			qword lba_base;
@@ -56,7 +56,7 @@ namespace UOS{
 
 
 	public:
-		disk_cache(word slot_count);
+		disk_interface(word slot_count);
 		static byte count(qword lba);
 
 		slot* get(qword lba,byte count,bool write);
@@ -65,5 +65,5 @@ namespace UOS{
 		// byte read(qword lba,byte count,void* buffer);
 		// byte write(qword lba,byte count,const void* buffer);
 	};
-	extern disk_cache dm;
+	extern disk_interface dm;
 }

@@ -205,6 +205,8 @@ PTE user_vspace::peek(qword va){
 }
 
 dword user_vspace::write(qword va,const void* data,dword length){
+	if (IS_HIGHADDR(va))
+		return virtual_space::write(va,data,length);
 	lock_guard<rwlock> guard(objlock,rwlock::SHARED);
 	dword count = 0;
 	map_view view;
@@ -226,6 +228,8 @@ dword user_vspace::write(qword va,const void* data,dword length){
 }
 
 dword user_vspace::read(qword va,void* buffer,dword length){
+	if (IS_HIGHADDR(va))
+		return virtual_space::read(va,buffer,length);
 	lock_guard<rwlock> guard(objlock,rwlock::SHARED);
 	dword count = 0;
 	map_view view;

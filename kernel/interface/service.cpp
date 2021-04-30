@@ -7,7 +7,7 @@
 #include "dev/include/display.hpp"
 #include "dev/include/rtc.hpp"
 #include "dev/include/timer.hpp"
-#include "dev/include/disk_cache.hpp"
+#include "dev/include/disk_interface.hpp"
 #include "object.hpp"
 #include "sync/include/semaphore.hpp"
 #include "sync/include/event.hpp"
@@ -108,7 +108,8 @@ service_provider::~service_provider(void){
 		vspace->unlock();
 	if (hold_handle)
 		this_process->handles.unlock();
-	this_thread->drop();
+	if (!skip_critical)
+		this_thread->drop();
 }
 
 bool service_provider::check(void const* ptr,dword length,bool write){
@@ -163,6 +164,9 @@ qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
 		case disk_read:
 			write = true;
 			break;
+		case dbgbreak:
+			int_trap(3);
+			return 0;
 		case halt:
 			shutdown();
 		default:
@@ -267,6 +271,7 @@ dword service_provider::get_priority(HANDLE handle){
 	return th->get_priority();
 }
 void service_provider::exit_thread(void){
+	this_thread->drop();
 	thread::kill(this_thread);
 	bugcheck("exit_thread failed");
 }
@@ -342,13 +347,14 @@ dword service_provider::wait_for(HANDLE handle,qword us){
 
 	assert(hold_handle);
 	hold_handle = false;
-
+	skip_critical = true;
 	return obj->wait(us,[](void){
 		this_core core;
 		auto this_thread = core.this_thread();
 		auto& table = this_thread->get_process()->handles;
 		assert(table.is_locked() && !table.is_exclusive());
 		table.unlock();
+		this_thread->drop();
 	});
 }
 dword service_provider::signal(HANDLE handle,dword mode){
@@ -421,6 +427,7 @@ qword service_provider::get_command(HANDLE handle,void* buffer,dword limit){
 	return pack_qword(SUCCESS,size);
 }
 void service_provider::exit_process(dword result){
+	this_thread->drop();
 	this_process->kill(result);
 	bugcheck("exit_process failed");
 }
@@ -609,6 +616,7 @@ qword service_provider::read(HANDLE handle,void* buffer,dword limit){
 	auto f = static_cast<stream*>(obj);
 	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
+	assert(!IS_HIGHADDR(buffer));
 	auto len = f->read(buffer,limit);
 	return pack_qword(f->state(),len);
 }
@@ -619,6 +627,7 @@ qword service_provider::write(HANDLE handle,void const* buffer,dword length){
 	auto f = static_cast<stream*>(obj);
 	if (!check(buffer,length))
 		return BAD_BUFFER;
+	assert(!IS_HIGHADDR(buffer));
 	auto len = f->write(buffer,length);
 	return pack_qword(f->state(),len);
 }

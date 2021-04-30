@@ -1,0 +1,5 @@
+add ../COFUOS.vhd
+launch
+mount /dev/sda /
+upload shell/bin/shell.exe.clean /bin/shell
+<! for f in bin/*.clean; do echo upload $f /bin/$(basename $f .exe.clean); done

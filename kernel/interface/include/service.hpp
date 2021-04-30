@@ -34,7 +34,7 @@ namespace UOS{
 		thread* this_thread;
 		process* this_process;
 		virtual_space* vspace;
-
+		bool skip_critical = false;
 		bool hold_memory = false;
 		bool hold_handle = false;
 

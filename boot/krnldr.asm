@@ -55,24 +55,25 @@ struc sysinfo
 .ACPI_RSDT		resq 1
 
 .PMM_avl_top	resq 1
-.kernel_page	resd 1
-.cpu			resd 1
+.volume_base	resq 1
 
-.bus			resw 1
+.kernel_page	resw 1
 .port			resw 7
 
+.VBE_addr		resd 1
 .VBE_mode		resw 1
 .VBE_scanline	resw 1
 .VBE_width		resw 1
 .VBE_height		resw 1
 .VBE_bpp		resw 1
 				resw 1
-.VBE_addr		resd 1
 
-.FAT_header		resd 1
-.FAT_table		resd 1
-.FAT_data		resd 1
-.FAT_cluster	resd 1
+; meaningless for kernel
+.exfat_SIG		resd 1
+.cluster_size	resd 1
+.lba_FAT		resq 1
+.lba_HEAP		resq 1
+
 
 endstruc
 
@@ -166,9 +167,7 @@ gdt64_len equ ($-gdt64_base)
 GDT_SYS_CS equ 0x08
 GDT_SYS_DS equ 0x10
 
-
 align 16
-
 print16:
 
 mov ax,0x0300
@@ -202,8 +201,6 @@ int 0x10
 ret
 
 
-
-
 abort16:
 push cs
 pop ds
@@ -214,14 +211,11 @@ hlt
 jmp .hlt
 
 
-
 set_PMM_top:	;si INFO	di PMMSCAN
 
 mov eax,[es:di+0x10]
 dec eax
 jnz .end
-
-
 
 mov eax,[es:di]
 mov ecx,[es:di+4]
@@ -314,10 +308,8 @@ mov sp,LDR_STK
 ;	ds	->	cur code segment
 ;	es	->	flat address
 
-
 mov si,strboot
 call print16
-
 
 ;sysinfo setup
 xor ax,ax
@@ -332,14 +324,21 @@ stosd
 mov eax,'NFO'
 stosd
 
-mov WORD [es:SYSINFO_BASE+sysinfo.bus],0x2024
+mov si,0x7C40
+mov di,SYSINFO_BASE+sysinfo.volume_base
+mov cx,4
+es rep movsw
+
+mov si,0x0400
+mov di,SYSINFO_BASE+sysinfo.port
+mov cx,7
+es rep movsw
+
 mov WORD [es:SYSINFO_BASE+sysinfo.VBE_bpp],24
 
-
-
-mov si,0x7C00+0x200-0x10	;FAT_INFO from boot
-mov di,SYSINFO_BASE+sysinfo.FAT_header
-mov cx,7
+mov si,0x7C64
+mov di,SYSINFO_BASE+sysinfo.exfat_SIG
+mov cx,2
 es rep movsw
 
 PCI_scan:
@@ -489,8 +488,8 @@ mov dx,[es:PMMSCAN_BASE+0x32]
 .nvbe3:
 mov [es:di + 2],dx	;scanline
 
+mov di,SYSINFO_BASE+sysinfo.VBE_addr
 mov ax,[es:PMMSCAN_BASE+0x28]
-add di,0x0C
 stosw
 mov ax,[es:PMMSCAN_BASE+0x2A]
 stosw
@@ -624,16 +623,8 @@ mov ss,ax
 mov esp,LDR_STK
 mov ebp,esp		;stack frame
 
-
-
 push 10_0000_0000_0000_0000_0010_b
 popfd
-
-;save ports
-mov esi,0x0400
-mov edi,SYSINFO_BASE+sysinfo.port
-mov ecx,7
-rep movsw
 
 ;check cpuid
 pushfd
@@ -641,39 +632,30 @@ pop edx
 test edx,1<<21
 jz abort
 
-
-
 xor eax,eax
 cpuid
 
 cmp al,1
 jb abort
 
+; cmp al,7
+; jb cpuid0_basic
 
-cmp al,7
-jb cpuid0_basic
+; xor ecx,ecx
+; mov eax,7
+; cpuid
 
-xor ecx,ecx
-mov eax,7
-cpuid
+; mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMEP (SMAP INVPCID ?)
 
-mov [SYSINFO_BASE+sysinfo.cpu],ebx		;SMEP (SMAP INVPCID ?)
-
-cpuid0_basic:
+; cpuid0_basic:
 
 mov eax,1
 cpuid
-
-;bt edx,16	;PAT	?
-;jnc abort
 
 bt edx,15	;cmovcc
 jnc abort
 
 bt edx,13	;PGE
-jnc abort
-
-bt edx,11	;SYSENTER
 jnc abort
 
 bt edx,9	;APIC
@@ -685,23 +667,20 @@ jnc abort
 bt edx,5	;MSR
 jnc abort
 
-
 mov eax,0x80000000
 cpuid
 
 cmp al,1
 jb abort
 
+; cmp al,8
+; jb cpuid8_basic
+; mov eax,0x80000008
+; cpuid
 
-cmp al,8
-jb cpuid8_basic
-mov eax,0x80000008
-cpuid
+; mov [SYSINFO_BASE+sysinfo.bus],ax	;MAXPHYADDR
 
-mov [SYSINFO_BASE+sysinfo.bus],ax	;MAXPHYADDR
-
-
-cpuid8_basic:
+; cpuid8_basic:
 
 mov eax,0x80000001
 cpuid
@@ -713,8 +692,6 @@ bt edx,20	;NX
 jnc abort
 
 ;TODO  test all necessary functionalities
-
-
 
 
 ;init GDT64
@@ -738,56 +715,56 @@ xor ecx,ecx
 mov ebx,PDPT0
 mov edx,0x03
 inc ecx
-call map_page
+call map_page_32
 
 mov edi,PL4T+0x800
 mov ebx,PDPT8
 inc ecx
-call map_page
+call map_page_32
 
 mov edi,PDPT0
 mov ebx,PDT0
 inc ecx
-call map_page
+call map_page_32
 
 mov edi,PDPT8
 mov ebx,PDT0
 inc ecx
-call map_page
+call map_page_32
 
 mov edi,PDT0
 mov ebx,PT0
 inc ecx
-call map_page
+call map_page_32
 
 mov edi,PDT0 + 0x08	;PDT[1] -> PT_MAP
 mov ebx,PT_MAP
 inc ecx
-call map_page
+call map_page_32
 
 ;direct map boot area
 mov edi,PT0
 xor ebx,ebx
 mov edx,0x80000103
 mov cl,2
-call map_page
+call map_page_32
 
 mov ebx,0x2000
 mov edx,0x101		;RX
 inc ecx
-call map_page
+call map_page_32
 
 mov ebx,PT_BASE
 mov edx,0x8000011B	;CD WT
 ;mov edx,0x80000103
 mov cl,PT_LEN>>12
-call map_page
+call map_page_32
 
 ; up to 0x10000
 mov ebx,PT_BASE+PT_LEN
 mov edx,0x80000103
 mov cl,0x10-((PT_BASE+PT_LEN)>>12)
-call map_page
+call map_page_32
 
 
 mov eax,cr4
@@ -835,7 +812,7 @@ lgdt [esp+2]
 jmp DWORD GDT_SYS_CS:LM_entry
 
 
-map_page:	;edi PT		ebx PMM		ecx cnt		edx attrib
+map_page_32:	;edi PT		ebx PMM		ecx cnt		edx attrib
 
 mov eax,ebx
 xor ebx,ebx
@@ -926,15 +903,106 @@ call qword [rsp]
 mov rdx,LM_high
 jmp rdx
 
-align 4
+align 16
 
 CODE64OFF equ ($-$$)
 
 section codehigh vstart=0xFFFF8000_00002000+CODE64OFF
 
-strkrnl db 'COFUOS',0x20,0x20,'SYS',0
+folder_name db 'BOOT',0
+image_name db 'COFUOS.SYS',0
+
 
 align 8
+
+; ecx : folder_cluster
+; rdx : filename
+; return : rax => file_entrance
+; using CMN_BUF_VBASE
+find_file:
+push rbx
+push rsi
+push rdi
+push rdx
+
+mov ebx,[r12 + sysinfo.cluster_size]
+lea eax,[ecx - 2]
+shr ebx,9
+mov r8d,8
+mul ebx
+mov rdx,[r12 + sysinfo.lba_HEAP]
+add rdx,rax
+cmp ebx,8
+mov rsi,CMN_BUF_VBASE
+cmova ebx,r8d
+
+.load:
+mov rcx,rsi
+call read_sector
+add rsi,SECTOR_SIZE
+dec ebx
+jnz .load
+
+mov rdi,CMN_BUF_VBASE
+lea rbx,[rsi - 0x60]
+
+; assume name not exceed 14 characters
+.find:
+mov al,[rdi]
+test al,al
+jz .fail
+cmp al, 0x85
+jnz .next
+cmp byte [rdi + 1], 2
+jnz .next
+cmp byte [rdi + 0x20],0xC0
+jnz .next
+cmp word [rdi + 0x40],0xC1
+jnz .next
+movzx rcx, byte [rdi + 0x23]
+lea rsi,[rdi + 0x42]
+cmp cl,14
+mov rdx,[rsp]
+ja .next
+
+.match:
+lodsw
+cmp ah,0
+jnz .next
+cmp al,[rdx]
+jz .equal
+cmp al,0x60
+jbe .next
+cmp al,0x7A
+ja .next
+xor al,[rdx]
+cmp al,0x20
+jnz .next
+.equal:
+inc rdx
+test ax,ax
+loopnz .match
+
+; found
+test rcx,rcx
+mov rax,rdi
+jz .end
+
+.next:
+add rdi,0x20
+cmp rdi,rbx
+jbe .find
+
+.fail:
+xor rax,rax
+
+.end:
+pop rdx
+pop rdi
+pop rsi
+pop rbx
+ret
+
 
 LM_high:
 mov r12,HIGHADDR+SYSINFO_BASE
@@ -960,131 +1028,196 @@ add rax,PAGE_SIZE
 loop .flush_low
 
 ;ebable PGE SMEP disable WRGSBASE
+mov rbp,cr4
+xor eax,eax
+cpuid
+cmp al,7
+jb .nosmep
 
-;mov rsi,HIGHADDR+SYSINFO_BASE+sysinfo.cpu
-mov eax,[r12+sysinfo.cpu]
-mov rdx,cr4
-bt eax,7
+xor ecx,ecx
+mov eax,7
+cpuid
+bt ebx,7
 jnc .nosmep
-bts rdx,20	;SMEP
+bts rbp,20	;SMEP
+
 
 .nosmep:
-bts rdx,7	;PGE
-btr rdx,16	;FSGSBASE
+bts rbp,7	;PGE
+btr rbp,16	;FSGSBASE
 
-mov cr4,rdx
-
+mov cr4,rbp
 ;no need to reload CR3 since setting PGE flushs TLB
-;mov rdx,cr3
-;mov cr3,rdx
 
-; mov ax,[r12+sysinfo.FAT_cluster]
-; cmp ax,8
-; jbe .cluster_fine
-; call BugCheck
-; int3
+exFAT_verify:
 
-; .cluster_fine:
-sub rsp,0x40
-
-call PmmAlloc
-mov rdx,rax
-mov rcx,GAP_VBASE
-mov r8,0x80000000_00000003
-mov [rsp+peinfo.headerpmm],rax
-call MapPage
-
-find_krnl:
+mov rbx,[r12 + sysinfo.volume_base]
+mov rcx,CMN_BUF_VBASE
+mov rdx,rbx
+call read_sector
 mov rsi,CMN_BUF_VBASE
-xor r8,r8
-mov rcx,rsi
-mov edx,[r12+sysinfo.FAT_data]
-inc r8
-call ReadSector
+mov eax,[r12 + sysinfo.exfat_SIG]
+cmp word [rsi + 0x1FE],0xAA55
+jnz .fail
+cmp [rsi + 0x64],eax
+mov rdx,'EXFAT   '
+jnz .fail
+cmp [rsi + 3],rdx
+mov ecx,0x35
+jnz .fail
+lea rdi,[rsi + 0x0B]
+xor eax,eax
+repz scasb
+mov edx,[rsi + 0x58]
+jnz .fail
+mov eax,SECTOR_SIZE
+cmp [rsi + 0x40],rbx
+mov cl,[rsi + 0x6D]
+jnz .fail
+shl eax,cl
+cmp word [rsi + 0x68],0x0100
+mov [r12 + sysinfo.cluster_size],eax
+jnz .fail
+cmp byte [rsi + 0x6C],9
+mov al,[rsi + 0x6E]
+jnz .fail
+add rdx,rbx
+xor ecx,ecx
+dec al
+mov [r12 + sysinfo.lba_HEAP],rdx
+js .fail
+jz .calc_fat
 
-mov rbx,SECTOR_SIZE
-xor rcx,rcx
-add rbx,rsi
-
-jmp .findfile
+cmp al,1
+jnz .fail
+bt word [rsi + 0x6A],0
+cmovc ecx,[rsi + 0x54]
+jmp .calc_fat
 
 .fail:
 call BugCheck
 int3
 
-.next:
-add rsi,0x20
-and sil,(~ 0x1F)
+.calc_fat:
+add ecx,[rsi + 0x50]
+mov edi,[rsi + 0x60]
+add rcx,rbx
+mov [r12 + sysinfo.lba_FAT],rcx
 
-.findfile:
 
-cmp rsi,rbx
-jae .fail
+find_krnl:
+sub rsp,0x40
 
-cmp BYTE [rsi],0
+call pmm_alloc
+mov rdx,rax
+mov rcx,GAP_VBASE
+mov r8,0x80000000_00000003
+mov [rsp+peinfo.headerpmm],rax
+call map_page
+
+; edi as root directory
+mov ecx,edi
+mov rdx,folder_name
+call find_file
+test rax,rax
+mov rsi,rax
 jz .fail
-
-mov rdi,strkrnl
-mov cl,11
-
-.name:
-lodsb
-xor al,[rdi]
-test al,(~ 0x20)
-jnz .next
-inc rdi
-loop .name
-
-lodsb
-test al,0x10
+bt word [rsi + 4],4
+mov rax,[rsi + 0x28]
+jnc .fail
+cmp rax,[rsi + 0x38]
+mov ecx,[rsi + 0x34]
 jnz .fail
-
-add rsi,8
-lodsw
-shl eax,16
-add rsi,4
-lodsw
-mov edx,[rsi]
-;eax firstcluster
-;edx filesize
-
-cmp edx,0x70000
-ja .fail	; over 448k, possibly overwrite BIOS
-
-test eax,eax
+test rax,rax
+jz .fail
+test ecx,ecx
+mov rdx,image_name
+jz .fail
+call find_file
+test rax,rax
+mov rsi,rax
 jz .fail
 
-cmp eax,0x0FFFFFF8
-jae .fail
-
-xor ebx,ebx
+bt word [rsi + 4],4
+mov rbx,[rsi + 0x28]
+jc .fail
+cmp rbx,[rsi + 0x38]
+mov eax,[rsi + 0x34]
+ja .fail
+test rbx,rbx
 mov rdi,FAT_KRNL_CLUSTER
+jz .fail
+test eax,eax
+mov r8d,[r12 + sysinfo.cluster_size]
+jz .fail
+cmp rbx,0x70000	; over 448k, possibly overwrite BIOS
+;mov r8d,SECTOR_SIZE
+ja .fail
+stosd
+xor edx,edx
+mov eax,ebx
+xor ecx,ecx
+div r8d
+
+test edx,edx
+setnz cl
+
+bt word [rsi + 0x20],9
+lea ebx,[eax + ecx - 1]
+
+; build cluster table
+; ebx (cluster_count - 1)
+; eax cur_cluster
+jc .linear_cluster
+
+bts r13,63
+mov eax,[rdi - 4]
 mov rsi,CMN_BUF_VBASE
-not ebx
-.load_cluster:
-xor r8,r8
+
+.cluster_loop:
 mov r14d,eax
-stosd	;save cluster number
-mov edx,[r12+sysinfo.FAT_table]
-shr eax,7		; / 128
-and r14,0x7F	; % 128
-cmp eax,ebx
-mov rcx,rsi		;CMN_BUF_VBASE
-jz .skip
+shr eax,7
+and r14d,0x7F
+cmp rax,r13
+mov rcx,rsi
+jz .same_fat
 
-add edx,eax
-inc r8
-mov ebx,eax
-call ReadSector
+mov rdx,[r12 + sysinfo.lba_FAT]
+add rdx,rax
+mov r13,rax
+call read_sector
 
-.skip:
-mov eax,[rsi+4*r14]
-
+.same_fat:
+mov eax,[rsi + 4*r14]
 cmp eax,2
 jb .fail
+cmp eax,0xFFFFFFF7
+jz .fail
+ja .cluster_done
 
-cmp eax,0x0FFFFFF8
-jb .load_cluster
+stosd
+dec ebx
+jmp .cluster_loop
+
+.cluster_done:
+test ebx,ebx
+jz load_image
+
+.fail:
+call BugCheck
+int3
+
+.linear_cluster:
+test ebx,ebx
+mov eax,[rdi - 4]
+jz load_image
+mov ecx,ebx
+.linear_loop:
+inc eax
+stosd
+loop .linear_loop
+
+load_image:
 
 mov rsi,GAP_VBASE
 
@@ -1092,8 +1225,8 @@ mov rcx,rsi
 xor rdx,rdx
 mov rdi,rsi
 mov r8,SECTOR_SIZE
-call ReadFile
-add rdi,rax
+call read_file
+add rdi,SECTOR_SIZE
 
 
 ;verify PE header
@@ -1111,7 +1244,7 @@ jnz .fail
 
 lodsw	;machine
 cmp ax,0x8664
-jnz near .fail
+jnz .fail
 
 lodsw	;section count
 add rsi,0x0C
@@ -1153,13 +1286,14 @@ jbe .smallheader
 dec eax
 and ax,(~0x1FF)		;eax -> header_size_sector_aligned - SECTOR_SIZE
 cmp eax,(PAGE_SIZE-SECTOR_SIZE)
+mov ebx,eax
 ja .fail
 
 mov rcx,rdi
 mov edx,SECTOR_SIZE
 mov r8d,eax
-call ReadFile
-add rdi,rax
+call read_file
+add rdi,rbx
 
 .smallheader:
 
@@ -1207,11 +1341,11 @@ mov rbp,rdi
 
 .makestk:
 sub rdi,PAGE_SIZE
-call PmmAlloc
+call pmm_alloc
 mov r8,0x80000000_00000103
 mov rdx,rax
 mov rcx,rdi
-call MapPage
+call map_page
 
 dec ebx
 jnz .makestk
@@ -1238,7 +1372,7 @@ stosq
 mov rcx,rbx		;[rsp+peinfo.vbase]
 mov rdx,[rsp+peinfo.headerpmm]
 mov r8,0x80000000_00000101	;R
-call MapPage
+call map_page
 
 
 ;process sections
@@ -1283,11 +1417,11 @@ mov [rsp+peinfo.sec_page_count],ebx
 ;rdi -> section vbase
 ;ebx -> page count
 .virtual_alloc:
-call PmmAlloc
+call pmm_alloc
 mov rcx,rdi
 mov r8,0x80000000_00000103
 mov rdx,rax
-call MapPage
+call map_page
 add rdi,PAGE_SIZE
 dec ebx
 jnz .virtual_alloc
@@ -1303,7 +1437,7 @@ add rdi,r8
 sub ebx,r8d
 mov edx,[rsp+peinfo.sec_file_off]	;offset
 cmovs ebx,eax	;eax == 0
-call ReadFile
+call read_file
 
 xor eax,eax
 test ebx,ebx
@@ -1342,7 +1476,7 @@ bts r8,8
 mov rcx,[rsp+peinfo.sec_vbase]
 mov edx,[rsp+peinfo.sec_page_count]
 ;r8 -> attrib
-call VirtualProtect
+call virtual_protect
 
 
 .section_discard:
@@ -1355,7 +1489,7 @@ jnz .section
 mov rcx,GAP_VBASE
 xor rdx,rdx
 xor r8,r8
-call MapPage
+call map_page
 
 
 mov rcx,[rsp+peinfo.vbase]
@@ -1367,7 +1501,7 @@ sub rsp,0x20
 
 call rdx	;rcx module base
 
-nop
+.fail:
 
 BugCheck:
 ;hlt
@@ -1379,11 +1513,10 @@ hlt
 jmp BugCheck
 
 
-;ReadSector dst,LBA,cnt
-ReadSector:
+;read_sector dst,LBA
+read_sector:
 
-push rdi
-
+mov r8,rdi
 
 mov r9d,edx		;LBA
 mov rdi,rcx		;dst
@@ -1402,7 +1535,7 @@ or al,cl
 out dx,al
 
 mov dx,0x1F2
-mov al,r8b		;cnt
+mov al,1		;cnt
 out dx,al
 
 mov eax,r9d
@@ -1437,13 +1570,12 @@ jnz .fail
 test al,8
 jz .wait
 
-movzx rcx,r8b
+
 mov dx,0x1F0
-shl rcx,8		;*256
+mov ecx,256
 rep insw
 
-pop rdi
-
+mov rdi,r8
 ret
 
 .fail:
@@ -1451,12 +1583,10 @@ call BugCheck
 int3
 
 
-
-
-;ReadFile dst,off,size
-;NOTE works but low efficiency
-;return size
-ReadFile:
+; rcx : dst
+; rdx : offset
+; r8 : size
+read_file:
 
 test dx,0x1FF
 jnz .fail
@@ -1464,24 +1594,24 @@ jnz .fail
 test r8w,0x1FF
 jnz .fail
 
-push r8		;size
 shr rdx,9	;in sector
 shr r8,9	;in sector
 
+push rbp
 push rsi
 push rdi
 push rbx
 
-
+mov ebp,[r12 + sysinfo.cluster_size]
 mov rsi,rdx		;offset in sector
 mov rdi,rcx		;dst
 mov rbx,r8		;size in sector
-
+shr ebp,9
 
 .read:
 xor rdx,rdx
 mov rax,rsi
-div DWORD [r12+sysinfo.FAT_cluster]
+div ebp
 
 mov rcx,rdx	;remainder
 
@@ -1490,19 +1620,15 @@ mov eax,[rdx+4*rax]
 
 sub eax,2
 
-mul DWORD [r12+sysinfo.FAT_cluster]
+mul ebp
 
 test edx,edx
-mov edx,eax
 jnz .fail
-
-
-add edx,[r12+sysinfo.FAT_data]	;edx sector of target cluster
-xor r8,r8
-add edx,ecx		;target sector
-inc r8
+add eax,ecx
+mov rdx,[r12 + sysinfo.lba_HEAP]
 mov rcx,rdi
-call ReadSector
+add rdx,rax
+call read_sector
 
 add rdi,SECTOR_SIZE
 inc rsi
@@ -1514,7 +1640,7 @@ jnz .read
 pop rbx
 pop rdi
 pop rsi
-pop rax		;size
+pop rbp
 
 ret
 
@@ -1523,15 +1649,15 @@ call BugCheck
 int3
 
 
-PmmAlloc:
-mov ecx,[r12+sysinfo.kernel_page]
-mov eax,ecx
-cmp ecx,0x70
+pmm_alloc:
+mov cx,[r12+sysinfo.kernel_page]
+movzx eax,cx
+cmp cx,0x70
 jae .fail
 shl eax,12
 inc ecx
 add eax,0x10000
-mov [r12+sysinfo.kernel_page],ecx
+mov [r12+sysinfo.kernel_page],cx
 ret
 
 .fail:
@@ -1569,7 +1695,7 @@ int3
 
 ;MapAddress VirtualAddr,PhysicalAddr,attrib
 ;PMM==0 && attrib==0	unmap
-MapPage:
+map_page:
 push rbx
 
 push rdx	;PA
@@ -1596,7 +1722,7 @@ ret
 
 
 ;VA count attrib
-VirtualProtect:
+virtual_protect:
 push rbx
 
 push rdx	;count

@@ -849,3 +849,13 @@ void virtual_space::safe_release(PDPTE* pdpt_table,qword base_addr,dword page_co
 	}
 	assert(count == page_count);
 }
+
+dword virtual_space::write(qword va,const void* data,dword length){
+	memcpy(reinterpret_cast<void*>(va),data,length);
+	return length;
+}
+
+dword virtual_space::read(qword va,void* buffer,dword length){
+	memcpy(buffer,reinterpret_cast<const void*>(va),length);
+	return length;
+}

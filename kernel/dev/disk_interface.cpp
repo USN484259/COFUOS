@@ -1,4 +1,4 @@
-#include "disk_cache.hpp"
+#include "disk_interface.hpp"
 #include "ide.hpp"
 #include "timer.hpp"
 #include "lang.hpp"
@@ -12,21 +12,21 @@ inline qword page_lba(qword lba){
 	return align_down(lba,PAGE_SIZE/SECTOR_SIZE);
 }
 
-disk_cache::slot::slot(qword va) : access((void*)va),phy_page(pm.allocate(PM::MUST_SUCCEED)){
+disk_interface::slot::slot(qword va) : access((void*)va),phy_page(pm.allocate(PM::MUST_SUCCEED)){
 	//TODO allocate phy_page within 4G range
 	auto res = vm.assign(va,phy_page,1);
 	if (!res)
-		bugcheck("disk_cache::slot failed %x,%x",va,(qword)phy_page);
+		bugcheck("disk_interface::slot failed %x,%x",va,(qword)phy_page);
 }
 
-bool disk_cache::slot::match(qword aligned_lba) const{
+bool disk_interface::slot::match(qword aligned_lba) const{
 	assert(aligned_lba == page_lba(aligned_lba));
 	if (valid == 0)
 		return false;
 	return lba_base == aligned_lba;
 }
 
-void disk_cache::slot::flush(void){
+void disk_interface::slot::flush(void){
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	if (dirty == 0){
 		valid = 0;
@@ -50,7 +50,7 @@ void disk_cache::slot::flush(void){
 	dirty = valid = 0;
 }
 
-void disk_cache::slot::reload(qword aligned_lba){
+void disk_interface::slot::reload(qword aligned_lba){
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	assert(aligned_lba == page_lba(aligned_lba));
 	flush();
@@ -65,7 +65,7 @@ void disk_cache::slot::reload(qword aligned_lba){
 	objlock.downgrade();
 }
 
-void disk_cache::slot::load(qword lba,byte count){
+void disk_interface::slot::load(qword lba,byte count){
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	assert(lba_base == page_lba(lba));
 	//non-0xFF page must come from previous writes
@@ -80,7 +80,7 @@ void disk_cache::slot::load(qword lba,byte count){
 	//downgrade in reload
 }
 
-void disk_cache::slot::store(qword lba,byte count){
+void disk_interface::slot::store(qword lba,byte count){
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	auto aligned_lba = page_lba(lba);
 	if (aligned_lba != lba_base){
@@ -97,33 +97,33 @@ void disk_cache::slot::store(qword lba,byte count){
 	timestamp = timer.running_time();
 }
 
-void* disk_cache::slot::data(qword lba) const{
+void* disk_interface::slot::data(qword lba) const{
 	assert(valid);
 	assert(lba_base == page_lba(lba));
 	return (byte*)access + (lba - lba_base)*SECTOR_SIZE;
 }
 
-disk_cache::disk_cache(word count) : slot_count(count), \
+disk_interface::disk_interface(word count) : slot_count(count), \
 	table((slot*)operator new(sizeof(slot)*count))
 {
 	auto va = vm.reserve(0,slot_count);
 	if (!va)
-		bugcheck("disk_cache cannot reserve %x",(qword)slot_count);
+		bugcheck("disk_interface cannot reserve %x",(qword)slot_count);
 	for (auto i = 0;i < slot_count;++i){
 		new (table + i) slot(va + i*PAGE_SIZE);
 	}
-	dbgprint("disk_cache with %d slots @ %p",slot_count,va);
+	dbgprint("disk_interface with %d slots @ %p",slot_count,va);
 }
 
-byte disk_cache::count(qword lba){
+byte disk_interface::count(qword lba){
 	auto top = align_up(lba,PAGE_SIZE/SECTOR_SIZE);
 	return (top == lba) ? PAGE_SIZE/SECTOR_SIZE : top - lba;
 }
 
-disk_cache::slot* disk_cache::get(qword lba,byte count,bool write){
+disk_interface::slot* disk_interface::get(qword lba,byte count,bool write){
 	auto aligned_lba = page_lba(lba);
 	if (align_up(lba + count,PAGE_SIZE/SECTOR_SIZE) - aligned_lba != (PAGE_SIZE/SECTOR_SIZE)){
-		bugcheck("disk_cache::slot::get bad param %x,%d",lba,count);
+		bugcheck("disk_interface::slot::get bad param %x,%d",lba,count);
 		return nullptr;
 	}
 	byte times = 0;
@@ -161,10 +161,10 @@ disk_cache::slot* disk_cache::get(qword lba,byte count,bool write){
 		else
 			slot_guard.wait();
 	}while(++times);
-	bugcheck("disk_cache::get failed");
+	bugcheck("disk_interface::get failed");
 }
 
-void disk_cache::relax(slot* ptr){
+void disk_interface::relax(slot* ptr){
 	assert(ptr && ptr - table < slot_count);
 	ptr->unlock();
 	if (!ptr->is_locked()){
@@ -176,7 +176,7 @@ void disk_cache::relax(slot* ptr){
 
 
 /*
-byte disk_cache::read(qword lba,byte count,void* buffer){
+byte disk_interface::read(qword lba,byte count,void* buffer){
 	//handles misaligned sectors
 	auto top = lba + count;
 	while(lba < top){
@@ -196,8 +196,8 @@ byte disk_cache::read(qword lba,byte count,void* buffer){
 	return lba + count - top;
 }
 
-byte disk_cache::write(qword lba,byte count,const void* buffer){
-	dbgprint("disk_cache::write not implemented");
+byte disk_interface::write(qword lba,byte count,const void* buffer){
+	dbgprint("disk_interface::write not implemented");
 	return 0;
 }
 */

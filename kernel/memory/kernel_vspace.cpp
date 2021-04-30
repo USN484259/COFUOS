@@ -247,11 +247,11 @@ PTE kernel_vspace::peek(qword va){
 }
 
 dword kernel_vspace::write(qword va,const void* data,dword length){
-	memcpy(reinterpret_cast<void*>(va),data,length);
-	return length;
+	assert(IS_HIGHADDR(va));
+	return virtual_space::write(va,data,length);
 }
 
 dword kernel_vspace::read(qword va,void* buffer,dword length){
-	memcpy(buffer,reinterpret_cast<const void*>(va),length);
-	return length;
+	assert(IS_HIGHADDR(va));
+	return virtual_space::read(va,buffer,length);
 }
