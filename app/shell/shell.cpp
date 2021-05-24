@@ -10,10 +10,11 @@ enum {CAPSLOCK = 0,CTRL = 1,ALT = 2,SHIFT = 3,SUPER = 4};
 
 word resolution[2] = {0};
 bool key_state[5] = {0};
-
+byte active_index = 0;
 word clock_pos = 0;
+
 label* wall_clock = nullptr;
-terminal* term = nullptr;
+terminal* term[12] = {0};
 
 inline word count_line(word height){
 	return align_up(height + sys_fnt.line_height()*2,0x10);
@@ -25,13 +26,13 @@ terminal::terminal(word w,word h,const char* msg) : \
 	cui(width,height,back_buffer,line_size,count_line(h))
 {
 	dword res;
-	res = create_object(SEMAPHORE,1,0,&lock);
+	res = create_object(OBJ_SEMAPHORE,1,0,&lock);
 	assert(SUCCESS == res);
-	res = create_object(EVENT,0,0,&barrier);
+	res = create_object(OBJ_EVENT,0,0,&barrier);
 	assert(SUCCESS == res);
-	res = create_object(PIPE,0x100,0,&out_pipe);
+	res = create_object(OBJ_PIPE,0x100,0,&out_pipe);
 	assert(SUCCESS == res);
-	res = create_object(PIPE,0x100,1,&in_pipe);
+	res = create_object(OBJ_PIPE,0x100,1,&in_pipe);
 	assert(SUCCESS == res);
 
 	cui.set_focus(true);
@@ -57,12 +58,15 @@ void terminal::thread_reader(void*,void* ptr){
 		char buffer[0x40];
 		dword size = sizeof(buffer);
 		dword res;
-		res = read(self->out_pipe,buffer,&size);
+		res = stream_read(self->out_pipe,buffer,&size);
 		assert(0 == res);
 		if (size == 0){
 			res = wait_for(self->out_pipe,0);
 			assert(NOTIFY == res || PASSED == res);
-			continue;
+			res = stream_state(self->out_pipe,&size);
+			assert(0 == res);
+			if (size == 0)
+				continue;
 		}
 		self->begin_paint();
 		for (dword i = 0;i < size;++i){
@@ -93,7 +97,7 @@ void terminal::thread_monitor(void*,void* ptr){
 
 			if (self->in_pipe_dirty){
 				close_handle(self->in_pipe);			
-				res = create_object(PIPE,0x100,1,&self->in_pipe);	//owner_write
+				res = create_object(OBJ_PIPE,0x100,1,&self->in_pipe);	//owner_write
 				assert(SUCCESS == res);
 				self->in_pipe_dirty = false;
 			}
@@ -112,7 +116,7 @@ void terminal::dispatch(void){
 		if (size < sizeof(buffer)){
 			buffer[size++] = '\n';
 		}
-		dword res = write(in_pipe,buffer,&size);
+		dword res = stream_write(in_pipe,buffer,&size);
 		assert(0 == res);
 		in_pipe_dirty = true;
 		return;
@@ -174,7 +178,7 @@ void terminal::dispatch(void){
 		info.flags = su ? SHELL : NORMAL;
 		info.std_handle[0] = bg ? 0 : in_pipe;
 		info.std_handle[1] = out_pipe;
-		info.std_handle[2] = stderr;
+		info.std_handle[2] = STDERR;
 
 		HANDLE hps = 0;
 		assert(ps == 0);
@@ -233,7 +237,7 @@ void terminal::print(const char* str){
 void terminal::show_shell(void){
 	if (!cui.is_newline())
 		cui.put('\n');
-	print("COFUOS $ ");
+	print("/ $ ");
 	//TODO show current directory
 }
 
@@ -361,31 +365,27 @@ int main(int argc,char** argv){
 		resolution[1] = info->resolution_y;
 
 		wall_clock = new label(8*sys_fnt.max_width());
-		term = new terminal(resolution[0],resolution[1] - sys_fnt.line_height(),str);
+		term[0] = new terminal(resolution[0],resolution[1] - sys_fnt.line_height(),str);
 	}
 	while(true){
 		byte buffer[0x10];
 		dword size = 0x10;
 		dword res;
-		res = read(stdin,buffer,&size);
+		res = stream_read(STDIN,buffer,&size);
 		assert(0 == res);
 		if (size == 0){
-			res = wait_for(stdin,0);
+			res = wait_for(STDIN,0);
 			assert(NOTIFY == res || PASSED == res);
-			continue;
+			res = stream_state(STDIN,&size);
+			assert(0 == res);
+			if (size == 0)
+				continue;
 		}
 		bool painting = false;
 		for (unsigned i = 0;i < size;++i){
 			auto key = buffer[i] & 0x7F;
 			bool pressed = (0 == (buffer[i] & 0x80));
-			/*
-			char states[] = "PCASU";
-			for (auto x = 0;x < 5;++x){
-				states[x] |= (key_state[x] ? 0 : 0x20);
-			}
-			len = 1 + snprintf(str,sizeof(str),"%s key %hhx (%c) %sd",states,key,isprint(key) ? key : '?',pressed ? "press" : "release");
-			write(stderr,str,&len);
-			*/
+
 			if (key == 0x40){
 				update_clock();
 				continue;
@@ -408,18 +408,37 @@ int main(int argc,char** argv){
 			}
 
 			if (pressed){
+				if (key_state[SUPER] && key >= 0x61 && key <= 0x6C){
+					// F1 .. F12
+					term[active_index]->set_focus(false);
+					if (painting){
+						term[active_index]->end_paint();
+					}
+					active_index = key - 0x61;
+					assert(active_index < 12);
+					if (term[active_index]){
+						term[active_index]->begin_paint();
+						term[active_index]->set_focus(true);
+						painting = true;
+					}
+					else{
+						term[active_index] = new terminal(resolution[0],resolution[1] - sys_fnt.line_height());
+						painting = false;
+					}
+					continue;
+				}
 				auto ch = parse(key);
 				if (ch){
 					if (!painting){
-						term->begin_paint();
+						term[active_index]->begin_paint();
 						painting = true;
 					}
-					term->put(ch);
+					term[active_index]->put(ch);
 				}
 			}
 		}
 		if (painting)
-			term->end_paint();
+			term[active_index]->end_paint();
 	}
 	return 0;
 }

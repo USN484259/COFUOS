@@ -67,6 +67,10 @@ waitable::~waitable(void){
 	}
 }
 
+waitable* waitable::duplicate(process*){
+	return acquire() ? this : nullptr;
+}
+
 size_t waitable::notify(REASON reason){
 	IF_assert;
 	assert(objlock.is_locked());

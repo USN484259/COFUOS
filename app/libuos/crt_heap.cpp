@@ -5,7 +5,7 @@
 using namespace UOS;
 
 mutex::mutex(void){
-	if (SUCCESS != create_object(SEMAPHORE,1,0,&semaphore))
+	if (SUCCESS != create_object(OBJ_SEMAPHORE,1,0,&semaphore))
 		abort();
 }
 

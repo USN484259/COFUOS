@@ -11,6 +11,12 @@ static void* image_base;
 static const char* environment;
 static qword guard_value;
 
+FILE std_obj[3] = { \
+	{STDIN,0,0,0},
+	{STDOUT,0,0,0},
+	{STDERR,0,0,0},
+};
+
 typedef void (*procedure)(void);
 
 extern "C"
@@ -114,6 +120,26 @@ size_t strlen(const char* str){
 	return count;
 }
 
+extern "C"
+const char* strstr(const char* str,const char* substr){
+	auto pos = str;
+	auto cmp = substr;
+	while(true){
+		if (*cmp == 0)
+			return pos;
+		if (*str == 0)
+			break;
+		if (*cmp != *str){
+			cmp = substr;
+			pos = ++str;
+			continue;
+		}
+		++str;
+		++cmp;
+	}
+	return nullptr;
+}
+
 inline byte hex2bin(char ch){
 	if (ch >= '0' && ch <= '9')
 		return ch - '0';
@@ -124,14 +150,14 @@ inline byte hex2bin(char ch){
 }
 
 extern "C"
-unsigned long strtoul(const char* str,char** end,int base){
+unsigned long strtoul(const char* str,const char** end,int base){
 	auto result = strtoull(str,end,base);
 	constexpr auto limit = (unsigned long long)1 << (8*sizeof(unsigned long));
 	return (result >= limit) ? limit : result;
 }
 
 extern "C"
-unsigned long long strtoull(const char* str,char** end,int base){
+unsigned long long strtoull(const char* str,const char** end,int base){
 	if (str == nullptr)
 		return 0;
 	unsigned long long val = 0;
@@ -155,7 +181,7 @@ unsigned long long strtoull(const char* str,char** end,int base){
 		++str;
 	}
 	if (end)
-		*end = (char*)str;
+		*end = (const char*)str;
 	return val;
 }
 
@@ -350,29 +376,49 @@ int snprintf(char* buffer,size_t limit,const char* format,...){
 	return res ? count : (-1);
 }
 
-bool block_write(HANDLE h,const char* ptr,dword length){
+bool block_write(FILE* stream,const char* ptr,dword length){
+	assert(stream);
 	do{
 		dword size = length;
-		if (0 != write(h,ptr,&size))
+		if (SUCCESS != stream_write(stream->file,ptr,&size)){
+			stream->flags |= FILE::FAIL_BIT;
 			return false;
+		}
+		if (size == 0){
+			switch(wait_for(stream->file,0)){
+				case PASSED:
+				case NOTIFY:
+					break;
+				default:
+					stream->flags |= FILE::FAIL_BIT;
+					return false;
+			}
+			auto stat = stream_state(stream->file,&size);
+			if (stat > 0xFF){
+				stream->flags |= FILE::FAIL_BIT;
+				return false;
+			}
+
+			if (stat & (OP_FAILURE | MEM_FAILURE)){
+				stream->flags |= FILE::FAIL_BIT;
+				return false;
+			}
+			if (stat & (MEDIA_FAILURE | FS_FAILURE)){
+				stream->flags |= FILE::BAD_BIT;
+				return false;
+			}
+		}
 		length -= size;
 		if (length == 0)
 			break;
 		ptr += size;
-		switch(wait_for(h,0)){
-			case PASSED:
-			case NOTIFY:
-				break;
-			default:
-				return false;
-		}
 	}while(true);
 	return true;
 }
 
 extern "C"
-int fprintf(HANDLE stream,const char* format,...){
-	if (stream == 0 || format == nullptr)
+int fprintf(FILE* stream,const char* format,...){
+	if (stream == nullptr || format == nullptr)
 		return -1;
 	va_list args;
 	va_start(args,format);
@@ -398,14 +444,128 @@ int fprintf(HANDLE stream,const char* format,...){
 }
 
 extern "C"
-int fputs(const char* str,HANDLE stream){
+int fputs(const char* str,FILE* stream){
+	if (stream == nullptr || str == nullptr)
+		return EOF;
 	dword len = strlen(str);
 	return block_write(stream,str,len) ? len : EOF;
 }
 
 extern "C"
-int fputc(int ch,HANDLE stream){
+int fputc(int ch,FILE* stream){
+	if (stream == nullptr)
+		return EOF;
 	return block_write(stream,(const char*)&ch,1) ? ch : EOF;
+}
+
+bool block_read(FILE* stream,char* ptr,dword length){
+	assert(stream);
+	do{
+		dword sz = (stream->tail + sizeof(stream->buffer) - stream->head) % sizeof(stream->buffer);
+		sz = min(sz,length);
+		if (stream->head + sz <= sizeof(stream->buffer)){
+			memcpy(ptr,stream->buffer + stream->head,sz);
+		}
+		else{
+			auto slice = sizeof(stream->buffer) - stream->head;
+			memcpy(ptr,stream->buffer + stream->head,slice);
+			memcpy(ptr + slice,stream->buffer,sz - slice);
+		}
+		stream->head = (stream->head + sz) % sizeof(stream->buffer);
+		length -= sz;
+		if (length == 0)
+			break;
+		ptr += sz;
+		//refill stream ptr
+		sz = max<dword>(0x40,length);
+		sz = min<dword>(sz,0x100);
+		char buffer[sz];
+		if (SUCCESS != stream_read(stream->file,buffer,&sz)){
+			stream->flags |= FILE::FAIL_BIT;
+			return false;
+		}
+		if (sz == 0){
+			switch(wait_for(stream->file,0)){
+				case PASSED:
+				case NOTIFY:
+					break;
+				default:
+					stream->flags |= FILE::FAIL_BIT;
+					return false;
+			}
+			auto stat = stream_state(stream->file,&sz);
+			if (stat > 0xFF){
+				stream->flags |= FILE::FAIL_BIT;
+				return false;
+			}
+			if (stat & EOF_FAILURE)
+				stream->flags |= FILE::EOF_BIT;
+			if (stat & (OP_FAILURE | MEM_FAILURE)){
+				stream->flags |= FILE::FAIL_BIT;
+				return false;
+			}
+			if (stat & (MEDIA_FAILURE | FS_FAILURE)){
+				stream->flags |= FILE::BAD_BIT;
+				return false;
+			}
+		}
+		if (stream->tail + sz <= sizeof(stream->buffer)){
+			memcpy(stream->buffer + stream->tail,buffer,sz);
+		}
+		else{
+			auto slice = sizeof(stream->buffer - stream->tail);
+			memcpy(stream->buffer + stream->tail,buffer,slice);
+			memcpy(stream->buffer,buffer + slice,sz - slice);
+		}
+		stream->tail = (stream->tail + sz) % sizeof(stream->buffer);
+
+	}while(true);
+	return true;
+}
+
+extern "C"
+char* fgets(char* str,int count,FILE* stream){
+	if (str == nullptr || count == 0 || stream == nullptr)
+		return nullptr;
+	if (count == 1){
+		*str = 0;
+		return str;
+	}
+	--count;
+	int index = 0;
+	while(index < count){
+		char ch;
+		if (!block_read(stream,&ch,1))
+			break;
+		str[index++] = ch;
+		if (ch == '\n')
+			break;
+	}
+	if (index){
+		str[index] = 0;
+		return str;
+	}
+	return nullptr;
+}
+
+extern "C"
+int fgetc(FILE* stream){
+	if (stream == nullptr)
+		return EOF;
+	char ch;
+	return block_read(stream,&ch,1) ? ch : EOF;
+}
+
+extern "C"
+int ungetc(int ch,FILE* stream){
+	if (ch == EOF || stream == nullptr)
+		return EOF;
+	auto new_tail = (stream->tail + 1) % sizeof(stream->buffer);
+	if (new_tail == stream->head)
+		return EOF;
+	stream->buffer[stream->tail] = (char)ch;
+	stream->tail = new_tail;
+	return ch;
 }
 
 extern "C"
@@ -446,7 +606,7 @@ void exit(int result){
 
 qword rdtsc(void){
 	dword lo,hi;
-	__asm__ volatile (
+	__asm__ (
 		"rdtsc"
 		: "=a" (lo), "=d" (hi)
 	);
@@ -488,14 +648,6 @@ char** parse_commandline(char* const cmd,dword length,unsigned& argc){
 extern "C"
 [[ noreturn ]]
 void uos_entry(void* entry,void* imgbase,void* env,void* stk_top){
-	__asm__ volatile (
-		"mov ax,ss\n\
-		mov ds,ax\n\
-		mov es,ax"
-		:
-		:
-		: "ax"
-	);
 	image_base = imgbase;
 	environment = (const char*)env;
 	guard_value = get_time() ^ rdtsc();
@@ -556,6 +708,7 @@ void operator delete(void* ptr,size_t size){
 		heap.release(ptr,size);
 	}
 	else{
+		assert(0 == ((qword)ptr % PAGE_SIZE));
 		auto page_count = align_up(size,PAGE_SIZE)/PAGE_SIZE;
 		vm_release(ptr,page_count);
 	}

@@ -15,6 +15,7 @@ void* operator new(size_t len){
 	if (!len)
 		bugcheck("operator new invalid size %x",len);
 	if (len <= huge_size){
+		interrupt_guard<void> ig;
 		auto res = heap.allocate(len);
 		if (!res)
 			bugcheck("operator new bad alloc size %x",len);
@@ -44,14 +45,17 @@ void operator delete(void* p,size_t len){
 	if (!p)
 		return;
 	assert(len);
+	bool res;
 	if (len <= huge_size){
-		heap.release(p,len);
+		interrupt_guard<void> ig;
+		res = heap.release(p,len);
 	}
 	else{
 		assert(0 == ((qword)p & PAGE_MASK));
 		auto page_count = align_up(len,PAGE_SIZE) >> 12;
-		vm.release((qword)p,page_count);
+		res = vm.release((qword)p,page_count);
 	}
+	assert(res);
 }
 
 extern "C" {

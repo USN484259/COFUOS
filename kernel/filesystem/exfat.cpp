@@ -27,13 +27,13 @@ void exfat::task(file* f){
 qword exfat::lba_of_fat(dword sector) const{
 	constexpr dword element_per_sector = SECTOR_SIZE/sizeof(dword);
 	auto limit = align_up(cluster_count + 2,element_per_sector) / element_per_sector;
-	return (sector < limit) ? table + sector : (-1);
+	return (sector < limit) ? table + sector : 0;
 }
 
 qword exfat::lba_of_cluster(dword cluster) const{
 	assert(cluster >= 2 && cluster < 0xFFFFFFF7);
 	if (cluster - 2 >= cluster_count)
-		return (-1);
+		return 0;
 	return heap + (cluster - 2) * (cluster_size() / SECTOR_SIZE);
 }
 
@@ -122,7 +122,9 @@ void exfat::thread_init(qword arg,qword cnt,qword,qword){
 	self->base = 0;
 	do{
 		slot = dm.get(self->base,1,false);
-		assert(slot);
+		if (!slot){
+			bugcheck("failed reading exFAT header");
+		}
 		buffer = (const byte*)slot->data(self->base);
 		root = self->parse_header(buffer);
 		if (root)
@@ -167,20 +169,27 @@ void exfat::thread_init(qword arg,qword cnt,qword,qword){
 		dm.relax(slot);
 		++sec;
 		slot = dm.get(self->base + sec,1,false);
-		assert(slot);
+		if (!slot){
+			bugcheck("failed reading exFAT boot area %d",sec);
+		}
 		buffer = (const byte*)slot->data(self->base + sec);
 	}
 	if (sum != *(const dword*)buffer)
 		bugcheck("exFAT checksum mismatch (%x,%x)",(qword)sum,(qword)*(const dword*)buffer);
 	
 	// parse root directory and get allocation bitmap
-	assert(root);
+	if (root == 0)
+		bugcheck("failed locating root directory");
 	byte fat_index = (root & 0x80000000) ? 1 : 0;
 	root &= 0x7FFFFFFF;
 	dm.relax(slot);
 	auto lba = self->lba_of_cluster(root);
+	if (lba == 0)
+		bugcheck("failed locating root directory");
 	slot = dm.get(lba,1,false);
-	assert(slot);
+	if (!slot){
+		bugcheck("failed reading exFAT root directory");
+	}
 	buffer = (const byte*)slot->data(lba);
 	self->bitmap = 0;
 	for (auto ptr = buffer;ptr - buffer < SECTOR_SIZE;ptr += 0x20){
@@ -196,6 +205,8 @@ void exfat::thread_init(qword arg,qword cnt,qword,qword){
 	}
 	if (self->bitmap == 0)
 		bugcheck("exFAT missing allocation bitmap");
+	if (self->bitmap >= self->top)
+		bugcheck("exFAT invalid allocation bitmap @ %x",(qword)self->bitmap);
 	dm.relax(slot);
 	// construct root folder instance
 	self->root = new folder_instance(*self,literal(),nullptr);
@@ -206,21 +217,17 @@ void exfat::thread_init(qword arg,qword cnt,qword,qword){
 	thread::kill(core.this_thread());
 }
 
-void cluster_chain::assign(dword head,qword sz,bool linear_block){
+void cluster_chain::assign(dword head,bool linear_block){
 	lock_guard<rwlock> guard(objlock);
 	first_cluster = head;
-	alloc_size = sz;
 	linear = linear_block;
 	lru_queue.clear();
 	cache_line.clear();
 }
 
-dword cluster_chain::get(qword offset){
-	const dword index = offset / host().cluster_size();
+dword cluster_chain::get(qword index){
 	lock_guard<rwlock> guard(objlock);
 	if (first_cluster == 0)
-		return 0;
-	if (offset >= alloc_size && !root)
 		return 0;
 	if (linear)
 		return first_cluster + index;
@@ -260,9 +267,14 @@ dword cluster_chain::get(qword offset){
 			if (fat_sector)
 				dm.relax(fat_sector);
 			sector_lba = host().lba_of_fat(sector);
+			if (sector_lba == 0){
+				dbgprint("cluster overflow %x",sector);
+				return 0;
+			}
 			fat_sector = dm.get(sector_lba,1,false);
 			if (fat_sector == nullptr){
-				bugcheck("FIXME handle FAT read failure");
+				dbgprint("FAT read failure @ %x,%x",cur_line.cluster,sector_lba);
+				return 0;
 			}
 			sector_index = sector;
 		}
@@ -284,6 +296,6 @@ dword cluster_chain::get(qword offset){
 	return cur_line.index == index ? cur_line.cluster : 0;
 }
 
-bool cluster_chain::set(qword offset){
+bool cluster_chain::set(qword count){
 	bugcheck("cluster_chain::set not implemented");
 }

@@ -11,7 +11,7 @@ namespace UOS{
 		semaphore(dword initial);
 		~semaphore(void);
 		OBJTYPE type(void) const override{
-			return SEMAPHORE;
+			return OBJ_SEMAPHORE;
 		}
 		dword max_count(void) const{
 			return total;

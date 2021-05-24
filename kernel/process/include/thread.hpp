@@ -72,7 +72,7 @@ namespace UOS{
 		thread(process* owner,procedure entry,const qword* args,qword stk_size);
 		~thread(void);
 		OBJTYPE type(void) const override{
-			return THREAD;
+			return OBJ_THREAD;
 		}
 		bool check(void) override{
 			return state == STOPPED;

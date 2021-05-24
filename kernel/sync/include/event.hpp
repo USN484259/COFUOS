@@ -10,7 +10,7 @@ namespace UOS{
 		event(bool initial_state = false);
 		~event(void);
 		OBJTYPE type(void) const override{
-			return EVENT;
+			return OBJ_EVENT;
 		}
 		bool check(void) override{
 			return state;

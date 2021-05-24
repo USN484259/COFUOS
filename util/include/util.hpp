@@ -186,7 +186,7 @@ namespace UOS{
 	
 	template<typename T>
 	constexpr T align_down(T value,size_t align){
-		return value & (T)~(align-1);
+		return value & (T)~(align - 1);
 	}
 	
 	template<typename T>

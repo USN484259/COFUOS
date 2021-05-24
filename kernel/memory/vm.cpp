@@ -537,6 +537,9 @@ dword virtual_space::imp_iterate(const PDPTE* pdpt_table,qword base_addr,dword p
 	assert(is_locked());
 	assert(pdpt_table && page_count && callback);
 	assert(base_addr && 0 == (base_addr & PAGE_MASK));
+	if (LOWADDR(base_addr) >> 39)
+		return 0;
+
 	map_view pdt_view;
     map_view pt_view;
 
@@ -572,13 +575,16 @@ dword virtual_space::imp_iterate(const PDPTE* pdpt_table,qword base_addr,dword p
 				break;
 			}
 		}
-		++pdpt_index;
-		assert(pdpt_index < 0x200);
+		if (++pdpt_index >= 0x200)
+			break;
 	}
 	return count;
 }
 
 PTE virtual_space::imp_peek(qword va,PDPTE const* pdpt_table){
+	if (LOWADDR(va) >> 39)
+		return PTE {0};
+	
 	auto pdpt_index = (va >> 30) & 0x1FF;
 	auto pdt_index = (va >> 21) & 0x1FF;
 	auto pt_index = (va >> 12) & 0x1FF;
@@ -683,7 +689,9 @@ bool virtual_space::reserve_fixed(PDPTE* pdpt_table,qword base_addr,dword page_c
 	assert(is_locked());
 	assert(base_addr && page_count);
 	assert(0 == (base_addr & PAGE_MASK));
-
+	if (LOWADDR(base_addr) >> 39)
+		return false;
+	
 	map_view pdt_view;
 	map_view pt_view;
 
@@ -727,13 +735,12 @@ bool virtual_space::reserve_fixed(PDPTE* pdpt_table,qword base_addr,dword page_c
 				break;
 			}
 		}
-		++pdpt_index;
-		assert(pdpt_index < 0x200);
+		if (++pdpt_index >= 0x200)
+			break;
 	}
-	assert(count == page_count);
-	return true;
+	if (count == page_count)
+		return true;
 rollback:
-	assert(count < page_count);
 	if (count)
 		safe_release(pdpt_table,base_addr,count);
 	return false;
@@ -807,11 +814,12 @@ qword virtual_space::reserve_big(PDPTE* pdpt_table,dword pagecount){
 	return 0;
 }
 
-void virtual_space::safe_release(PDPTE* pdpt_table,qword base_addr,dword page_count){
+bool virtual_space::safe_release(PDPTE* pdpt_table,qword base_addr,dword page_count){
 	assert(is_locked());
 	assert(base_addr && page_count);
 	assert(0 == (base_addr & PAGE_MASK));
-
+	if (LOWADDR(base_addr) >> 39)
+		return false;
 	map_view pdt_view;
 	map_view pt_view;
 
@@ -844,10 +852,10 @@ void virtual_space::safe_release(PDPTE* pdpt_table,qword base_addr,dword page_co
 				break;
 			}
 		}
-		++pdpt_index;
-		assert(pdpt_index < 0x200);
+		if (++pdpt_index >= 0x200)
+			break;
 	}
-	assert(count == page_count);
+	return (count == page_count);
 }
 
 dword virtual_space::write(qword va,const void* data,dword length){
@@ -857,5 +865,10 @@ dword virtual_space::write(qword va,const void* data,dword length){
 
 dword virtual_space::read(qword va,void* buffer,dword length){
 	memcpy(buffer,reinterpret_cast<const void*>(va),length);
+	return length;
+}
+
+dword virtual_space::zero(qword va,dword length){
+	zeromemory(reinterpret_cast<void*>(va),length);
 	return length;
 }

@@ -7,7 +7,9 @@ GDT_LIM equ 0x600	;96 entries
 IDT_BASE equ (HIGHADDR+0x0C00)
 IDT_LIM equ 0x400	;64 entries
 
-;WARNING: according to x64 calling convention 0x20 space on stack needed before calling C functions
+SEG_USER_SS equ 0x2B
+
+; NOTE: according to x64 calling convention, 0x20 space on stack needed before calling C functions
 
 extern dispatch_exception
 extern dispatch_irq
@@ -254,10 +256,13 @@ mov es,ax
 call kernel_service
 cli
 mov r11d,0x202
+mov dx,SEG_USER_SS
 mov rcx,[rsp+0x20]	; user rip
 or r11w,[rsp+0x30]	; user rflags
 mov rsp,[rsp+0x28]	; user rsp
 swapgs
+mov ds,dx
+mov es,dx
 o64 sysret
 ; rax as return value
 ; rflags should have IF set
@@ -269,9 +274,12 @@ align 16
 ; r9  stack_top
 service_exit:
 cli
+mov ax,SEG_USER_SS
 mov r11d,0x202	;IF
 lea rsp,[r9 - 0x30]
 swapgs
+mov ds,ax
+mov es,ax
 o64 sysret
 
 align 16
@@ -342,36 +350,6 @@ out dx,al
 hlt
 jmp .reboot
 
-
-; align 16
-; __chkstk:
-; ;probe every page
-
-; ;r10 request stack top
-; ;r11 current page
-
-; sub rsp,0x10
-; mov [rsp+8],r11
-; mov [rsp],r10
-; lea r10,[rsp+0x18]
-; mov r11,r10
-; sub r10,rax
-
-; and r11w,0xF000
-
-; .step:
-
-; mov byte [r11],0
-; sub r11,0x1000
-
-; cmp r11,r10
-; jae .step
-
-
-; mov r11,[rsp+8]
-; mov r10,[rsp]
-; add rsp,0x10
-; ret
 
 section .rdata
 align 16

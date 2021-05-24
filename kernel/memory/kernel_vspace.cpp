@@ -138,8 +138,7 @@ bool kernel_vspace::release(qword addr,dword page_count){
 	});
 	if (res != page_count)
 		return false;
-	safe_release(pdpt_table,addr,page_count);
-	return true;
+	return safe_release(pdpt_table,addr,page_count);
 }
 
 bool kernel_vspace::commit(qword base_addr,dword page_count){
@@ -254,4 +253,9 @@ dword kernel_vspace::write(qword va,const void* data,dword length){
 dword kernel_vspace::read(qword va,void* buffer,dword length){
 	assert(IS_HIGHADDR(va));
 	return virtual_space::read(va,buffer,length);
+}
+
+dword kernel_vspace::zero(qword va,dword length){
+	assert(IS_HIGHADDR(va));
+	return virtual_space::zero(va,length);
 }

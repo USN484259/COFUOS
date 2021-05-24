@@ -1,5 +1,5 @@
 boot: bin/boot.bin bin/krnldr.bin
-	../tools/make_boot/bin/make_boot ../COFUOS.vhd bin/boot.bin bin/krnldr.bin
+	../tools/make_boot/bin/make_boot $(VHD_PATH) bin/boot.bin bin/krnldr.bin
 
 clean:
 	@echo boot clean no op

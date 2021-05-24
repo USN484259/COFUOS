@@ -149,20 +149,20 @@ waitable* handle_table::operator[](dword index) const{
 }
 
 process::process(initial_process_tag) : id (new_id()), vspace(&vm),\
-	privilege(KERNEL),active_count(1),image(nullptr),commandline("COFUOS.sys"), start_time(0)
+	privilege(KERNEL),active_count(1),image(nullptr),commandline("COFUOS"), start_time(0)
 {
 	assert(id == 0);
 	auto it = threads.insert(thread::initial_thread_tag(),this);
 	it->manage();
 }
 
-process::process(literal&& cmd,file* f,const startup_info& info,const qword* args) : \
+process::process(literal&& cmd,const spawn_info& info) : \
 	id(new_id()),vspace(new user_vspace()),privilege(info.privilege),\
 	commandline(move(cmd)), start_time(timer.running_time())
 {
 	IF_assert;
 	//image file handle as handle 0, user not accessible
-	auto res = handles.assign(0,file::duplicate(f,this));
+	auto res = handles.assign(0,info.f->duplicate(this));
 	assert(res);
 
 	//stream handles
@@ -170,12 +170,13 @@ process::process(literal&& cmd,file* f,const startup_info& info,const qword* arg
 		auto st = info.std_stream[i];
 		if (st){
 			//st->acquire();
-			handles.assign(i + 1,st);
+			handles.assign(i + 1,st->duplicate(this));
 		}
 	}
+	work_dir.assign(info.work_dir.begin(),info.work_dir.end());
 
 	dbgprint("spawned new process $%d @ %p",id,this);
-	auto th = spawn(process_loader,args);
+	auto th = spawn(process_loader,&info.env_ptr);
 	assert(th);
 	th->relax();
 }
@@ -291,6 +292,12 @@ void process::manage(void*){
 	assert(ref_count == 2);
 }
 
+bool process::set_work_dir(const span<char>& str){
+	lock_guard<spin_lock> guard(objlock);
+	work_dir.assign(str.begin(),str.end());
+	return true;
+}
+
 process_manager::process_manager(void){
 	//create initial thread & process
 	auto it = table.insert(process::initial_process_tag());
@@ -304,9 +311,9 @@ thread* process_manager::get_initial_thread(void){
 	return it->get_thread(0);
 }
 */
-process* process_manager::spawn(literal&& command,literal&& env,const process::startup_info& info){
-	assert(command);
-	//TODO replace with real file-opening logic
+process* process_manager::spawn(literal&& command,spawn_info& info){
+	assert(!command.empty());
+
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
 	
@@ -316,20 +323,20 @@ process* process_manager::spawn(literal&& command,literal&& env,const process::s
 			break;
 		auto sep = find_first_of(command.begin(),command.end(),' ');
 		span<char> filename(command.begin(),sep);
-		f = file::open(filename);
+		f = file::open(filename,true);
 		if (!f)
 			break;
 
 		//read & validate PE header
-		byte buffer[0x200];
-		f->read(buffer,0x200);
+		byte buffer[SECTOR_SIZE];
+		f->read(buffer,SECTOR_SIZE);
 		f->wait();
 
-		if (f->state() != 0 || 0x200 != f->result())
+		if (f->state() != 0 || SECTOR_SIZE != f->result())
 			break;
 		// if (!f->seek(0))
 		// 	break;
-		auto header = PE64::construct(buffer,0x200);
+		auto header = PE64::construct(buffer,SECTOR_SIZE);
 		if (header == nullptr || \
 			(0 == (header->img_type & 0x02)) || \
 			(header->img_type & 0x3000) || \
@@ -343,8 +350,16 @@ process* process_manager::spawn(literal&& command,literal&& env,const process::s
 		//(likely) valid image file:
 		//non-system, non-dll, executable, valid vbase, valid alignment, has section
 		
-		qword args[4] = {
-			reinterpret_cast<qword>(env.detach()),
+		process::spawn_info ps_info = {
+			f,
+			{
+				info.std_stream[0],
+				info.std_stream[1],
+				info.std_stream[2]
+			},
+			info.work_dir,
+			info.privilege,
+			reinterpret_cast<qword>(info.env.detach()),
 			header->imgbase,
 			header->imgsize,
 			header->header_size
@@ -352,7 +367,7 @@ process* process_manager::spawn(literal&& command,literal&& env,const process::s
 
 		//create a process and load this image
 		interrupt_guard<spin_lock> guard(lock);
-		auto it = table.insert(move(command),f,info,args);
+		auto it = table.insert(move(command),ps_info);
 		it->manage();
 		f->relax();
 		return &*it;
@@ -360,11 +375,6 @@ process* process_manager::spawn(literal&& command,literal&& env,const process::s
 	
 	if (f)
 		f->relax();
-	
-	for (auto i = 0;i < 3;++i){
-		if (info.std_stream[i])
-			info.std_stream[i]->relax();
-	}
 
 	return nullptr;
 }

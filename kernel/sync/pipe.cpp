@@ -15,7 +15,6 @@ pipe::pipe(dword size,byte m) : \
 pipe::~pipe(void){
 	interrupt_guard<spin_lock> guard(objlock);
 	operator delete(buffer,limit);
-	iostate |= BAD;
 	guard.drop();
 	notify(ABANDON);
 }
@@ -59,8 +58,6 @@ inline bool pipe::is_empty(void) const{
 }
 
 inline bool pipe::check(void){
-	if (iostate & BAD)
-		return true;
 	bool is_owner_write = (mode & owner_write);
 	if (is_owner() == is_owner_write)	//is_full
 		return !is_full();
@@ -82,12 +79,11 @@ REASON pipe::wait(qword us,wait_callback func){
 
 dword pipe::read(void* dst,dword length){
 	interrupt_guard<spin_lock> guard(objlock);
-	if (iostate & BAD)
-		return 0;
+	iostate = 0;
 	bool is_owner_write = (mode & owner_write);
 	if (is_owner() == is_owner_write){
 		//should write, fail
-		iostate |= FAIL;
+		iostate = OP_FAILURE;
 		return 0;
 	}
 	dword count = 0;
@@ -109,12 +105,11 @@ dword pipe::read(void* dst,dword length){
 
 dword pipe::write(void const* sor,dword length){
 	interrupt_guard<spin_lock> guard(objlock);
-	if (iostate & BAD)
-		return 0;
+	iostate = 0;
 	bool is_owner_write = (mode & owner_write);
 	if (is_owner() != is_owner_write){
 		//should read, fail
-		iostate |= FAIL;
+		iostate |= OP_FAILURE;
 		return 0;
 	}
 	dword count = 0;

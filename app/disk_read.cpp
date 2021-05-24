@@ -28,16 +28,23 @@ int main(int argc,char** argv){
 	for (auto page = 0;page < 2;++page){
 		if (page){
 			printf("--more--");
-			auto res = wait_for(stdin,0);
-			assert(res == NOTIFY || res == PASSED);
-			do{
-				byte buffer[0x10];
-				dword size = sizeof(buffer);
-				res = read(stdin,buffer,&size);
-				assert(res == 0);
-				if (size == 0)
-					break;
-			}while(true);
+			while(fgetc(stdin) != '\n');
+			// do{
+
+			// 	byte buffer[0x10];
+			// 	dword size = sizeof(buffer);
+			// 	auto res = stream_read(STDIN,buffer,&size);
+			// 	if (res != 0)
+			// 		break;
+			// 	if (size)
+			// 		break;
+			// 	printf("--more--");
+			// 	res = wait_for(STDIN,0);
+			// 	assert(res == NOTIFY || res == PASSED);
+			// 	res = stream_state(STDIN,&size);
+			// 	if (res != 0 || size)
+			// 		break;
+			// }while(true);
 		}
 		printf("dump of LBA 0x%llx :\n",lba);
 		//printf("\t00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n");

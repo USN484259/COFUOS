@@ -21,11 +21,11 @@ namespace UOS{
 			slot(qword va);
 			slot(const slot&) = delete;
 
-			inline void lock(rwlock::MODE mode){
-				objlock.lock(mode);
+			inline void lock(void){
+				objlock.lock();
 			}
-			inline bool try_lock(rwlock::MODE mode){
-				return objlock.try_lock(mode);
+			inline bool try_lock(void){
+				return objlock.try_lock();
 			}
 			inline void unlock(void){
 				objlock.unlock();
@@ -35,13 +35,14 @@ namespace UOS{
 			}
 
 			bool match(qword aligned_lba) const;
-			void flush(void);
-			//X locked before calling, downgrades to S lock
-			void reload(qword aligned_lba);
-			//X locked before calling, downgrades to S lock
-			void load(qword lba,byte count);
-			//X locked before calling
-			void store(qword lba,byte count);
+			//locked before calling
+			bool flush(void);
+			//locked before calling
+			bool reload(qword aligned_lba);
+			//locked before calling
+			bool load(qword lba,byte count);
+			//locked before calling
+			bool store(qword lba,byte count);
 		public:
 			qword base(void) const{
 				return lba_base;

@@ -49,7 +49,7 @@ void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword heade
 	{
 		lock_guard<handle_table> guard(this_process->handles);
 		auto obj = this_process->handles[0];
-		assert(obj && obj->type() == FILE);
+		assert(obj && obj->type() == OBJ_FILE);
 		f = static_cast<file*>(obj);
 	}
 	auto res = f->seek(0);
@@ -180,6 +180,7 @@ void UOS::user_entry(qword entry,qword arg,qword stk_top,qword stk_size){
 extern "C"
 qword kernel_service(dword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 	service_provider srv;
+	//dbgprint("%d:%d\t%x",srv.this_process->id,srv.this_thread->id,(qword)cmd);
 	switch(cmd){
 		case osctl:
 			return srv.osctl((osctl_code)a1,(void*)a2,a3);
@@ -238,6 +239,10 @@ qword kernel_service(dword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 			return srv.create_process((void const*)a1,a2);
 		case open_process:
 			return srv.open_process(a1);
+		case get_work_dir:
+			return srv.get_work_dir((void*)a1,a2);
+		case set_work_dir:
+			return srv.set_work_dir((void const*)a1,a2);
 		case handle_type:
 			return srv.handle_type(a1);
 		case open_handle:
@@ -256,12 +261,28 @@ qword kernel_service(dword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 			return srv.vm_commit(a1,a2);
 		case vm_release:
 			return srv.vm_release(a1,a2);
-		case iostate:
-			return srv.iostate(a1);
-		case read:
-			return srv.read(a1,(void*)a2,a3);
-		case write:
-			return srv.write(a1,(void const*)a2,a3);
+		case stream_state:
+			return srv.stream_state(a1);
+		case stream_read:
+			return srv.stream_read(a1,(void*)a2,a3);
+		case stream_write:
+			return srv.stream_write(a1,(void const*)a2,a3);
+		case file_open:
+			return srv.file_open((void const*)a1,a2,a3);
+		case file_tell:
+			return srv.file_tell(a1,(void*)a2);
+		case file_seek:
+			return srv.file_seek(a1,a2,a3);
+		case file_setsize:
+			return srv.file_setsize(a1,a2);
+		case file_path:
+			return srv.file_path(a1,(void*)a2,a3);
+		case file_info:
+			return srv.file_info(a1,(void*)a2,a3);
+		case file_change:
+			return srv.file_change(a1,a2);
+		case file_move:
+			return srv.file_move(a1,(void const*)a2,a3);
 	}
 	if (!user_exception(rip,rsp,ERROR_CODE::SV))
 		srv.exit_process(ERROR_CODE::SV);

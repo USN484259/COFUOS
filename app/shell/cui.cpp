@@ -218,7 +218,7 @@ CUI::CUI(word w,word h,dword* buffer,word ls,word lc) : \
 }
 
 void CUI::set_focus(bool f){
-	if (f && !screen.set_focus(f))
+	if (!screen.set_focus(f) && f)
 		redraw = true;
 }
 

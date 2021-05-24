@@ -86,8 +86,6 @@ namespace UOS{
 		}
 		//locks 'th' before calling, unlocks inside
 		void switch_to(thread* th);
-		//locks 'th' before calling, unlocks inside
-		//void escape(thread* th);
 	};
 
 	class gc_service{

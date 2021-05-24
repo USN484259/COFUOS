@@ -5,7 +5,7 @@
 
 namespace UOS{
 	class thread;
-
+	class process;
 	struct thread_queue{
 		thread* head = nullptr;
 		thread* tail = nullptr;
@@ -37,6 +37,7 @@ namespace UOS{
 		waitable(const waitable&) = delete;
 		virtual ~waitable(void);
 		virtual OBJTYPE type(void) const = 0;
+		virtual waitable* duplicate(process* ps);
 		//returns true if signaled (aka PASSED on wait)
 		virtual bool check(void) = 0;
 		// (this_thread) waits for (this)
@@ -55,9 +56,9 @@ namespace UOS{
 	class stream : public waitable{
 	public:
 		OBJTYPE type(void) const override{
-			return OBJTYPE::STREAM;
+			return OBJ_STREAM;
 		}
-		virtual IOSTATE state(void) const = 0;
+		virtual byte state(void) const = 0;
 		virtual dword result(void) const = 0;
 		virtual dword read(void* dst,dword length) = 0;
 		virtual dword write(void const* sor,dword length) = 0;

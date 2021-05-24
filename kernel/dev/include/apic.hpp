@@ -21,7 +21,9 @@ namespace UOS{
 		static constexpr byte IRQ_KEYBOARD = IRQ_OFFSET + 1;
 		static constexpr byte IRQ_RTC = IRQ_OFFSET + 8;
 		static constexpr byte IRQ_MOUSE = IRQ_OFFSET + 0x0C;
-		
+		static constexpr byte IRQ_IDE_PRI = IRQ_OFFSET + 0x0E;
+		static constexpr byte IRQ_IDE_SEC = IRQ_OFFSET + 0x0F;
+
 		static_assert(IRQ_MAX - IRQ_MIN >= 28,"IRQ range error");
 	private:
 		struct irq_handler{

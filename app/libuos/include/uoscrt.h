@@ -1,9 +1,6 @@
 #pragma once
 #include "types.h"
 
-#define stdin ((HANDLE)1)
-#define stdout ((HANDLE)2)
-#define stderr ((HANDLE)3)
 
 #ifdef __cplusplus
 #define NORETURN [[ noreturn ]]
@@ -18,6 +15,29 @@
 #ifndef EOF
 #define EOF (-1)
 #endif
+
+typedef struct {
+	enum : word{
+		EOF_BIT = 1,
+		FAIL_BIT = 2,
+		BAD_BIT = 4,
+	};
+	HANDLE file;
+	word flags;
+	dword head;
+	dword tail;
+	char buffer[0x1F0];
+} FILE;
+
+extern FILE std_obj[3];
+
+#define STDIN ((HANDLE)1)
+#define STDOUT ((HANDLE)2)
+#define STDERR ((HANDLE)3)
+
+#define stdin (std_obj + 0)
+#define stdout (std_obj + 1)
+#define stderr (std_obj + 2)
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,16 +63,25 @@ int isprint(int ch);
 void* memset(void* dst,int val,size_t len);
 void* memcpy(void* dst,const void* sor,size_t len);
 void* zeromemory(void* dst,size_t len);
+
 size_t strlen(const char* str);
-unsigned long strtoul(const char* str,char** end,int base);
-unsigned long long strtoull(const char* str,char** end,int base);
+const char* strstr(const char* str,const char* substr);
+
+unsigned long strtoul(const char* str,const char** end,int base);
+unsigned long long strtoull(const char* str,const char** end,int base);
 int snprintf(char* buffer,size_t limit,const char* format,...);
-int fprintf(HANDLE stream,const char* format,...);
+int fprintf(FILE* stream,const char* format,...);
 #define printf(...) fprintf(stdout,__VA_ARGS__)
 
-int fputs(const char* str,HANDLE stream);
-int fputc(int ch,HANDLE stream);
+int fputs(const char* str,FILE* stream);
+int fputc(int ch,FILE* stream);
 #define putchar(ch) fputc((ch),stdout)
+
+char* fgets(char* str,int count,FILE* stream);
+int fgetc(FILE* stream);
+#define getchar() fgetc(stdin)
+
+int ungetc(int ch,FILE* stream);
 
 #ifdef __cplusplus
 }

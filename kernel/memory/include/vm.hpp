@@ -117,6 +117,8 @@ namespace UOS{
 
 		virtual dword write(qword va,const void* data,dword length);
 		virtual dword read(qword va,void* buffer,dword length);
+		virtual dword zero(qword va,dword length);
+
 		virtual PTE peek(qword va) = 0;
 		inline qword usage(void) const{
 			return used_pages;
@@ -140,7 +142,7 @@ namespace UOS{
 		bool reserve_fixed(PDPTE* pdpt_table,qword addr,dword page_count);
 		qword reserve_any(PDPTE* pdpt_table,dword page_count);
 		qword reserve_big(PDPTE* pdpt_table,dword page_count);
-		void safe_release(PDPTE* pdpt_table,qword addr,dword page_count);
+		bool safe_release(PDPTE* pdpt_table,qword addr,dword page_count);
 
 
 		struct BLOCK{	//see struct PTE
@@ -183,6 +185,8 @@ namespace UOS{
 
 		dword write(qword va,const void* data,dword length) override;
 		dword read(qword va,void* buffer,dword length) override;
+		dword zero(qword va,dword length) override;
+
 		PTE peek(qword va) override;
 		bool assign(qword va,qword pa,dword page_count);
 		bool try_lock(void) override{
@@ -219,6 +223,8 @@ namespace UOS{
 
 		dword write(qword va,const void* data,dword length) override;
 		dword read(qword va,void* buffer,dword length) override;
+		dword zero(qword va,dword length) override;
+
 		PTE peek(qword va) override;
 		bool try_lock(void) override{
 			return objlock.try_lock(rwlock::SHARED);

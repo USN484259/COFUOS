@@ -7,19 +7,11 @@
 
 namespace UOS{
 	class IDE{
-		enum MODE : byte {NONE = 0,READ = 0x20,WRITE = 0x40};
-
 		word port_base[4];
 		word dma_base = 0;
 		byte irq_vector[2];
 
 		const PCI::device_info* pci_ref;
-		// struct {
-		// 	dword addr;
-		// 	word size;
-		// 	MODE mode;
-		// 	byte status;
-		// } request = {0};
 
 		semaphore sync;
 		event ev;
@@ -27,10 +19,11 @@ namespace UOS{
 		static bool on_irq(byte irq,void* ptr);
 
 	public:
+		enum MODE {READ,WRITE};
+
 		IDE(void);
 		void reset(void);
-		bool read(qword lba,dword pa,word size);
-		bool write(qword lba,dword pa,word size);
+		bool command(MODE mode,qword lba,dword pa,word size);
 	};
 	extern IDE ide;
 }

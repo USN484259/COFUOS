@@ -406,7 +406,11 @@ jnz abort16
 
 mov edx,'VESA'
 cmp [es:PMMSCAN_BASE+0x200],edx
+mov ax,0x200
 jnz abort16
+
+cmp [es:PMMSCAN_BASE+0x204],ax
+js abort16
 
 mov si,[es:PMMSCAN_BASE+0x200+0x0E]	;video modes offset
 mov cx,[es:PMMSCAN_BASE+0x200+0x10]	;video modes segment
@@ -434,8 +438,7 @@ mov es,dx
 cmp ax,0x4F
 jnz NEAR .end
 
-
-test BYTE [es:PMMSCAN_BASE],0x80
+test BYTE [es:PMMSCAN_BASE],0x80	;linear frame buffer
 jz .video_loop
 
 
@@ -910,7 +913,7 @@ CODE64OFF equ ($-$$)
 section codehigh vstart=0xFFFF8000_00002000+CODE64OFF
 
 folder_name db 'BOOT',0
-image_name db 'COFUOS.SYS',0
+image_name db 'COFUOS',0
 
 
 align 8
@@ -983,9 +986,12 @@ inc rdx
 test ax,ax
 loopnz .match
 
-; found
 test rcx,rcx
 mov rax,rdi
+jnz .next
+
+cmp [rdx],cl
+; found
 jz .end
 
 .next:

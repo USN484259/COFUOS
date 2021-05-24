@@ -25,7 +25,7 @@ static_assert(sizeof(PRD) == 8,"PRD size mismatch");
 
 static volatile PRD* const prdt = (volatile PRD*)HIGHADDR(PRDT_PBASE);
 
-IDE::IDE(void) : port_base{0x1F0,0x3F4,0x170,0x374},irq_vector{14,15},sync(1){
+IDE::IDE(void) : port_base{0x1F0,0x3F4,0x170,0x374},irq_vector{APIC::IRQ_IDE_PRI,APIC::IRQ_IDE_SEC},sync(1){
 	auto dev = pci.find(1,1);
 	if (dev == nullptr)
 		bugcheck("IDE controller not present");
@@ -52,7 +52,7 @@ IDE::IDE(void) : port_base{0x1F0,0x3F4,0x170,0x374},irq_vector{14,15},sync(1){
 	zeromemory((void*)prdt,sizeof(PRD));
 	out_dword(dma_base + 4,PRDT_PBASE);
 
-	apic.set(APIC::IRQ_OFFSET + irq_vector[0],on_irq,this);
+	apic.set(irq_vector[0],on_irq,this);
 
 	dbgprint("BusMaster IDE initialized");
 }
@@ -68,12 +68,37 @@ void IDE::reset(void){
 	sync.signal();
 }
 
-bool IDE::read(qword lba,dword pa,word size){
+bool IDE::command(MODE mode,qword lba,dword pa,word size){
 	if ((pa & SECTOR_MASK) || !size || (size & SECTOR_MASK))
 		return false;
 	if (lba & ~0x0FFFFFFF){
 		dbgprint("LBA48 not supported: %x",lba);
 		return false;
+	}
+	/*
+		DMA command bit 3
+		0 => read from memory (aka write disk)
+		1 => write to memory (aka read disk)
+
+		IDE command
+		0xC8 => read DMA LBA28
+		0x25 => read DMA LBA48
+		0xCA => write DMA LBA28
+		0x35 => write DMA LBA48
+	*/
+	byte dma_cmd;
+	byte ide_cmd;
+	switch(mode){
+		case READ:
+			dma_cmd = 8;
+			ide_cmd = 0xC8;
+			break;
+		case WRITE:
+			dma_cmd = 0;
+			ide_cmd = 0xCA;
+			break;
+		default:
+			bugcheck("unknown IDE operation %x",(qword)mode);
 	}
 	sync.wait();
 	do{
@@ -84,7 +109,8 @@ bool IDE::read(qword lba,dword pa,word size){
 			if (in_byte(dma_base + 2) & 7)	//interrupt | fail | active
 				break;
 			byte sel = (in_byte(port_base[0] + 6) & 0x10) ? 0xF0 : 0xE0;
-			out_byte(dma_base + 0,8);	//write to memory (aka read disk)
+
+			out_byte(dma_base + 0,dma_cmd);
 			prdt->phy_addr = pa;
 			prdt->size = size;
 			prdt->last = 1;
@@ -96,15 +122,15 @@ bool IDE::read(qword lba,dword pa,word size){
 			out_byte(port_base[0] + 3,lba);
 			out_byte(port_base[0] + 4,lba >> 8);
 			out_byte(port_base[0] + 5,lba >> 16);
-			out_byte(port_base[0] + 7,0xC8);	//read DMA LBA28
+			out_byte(port_base[0] + 7,ide_cmd);
 
 			out_byte(dma_base + 0,9);	//enable DMA
 		}
 		switch(ev.wait(4*1000*1000)){
 			case TIMEOUT:
 				//abort DMA operation
-				out_byte(dma_base + 0,8);
-				dbgprint("IDE read timeout");
+				out_byte(dma_base + 0,dma_cmd);
+				dbgprint("IDE timeout");
 				//fall through
 			case PASSED:
 			case NOTIFY:
@@ -123,7 +149,7 @@ bool IDE::read(qword lba,dword pa,word size){
 				if (!result){
 					byte errcode = in_byte(port_base[0] + 1);
 					word pci_stat = pci.read(pci_ref->func,4) >> 16;
-					dbgprint("IDE read failed: %x,%x,%x,%x",\
+					dbgprint("IDE failed: %x,%x,%x,%x",\
 						(qword)dma_stat,(qword)dev_stat,\
 						(qword)errcode,(qword)pci_stat);
 				}
@@ -135,11 +161,6 @@ bool IDE::read(qword lba,dword pa,word size){
 		}
 	}while(false);
 	bugcheck("invalid IDE state");
-}
-
-bool IDE::write(qword lba,dword pa,word size){
-	dbgprint("IDE::write not supported");
-	return false;
 }
 
 bool IDE::on_irq(byte irq,void* ptr){

@@ -9,7 +9,7 @@ export CPPFLAGS=$(CC_OPTIONS) $(INC_PATH) $(DEFINES)
 MODULES= util sync exception memory dev process filesystem interface
 
 COFUOS:	bin/COFUOS.sys.clean
-	guestfish add ../COFUOS.vhd : launch : mount /dev/sda / : upload $< /boot/$@
+	guestfish add $(VHD_PATH) : launch : mount /dev/sda / : mkdir-p /boot/ : upload $< /boot/$@
 
 bin/COFUOS.sys.clean:	bin/COFUOS.sys
 	$(OBJCOPY) -S $< $@

@@ -79,7 +79,7 @@ PM::PM(void) : bmp_size(0),total(0),used(0),next(0){
 
 	auto pmm_bmp = (BLOCK* const)PMMBMP_BASE;
 	zeromemory(pmm_bmp,page_count*PAGE_SIZE);
-	//scan & fill wmp
+	//scan & fill bmp
 	for (auto it = scan_base;it->type;++it){
 		dbgprint("%p ==> %p : %d",it->base,it->base+it->len,it->type);
 

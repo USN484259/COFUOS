@@ -27,5 +27,8 @@ public:
 	void begin_paint(void);
 	void end_paint(void);
 	void put(char ch);
+	void set_focus(bool f){
+		cui.set_focus(f);
+	}
 	//void blink(void);
 };

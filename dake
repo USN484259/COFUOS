@@ -1,6 +1,7 @@
 #!/bin/sh
 
-cmd="all"
+cmd=
+
 if [ $# -ne 0 ]
 then
 	cmd=$1
@@ -17,7 +18,7 @@ then
 	gnome-terminal -- bochs -q
 	cd kernel/ && gdb
 else
-	export DEFINES=COFUOS PM_TEST VM_TEST
+	export DEFINES='PM_TEST VM_TEST'
 	make $@
 fi
 

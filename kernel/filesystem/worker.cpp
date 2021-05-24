@@ -77,7 +77,7 @@ void exfat::thread_worker(qword arg,qword,qword,qword){
 				self->worker_write(f);
 				break;
 			default:
-				f->iostate |= FAIL;
+				f->iostate |= OP_FAILURE;
 		}
 		{
 			interrupt_guard<spin_lock> guard(f->objlock);
@@ -94,34 +94,46 @@ void exfat::worker_read(file* f){
 	assert(f->command == file::COMMAND_READ);
 	auto dst = reinterpret_cast<qword>(f->buffer);
 	dword len = 0;
-	if (dst == 0 || f->length == 0 || f->iostate){
+	if (dst == 0 || f->length == 0){
 		f->length = 0;
-		f->iostate |= FAIL;
+		f->iostate |= MEM_FAILURE;
 		return;
 	}
 	lock_guard<file_instance> guard(*f->instance);
 	auto file_size = f->instance->get_size();
+	auto valid_size = f->instance->get_valid_size();
+	assert(file_size >= valid_size);
 	while(len < f->length){
 		if (f->offset >= file_size){
-			f->iostate |= EOF;
+			f->iostate |= EOF_FAILURE;
 			break;
+		}
+		if (f->offset >= valid_size){
+			auto transfer_size = min<qword>(file_size - valid_size,f->length - len);
+			auto transferred = f->host->vspace->zero(dst,transfer_size);
+			len += transferred;
+			if (transferred != transfer_size){
+				f->iostate |= MEM_FAILURE;
+				break;
+			}
+			continue;
 		}
 		auto lba = f->instance->get_lba(f->offset);
 		if (!lba){
-			f->iostate |= FAIL;
+			f->iostate |= FS_FAILURE;
 			break;
 		}
 		auto count = dm.count(lba);
 		auto off = f->offset & SECTOR_MASK;
 		auto transfer_size = min<qword>(count*SECTOR_SIZE - off,f->length - len);
-		transfer_size = min(transfer_size,file_size - f->offset);
+		transfer_size = min(transfer_size,valid_size - f->offset);
 		assert(transfer_size);
 
 		count = align_up(transfer_size,SECTOR_SIZE)/SECTOR_SIZE;
 		auto block = dm.get(lba,count,false);
 		if (!block){
 			//media failure
-			f->iostate |= BAD;
+			f->iostate |= MEDIA_FAILURE;
 			break;
 		}
 		auto sor = static_cast<byte*>(block->data(lba)) + off;
@@ -132,7 +144,7 @@ void exfat::worker_read(file* f){
 		dst += transferred;
 		len += transferred;
 		if (transferred != transfer_size){
-			f->iostate |= FAIL;
+			f->iostate |= MEM_FAILURE;
 			break;
 		}
 	}

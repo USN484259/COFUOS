@@ -18,6 +18,7 @@ namespace UOS{
 		folder_instance* parent;
 		literal name;
 		qword valid_size = 0;
+		qword alloc_size = 0;
 		dword rec_index = (-1);
 		word name_hash;
 		byte attribute = 0;	//file attributes
@@ -58,6 +59,11 @@ namespace UOS{
 		file_instance(exfat& fs,literal&& str,folder_instance* top);
 		// X locked before destruction
 		virtual ~file_instance(void);
+		
+		virtual bool is_folder(void) const{
+			assert(0 == (attribute & FOLDER));
+			return false;
+		}
 		void acquire(void);
 		void relax(void);
 
@@ -76,6 +82,10 @@ namespace UOS{
 		}
 
 		inline qword get_size(void) const{
+			assert(is_locked());
+			return alloc_size;
+		}
+		inline qword get_valid_size(void) const{
 			assert(is_locked());
 			return valid_size;
 		}
@@ -108,6 +118,11 @@ namespace UOS{
 	public:
 		folder_instance(exfat& f,literal&& str,folder_instance* top);
 		~folder_instance(void);
+
+		bool is_folder(void) const override{
+			assert(attribute & FOLDER);
+			return true;
+		}
 
 		// instance auto acquired
 		file_instance* open(const span<char>& str);

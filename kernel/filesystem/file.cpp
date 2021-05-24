@@ -12,6 +12,14 @@ file::~file(void){
 	instance->relax();
 }
 
+file* file::duplicate(process* ps){
+	interrupt_guard<spin_lock> guard(objlock);
+	instance->acquire();
+	auto ptr = new file(instance,ps);
+	ptr->manage();
+	return ptr;
+}
+
 bool file::relax(void){
 	auto res = stream::relax();
 	if (!res)
@@ -38,29 +46,33 @@ dword file::result(void) const{
 	interrupt_guard<spin_lock> guard(objlock);
 	if (command)
 		return 0;
-	if (iostate & (IOSTATE::BAD | IOSTATE::FAIL))
-		return 0;
 	return length;
 }
 
-bool file::seek(size_t off){
+qword file::size(void) const{
+	lock_guard<file_instance> guard(*instance);
+	return instance->get_size();
+}
+
+bool file::seek(qword off){
 	interrupt_guard<spin_lock> guard(objlock);
 	if (command)
 		return false;
 	offset = off;
-	return offset == off;
+	return true;
 }
 
 dword file::read(void* dst,dword len){
 	{
 		interrupt_guard<spin_lock> guard(objlock);
 		if (command){
-			iostate |= IOSTATE::FAIL;
+			iostate |= OP_FAILURE;
 			return 0;
 		}
 		buffer = dst;
 		length = len;
 		command = COMMAND_READ;
+		iostate = 0;
 	}
 	filesystem.task(this);
 	return 0;
@@ -70,29 +82,22 @@ dword file::write(const void* sor,dword len){
 	{
 		interrupt_guard<spin_lock> guard(objlock);
 		if (command){
-			iostate |= IOSTATE::FAIL;
+			iostate |= OP_FAILURE;
 			return 0;
 		}
 		buffer = (void*)sor;
 		length = len;
 		command = COMMAND_WRITE;
+		iostate = 0;
 	}
 	filesystem.task(this);
 	return 0;
 }
 
-file* file::duplicate(file* f,process* p){
-	IF_assert;
-	f->instance->acquire();
-	auto ptr = new file(f->instance,p);
-	ptr->manage();
-	return ptr;
-}
-
-file* file::open(const span<char>& path){
+file* file::open(const span<char>& path,bool program){
 	if (path.empty())
 		return nullptr;
-	folder_instance* cur;
+	folder_instance* cur = nullptr;
 	auto it = path.begin();
 
 	if (*it == '/'){
@@ -101,27 +106,43 @@ file* file::open(const span<char>& path){
 		++it;
 	}
 	else{
-		// TODO parse relative path
-		return nullptr;
+		if (program && find_first_of(path.begin(),path.end(),'/') == path.end()){
+			auto bin = filesystem.get_root()->open(span<char>("bin",3));
+			if (bin->is_folder())
+				cur = static_cast<folder_instance*>(bin);
+		}
+		if (!cur){
+			// TODO parse relative path
+			return nullptr;
+		}
 	}
 	while(it != path.end()){
 		auto tail = it;
 		while(tail != path.end() && *tail != '/')
 			++tail;
-		auto next = cur->open(span<char>(it,tail));
-		if (!next)
-			break;
+		file_instance* next;
+		if (it == tail){
+			//opening directory ending with '/'
+			next = cur;
+			cur = nullptr;
+		}
+		else{
+			next = cur->open(span<char>(it,tail));
+			if (!next)
+				break;
+		}
 		if (tail == path.end()){
 			// got file, create file object
 			this_core core;
 			auto this_process = core.this_thread()->get_process();
 			auto f = new file(next,this_process);
 			f->manage();
-			cur->relax();
+			if (cur)
+				cur->relax();
 			return f;
 		}
 		lock_guard<file_instance> guard(*next);
-		if (0 == (next->get_attribute() & FOLDER)){
+		if (!next->is_folder()){
 			// should be folder, but not folder
 			next->relax();
 			break;

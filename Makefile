@@ -1,14 +1,16 @@
 export COFUOS_ROOT:=$(CURDIR)
+export DEFINES:=$(DEFINES) COFUOS
+export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -Werror=return-type -nostdlib -m64 -fmacro-prefix-map="$(COFUOS_ROOT)"="." 
 
+# change variables below for different configuration
+export VHD_PATH=$(COFUOS_ROOT)/COFUOS.vhd
 export MINGW_CC=mingw-gcc
 export MINGW_LD=mingw-ld
 export MINGW_AR=mingw-ar
 export CC=g++
 export NASM=nasm
 export OBJCOPY=objcopy
-export STRIP=strip
 export CP=cp
-export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -nostdlib -m64
 
 all: boot COFUOS app
 

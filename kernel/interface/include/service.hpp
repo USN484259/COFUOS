@@ -42,7 +42,7 @@ namespace UOS{
 		~service_provider(void);
 
 		bool check(void const* va,dword length,bool write = false);
-		waitable* get(HANDLE handle,OBJTYPE type = UNKNOWN);
+		waitable* get(HANDLE handle,OBJTYPE type = OBJ_UNKNOWN);
 		
 		qword osctl(osctl_code cmd,void* buffer,dword length);
 		qword os_info(void* buffer,dword limit);
@@ -71,9 +71,11 @@ namespace UOS{
 		[[ noreturn ]]
 		void exit_process(dword result);
 		STATUS kill_process(HANDLE handle,dword result);
-		qword create_process(void const* info,dword length);
 		qword process_result(HANDLE handle);
+		qword create_process(void const* info,dword length);
 		qword open_process(dword id);
+		qword get_work_dir(void* buffer,dword limit);
+		STATUS set_work_dir(void const* buffer,dword length);
 		OBJTYPE handle_type(HANDLE handle);
 		qword open_handle(void const* name,dword length);
 		STATUS close_handle(HANDLE handle);
@@ -83,8 +85,16 @@ namespace UOS{
 		qword vm_reserve(qword va,dword count);
 		STATUS vm_commit(qword va,dword count);
 		STATUS vm_release(qword va,dword count);
-		qword iostate(HANDLE handle);
-		qword read(HANDLE handle,void* buffer,dword limit);
-		qword write(HANDLE handle,void const* buffer,dword length);
+		qword stream_state(HANDLE handle);
+		qword stream_read(HANDLE handle,void* buffer,dword limit);
+		qword stream_write(HANDLE handle,void const* buffer,dword length);
+		qword file_open(void const* name,dword length,dword access);
+		STATUS file_tell(HANDLE handle,void* buffer);
+		STATUS file_seek(HANDLE handle,qword offset,dword mode);
+		STATUS file_setsize(HANDLE handle,qword new_size);
+		qword file_path(HANDLE handle,void* buffer,dword limit);
+		qword file_info(HANDLE handle,void* buffer,dword limit);
+		STATUS file_change(HANDLE handle,dword attrib);
+		STATUS file_move(HANDLE handle,void const* target,dword length);
 	};
 }

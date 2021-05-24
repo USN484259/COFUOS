@@ -6,15 +6,17 @@
 using namespace UOS;
 
 file_instance::file_instance(exfat& f,literal&& str,folder_instance* top) : \
-	parent(top), name(move(str)), clusters(f,top == nullptr)
+	parent(top), name(move(str)), clusters(f)
 {
 	objlock.lock();
+	dbgprint("new instance %s",name.c_str());
 }
 
 file_instance::~file_instance(void){
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	assert(ref_count == 0);
 	assert(parent);
+	dbgprint("delete instance %s",name.c_str());
 	parent->close(this);
 	objlock.unlock();
 }
@@ -34,10 +36,16 @@ void file_instance::relax(void){
 }
 
 qword file_instance::get_lba(qword offset){
-	auto cluster = clusters.get(offset);
+	if (parent && offset >= alloc_size)
+		return 0;
+	auto index = offset / clusters.host().cluster_size();
+	auto cluster = clusters.get(index);
 	if (cluster){
-		offset = (offset % clusters.host().cluster_size()) / SECTOR_SIZE;
-		return clusters.host().lba_of_cluster(cluster) + offset;
+		auto base = clusters.host().lba_of_cluster(cluster);
+		if (base){
+			offset = (offset % clusters.host().cluster_size()) / SECTOR_SIZE;
+			return base + offset;
+		}
 	}
 	return 0;
 }
@@ -49,7 +57,6 @@ folder_instance::folder_instance(exfat& f,literal&& str,folder_instance* top) : 
 }
 
 folder_instance::~folder_instance(void){
-	IF_assert;
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	assert(file_table.empty());
 }
@@ -73,8 +80,6 @@ file_instance* folder_instance::open(const span<char>& str){
 	constexpr dword record_per_sector = SECTOR_SIZE/sizeof(record);
 	vector<record> entrance;
 	do{
-		//#error stack overflow on large cluster size
-		//FAT32::record buffer[FAT32::cluster_size() / sizeof(FAT32::record)];
 		auto lba = get_lba(index*sizeof(record));
 		if (lba == 0)
 			bugcheck("exfat folder corrupted %x",(qword)index);
@@ -82,13 +87,12 @@ file_instance* folder_instance::open(const span<char>& str){
 			dm.relax(slot);
 		slot = dm.get(lba,1,false);
 		if (slot == nullptr){
-			//TODO handle bad sectors
-			bugcheck("exfat failed to read folder @ %x,%x",(qword)index,lba);
+			dbgprint("exfat failed to read folder @ %x,%x",(qword)index,lba);
+			goto done;
 		}
 		auto buffer = (record*)slot->data(lba);
 
 		do{
-		//for (auto& record : buffer){
 			auto& rec = buffer[index % record_per_sector];
 			if (rec.data[0] == 0)
 				goto done;
@@ -184,6 +188,8 @@ file_instance* folder_instance::imp_open(dword index,const span<char>& str,const
 	if (!exfat::name_equal(span<char>(name,rec->name_size),str))
 		return nullptr;
 
+	if (rec->valid_size > rec->alloc_size)
+		return nullptr;
 	// file found, create instance
 	file_instance* instance;
 	if (rec->attributes & FOLDER){
@@ -195,10 +201,11 @@ file_instance* folder_instance::imp_open(dword index,const span<char>& str,const
 		instance = new file_instance(clusters.host(),literal(name,name + rec->name_size),this);
 	}
 	instance->valid_size = rec->valid_size;
+	instance->alloc_size = rec->alloc_size;
 	instance->rec_index = index;
 	instance->name_hash = rec->name_hash;
 	instance->attribute = rec->attributes;
-	instance->clusters.assign(rec->first_cluster,rec->alloc_size,rec->alloc_stat & 2);
+	instance->clusters.assign(rec->first_cluster,rec->alloc_stat & 2);
 	instance->objlock.unlock();
 	return instance;
 }
@@ -206,7 +213,7 @@ file_instance* folder_instance::imp_open(dword index,const span<char>& str,const
 void folder_instance::as_root(dword root_cluster){
 	assert(objlock.is_locked() && objlock.is_exclusive() && parent == nullptr);
 	attribute = FOLDER;
-	clusters.assign(root_cluster,0,false);
+	clusters.assign(root_cluster,false);
 	objlock.unlock();
 }
 

@@ -111,6 +111,13 @@ STATUS open_process(dword id,HANDLE* handle) {
 	auto res = syscall(srv::open_process,id);
 	return unpack_qword(res,handle);
 }
+STATUS get_work_dir(char* buffer,dword* length){
+	auto res = syscall(srv::get_work_dir,buffer,*length);
+	return unpack_qword(res,length);
+}
+STATUS set_work_dir(const char* path,dword length){
+	return (STATUS)syscall(srv::set_work_dir,path,length);
+}
 OBJTYPE handle_type(HANDLE handle) {
 	return (OBJTYPE)syscall(srv::handle_type,handle);
 }
@@ -140,15 +147,42 @@ STATUS vm_commit(void* base,dword count) {
 STATUS vm_release(void* base,dword count) {
 	return (STATUS)syscall(srv::vm_release,base,count);
 }
-dword iostate(HANDLE handle,dword* count){
-	auto res = syscall(srv::iostate,handle);
+dword stream_state(HANDLE handle,dword* count){
+	auto res = syscall(srv::stream_state,handle);
 	return unpack_qword<dword,dword>(res,count);
 }
-dword read(HANDLE handle,void* buffer,dword* length){
-	auto res = syscall(srv::read,handle,buffer,*length);
+dword stream_read(HANDLE handle,void* buffer,dword* length){
+	auto res = syscall(srv::stream_read,handle,buffer,*length);
 	return unpack_qword<dword,dword>(res,length);
 }
-dword write(HANDLE handle,const void* buffer,dword* length){
-	auto res = syscall(srv::write,handle,buffer,*length);
+dword stream_write(HANDLE handle,const void* buffer,dword* length){
+	auto res = syscall(srv::stream_write,handle,buffer,*length);
 	return unpack_qword<dword,dword>(res,length);
+}
+STATUS file_open(const char* name,dword length,dword access,HANDLE* handle){
+	auto res = syscall(srv::file_open,name,length,access);
+	return unpack_qword(res,handle);
+}
+STATUS file_tell(HANDLE handle,qword* buffer){
+	return (STATUS)syscall(srv::file_tell,handle,buffer);
+}
+STATUS file_seek(HANDLE handle,qword offset,dword mode){
+	return (STATUS)syscall(srv::file_seek,handle,offset,mode);
+}
+STATUS file_setsize(HANDLE handle,qword new_size){
+	return (STATUS)syscall(srv::file_setsize,handle,new_size);
+}
+STATUS file_path(HANDLE handle,char* buffer,dword* length){
+	auto res = syscall(srv::file_path,handle,buffer,*length);
+	return unpack_qword(res,length);
+}
+STATUS file_info(HANDLE handle,const FILE_INFO* buffer,dword* length){
+	auto res = syscall(srv::file_info,handle,buffer,*length);
+	return unpack_qword(res,length);
+}
+STATUS file_change(HANDLE handle,dword attrib){
+	return (STATUS)syscall(srv::file_change,handle,attrib);
+}
+STATUS file_move(HANDLE handle,const char* target,dword length){
+	return (STATUS)syscall(srv::file_move,handle,target,length);
 }

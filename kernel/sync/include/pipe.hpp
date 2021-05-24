@@ -28,10 +28,10 @@ namespace UOS{
 		pipe(dword size,byte mode);
 		~pipe(void);
 		OBJTYPE type(void) const override{
-			return PIPE;
+			return OBJ_PIPE;
 		}
-		IOSTATE state(void) const override{
-			return (IOSTATE)iostate;
+		byte state(void) const override{
+			return iostate;
 		}
 		dword result(void) const override{
 			return 0;

@@ -83,22 +83,29 @@ namespace UOS{
 		dword active_count = 0;
 		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
+		literal work_dir;
 	public:
 		literal const commandline;
 		handle_table handles;
 		const qword start_time;
 		volatile qword cpu_time = 0;
 
-		struct startup_info{
-			PRIVILEGE privilege;
+		struct spawn_info{
+			file* f;
 			stream* std_stream[3];
+			span<char> work_dir;
+			PRIVILEGE privilege;
+			qword env_ptr = 0;
+			qword imagebase = 0;
+			qword imagesize = 0;
+			qword headersize = 0;
 		};
 	public:
 		process(initial_process_tag);
-		process(literal&& cmd,file* f,const startup_info& info,const qword* args);
+		process(literal&& cmd,const spawn_info& info);
 		~process(void);
 		OBJTYPE type(void) const override{
-			return PROCESS;
+			return OBJ_PROCESS;
 		}
 		bool check(void) override{
 			return state == STOPPED;
@@ -115,6 +122,9 @@ namespace UOS{
 		inline qword get_stack_preserve(void) const{
 			return image->stk_reserve;
 		}
+		inline const literal& get_work_dir(void) const{
+			return work_dir;
+		}
 		inline bool get_result(dword& val){
 			if (state != STOPPED)
 				return false;
@@ -125,6 +135,7 @@ namespace UOS{
 		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
 		void manage(void* = nullptr) override;
+		bool set_work_dir(const span<char>& str);
 		thread* spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
 		void kill(dword ret_val);
 		//on thread exit
@@ -136,6 +147,13 @@ namespace UOS{
 	class process_manager{
 		spin_lock lock;
 		hash_set<process, process::hash, process::equal> table;
+	public:
+		struct spawn_info{
+			PRIVILEGE privilege;
+			stream* std_stream[3];
+			span<char> work_dir;
+			literal env;
+		};
 
 	public:
 		process_manager(void);
@@ -143,8 +161,8 @@ namespace UOS{
 		inline size_t size(void) const{
 			return table.size();
 		}
-		// std streams should be acquired in advance
-		process* spawn(literal&& command,literal&& env,const process::startup_info& info);
+
+		process* spawn(literal&& command,spawn_info& info);
 		void erase(process* ps);
 		bool enumerate(dword& id);
 		process* find(dword id,bool acquire);

@@ -24,7 +24,6 @@ namespace UOS{
 				file* tail;
 			} request_list = {0};
 
-			//static void thread_worker(qword,qword,qword,qword);
 		public:
 			thread_pool(void) = default;
 			void launch(exfat* fs,unsigned count);
@@ -48,7 +47,7 @@ namespace UOS{
 		static void thread_init(qword,qword,qword,qword);
 		static void thread_worker(qword,qword,qword,qword);
 		
-		//returns root cluster,MSB set on FAT_1, 0 on failure
+		//returns root cluster,MSB set on FAT_1, returns 0 on failure
 		dword parse_header(const void* ptr);
 		void worker_read(file*);
 		void worker_write(file*);
@@ -115,25 +114,29 @@ namespace UOS{
 
 		exfat& fs;
 		rwlock objlock;
-		const bool root;
-		bool linear = false;
+		//const bool root;
 		dword first_cluster = 0;
-		qword alloc_size = 0;
+		//qword alloc_size = 0;
 		linked_list<line> cache_line;	//decending order
 		linked_list<decltype(cache_line)::iterator> lru_queue;
+
+		bool linear = false;
 	public:
-		cluster_chain(exfat& f,bool r = false) : fs(f), root(r) {}
+		//cluster_chain(exfat& f,bool r = false) : fs(f), root(r) {}
+		cluster_chain(exfat& f) : fs(f) {}
 		exfat& host(void) const{
 			return fs;
 		}
-		qword size(void) const{
-			return alloc_size;
-		}
-		void assign(dword head,qword sz,bool linear_block);
-		dword get(qword offset);
-		// expand or truncate
+		// qword size(void) const{
+		// 	return alloc_size;
+		// }
+		// void assign(dword head,qword sz,bool linear_block);
+		void assign(dword head,bool linear_block);
+		dword get(qword index);
+
+		// expand or truncate to (count) clusters
 		// returns true if mode changes
-		bool set(qword offset);
+		bool set(qword count);
 
 	};
 	

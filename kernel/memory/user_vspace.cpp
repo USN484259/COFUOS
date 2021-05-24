@@ -130,8 +130,7 @@ bool user_vspace::release(qword addr,dword page_count){
 	});
 	if (res != page_count)
 		return false;
-	safe_release(pdpt_table,addr,page_count);
-	return true;
+	return safe_release(pdpt_table,addr,page_count);
 }
 
 bool user_vspace::commit(qword base_addr,dword page_count){
@@ -244,6 +243,27 @@ dword user_vspace::read(qword va,void* buffer,dword length){
 		auto sor = (const byte*)view + off;
 		memcpy(dst,sor,len);
 		dst += len;
+		va += len;
+		count += len;
+	}
+	return count;
+}
+
+dword user_vspace::zero(qword va,dword length){
+	if (IS_HIGHADDR(va))
+		return virtual_space::zero(va,length);
+	lock_guard<rwlock> guard(objlock,rwlock::SHARED);
+	dword count = 0;
+	map_view view;
+	while(count < length){
+		auto pt = peek(va);
+		if (!pt.present || !pt.user || !pt.write)
+			break;
+		view.map(pt.page_addr << 12);
+		auto off = va & PAGE_MASK;
+		auto len = min<dword>(length - count,PAGE_SIZE - off);
+		auto dst = (byte*)view + off;
+		zeromemory(dst,len);
 		va += len;
 		count += len;
 	}

@@ -18,7 +18,7 @@ namespace UOS{
 			safe_queue(const safe_queue&) = delete;
 			~safe_queue(void);
 			OBJTYPE type(void) const override{
-				return UNKNOWN;
+				return OBJ_UNKNOWN;
 			}
 			byte get(void);
 			void put(byte);

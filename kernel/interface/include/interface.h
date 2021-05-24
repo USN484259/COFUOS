@@ -3,7 +3,7 @@
 
 
 typedef dword HANDLE;
-enum ERROR_CODE : dword{
+typedef enum : dword{
 	DE = 0xC0000000,
 	DB = 0xC0000001,
 	BP = 0xC0000003,
@@ -19,28 +19,33 @@ enum ERROR_CODE : dword{
 	MF = 0xC0000010,
 	AC = 0xC0000011,
 	XF = 0xC0000013
-};
-enum PRIVILEGE : byte {KERNEL = 0,SHELL = 0x20,NORMAL = 0x40};
-enum REASON : byte {NONE = 0, PASSED = 1, NOTIFY = 2, TIMEOUT = 3, ABANDON = 4};
-enum OBJTYPE : dword {UNKNOWN = 0,THREAD,PROCESS,STREAM,FILE,PIPE,SEMAPHORE,EVENT};
-enum IOSTATE : byte {
-	EOF = 1,
-	FAIL = 2,
-	BAD = 4
-};
-enum FILE_ATTRIBUTE : byte {
+} ERROR_CODE;
+typedef enum : byte {KERNEL = 0,SHELL = 0x20,NORMAL = 0x40} PRIVILEGE;
+typedef enum : byte {NONE = 0, PASSED = 1, NOTIFY = 2, TIMEOUT = 3, ABANDON = 4} REASON;
+typedef enum : dword {OBJ_UNKNOWN = 0,OBJ_THREAD,OBJ_PROCESS,OBJ_STREAM,OBJ_FILE,OBJ_PIPE,OBJ_SEMAPHORE,OBJ_EVENT} OBJTYPE;
+typedef enum : byte {
+	// EOF_BIT = 1,
+	// FAIL_BIT = 2,
+	// BAD_BIT = 4
+	EOF_FAILURE = 1,
+	OP_FAILURE = 4,
+	MEM_FAILURE = 8,
+	FS_FAILURE = 0x10,
+	MEDIA_FAILURE = 0x20,
+} IOSTATE;
+typedef enum : byte {
 	READONLY = 1,
 	HIDDEN = 2,
 	SYSTEM = 4,
 	//VID = 8,
 	FOLDER = 0x10,
 	ARCHIVE = 0x20
-};
-enum OPEN_MODE : byte {
+} FILE_ATTRIBUTE;
+typedef enum : byte {
 	SHARE_READ = 1,
 	SHARE_WRITE = 2
-};
-enum STATUS : dword {
+} OPEN_MODE;
+typedef enum : dword {
 	SUCCESS			= 0,
 	FAILED			= 0x80000000,
 	BAD_PARAM		= 0x80000001,
@@ -51,8 +56,8 @@ enum STATUS : dword {
 	NO_RESOURCE		= 0x80000006,
 	BAD_HANDLE		= 0x80000007,
 	NOT_FOUND		= 0x80000008,
-};
-struct OS_INFO{
+} STATUS;
+typedef struct {
 	dword version;
 	word features;
 	word active_core;
@@ -65,8 +70,8 @@ struct OS_INFO{
 	word resolution_y;
 	dword reserved;
 	//system description follows
-};
-struct PROCESS_INFO{
+} OS_INFO;
+typedef struct {
 	dword id;
 	PRIVILEGE privilege;
 	byte state;
@@ -75,25 +80,30 @@ struct PROCESS_INFO{
 	qword start_time;
 	qword cpu_time;
 	qword memory_usage;
-};
-struct STARTUP_INFO{
+} PROCESS_INFO;
+typedef struct {
 	char* commandline;
+	char* work_dir;
 	char* environment;
 	dword cmd_length;
+	dword wd_length;
 	dword env_length;
-	qword reserved;
 	dword flags;
 	HANDLE std_handle[3];
-};
-struct rectangle{
+} STARTUP_INFO;
+typedef struct {
+	dword attribute;
+} FILE_INFO;
+
+typedef struct {
 	word left;
 	word top;
 	word right;
 	word bottom;
-};
-enum osctl_code : dword {
+} rectangle;
+typedef enum : dword {
 	bugcheck = 0,
 	halt,
 	disk_read,
 	dbgbreak = 3,
-};
+} osctl_code;

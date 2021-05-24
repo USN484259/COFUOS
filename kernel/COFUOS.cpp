@@ -79,10 +79,9 @@ void thread_shell(qword,qword,qword,qword){
 	},reinterpret_cast<void*>(dev_pipe));
 	bool bad = false;
 	while(true){
-		process::startup_info info = {SHELL,dev_pipe,nullptr,kdb_pipe};
-		dev_pipe->acquire();
-		kdb_pipe->acquire();
-		process* shell = proc.spawn("/bin/shell","",info);
+		process_manager::spawn_info info = {SHELL,{dev_pipe,nullptr,kdb_pipe},span<char>("/",1)};
+
+		process* shell = proc.spawn("/bin/shell",info);
 
 		if (!shell)
 			bugcheck("shell failed to launch");
@@ -101,20 +100,6 @@ void thread_shell(qword,qword,qword,qword){
 		thread::sleep(1000*1000);
 	}
 	bugcheck("shell not stable");
-}
-
-void thread_ide_test(qword,qword,qword,qword){
-	this_core core;
-	auto this_thread = core.this_thread();
-	auto phy_addr = pm.allocate(PM::MUST_SUCCEED);
-	dword samples[] = {0,0x0FFFFFFF};
-	for (auto lba : samples){
-		if (ide.read(lba,phy_addr,SECTOR_SIZE)){
-			map_view view(phy_addr);
-			dbgprint("IDE read LBA %x : %x",(qword)lba,(qword)*((const word*)view + 255));
-		}
-	}
-	thread::kill(this_thread);
 }
 
 typedef void (*global_constructor)(void);
@@ -145,9 +130,6 @@ void krnlentry(void* module_base){
 		}
 	}
 
-	int_trap(3);
-	sti();
-
 	{
 		this_core core;
 		auto this_process = core.this_thread()->get_process();
@@ -156,47 +138,10 @@ void krnlentry(void* module_base){
 		if (!th)
 			bugcheck("failed to spawn shell thread");
 
-		th = this_process->spawn(thread_ide_test,args);
-		assert(th);
 	}
 
-/*
-	HANDLE pid = proc.spawn("/test.exe p","");
-	dword pid;
-	{
-		lock_guard<handle_table> guard(ps->handles);
-		auto ptr = ps->handles[pid];
-		assert(ptr && ptr->type() == PROCESS);
-		pid = ((process*)ptr)->id;
-		ptr->relax();
-	}
-	char const* commands[] = {\
-		"/test.exe",
-		"/test.exe l",
-		"/test.exe f",
-		"/test.exe y",
-		"/test.exe v",
-		"/test.exe i"
-	};
-	for (auto cmd : commands){
-		pid = proc.spawn(cmd,"");
-		lock_guard<handle_table> guard(ps->handles);
-		auto ptr = ps->handles[pid];
-		assert(ptr && ptr->type() == PROCESS);
-		ptr->relax();
-	}
-
-	string str("/test.exe ");
-	str.push_back('0' + pid);
-	pid = proc.spawn(literal(str.begin(),str.end()),"");
-	{
-		lock_guard<handle_table> guard(ps->handles);
-		auto ptr = ps->handles[pid];
-		assert(ptr && ptr->type() == PROCESS);
-		ptr->relax();
-	}
-*/
-
+	int_trap(3);
+	sti();
 
 	//as idle thread
 	while(true){

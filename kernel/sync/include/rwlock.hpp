@@ -12,7 +12,7 @@ namespace UOS{
 		rwlock(void);
 		~rwlock(void);
 		OBJTYPE type(void) const override{
-			return UNKNOWN;
+			return OBJ_UNKNOWN;
 		}
 		bool check(void) override{
 			return owner == nullptr;

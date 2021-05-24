@@ -11,7 +11,7 @@ SRC_LIST = $(wildcard *.cpp)
 PROG_LIST = $(patsubst %.cpp,bin/%.exe,$(SRC_LIST))
 
 app:	libuos shell $(PROG_LIST)
-	guestfish < guestfish_script
+	guestfish -a $(VHD_PATH) < guestfish_script
 
 
 libuos:
@@ -23,7 +23,7 @@ shell:	libuos
 # bin/%.exe.clean:	bin/%.exe
 # 	$(OBJCOPY) -S $< $@
 
-bin/%.exe:	%.cpp
+bin/%.exe:	%.cpp libuos
 	$(MINGW_CC) $(CPPFLAGS) -e uos_entry $< -o $@ -luos -Wl,--relax,--stack=0x4000,--no-seh
 	$(OBJCOPY) -S $@ $@.clean
 

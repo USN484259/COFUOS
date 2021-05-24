@@ -4,22 +4,23 @@
 #include "hash.hpp"
 
 namespace UOS{
-	template<typename T>
+	template<typename T,typename C = dword>
 	class span{
-		const T* ptr;
-		size_t len;
+		const T* ptr = nullptr;
+		C len = 0;
 	public:
 		typedef T* iterator;
 		typedef const T* const_iterator;
 
+		span(void) = default;
 		template<typename It>
 		span(It head,It tail) : ptr(&*head), len(tail - head) {}
 		template<typename It>
-		span(It head,size_t length) : ptr(&*head), len(length) {}
+		span(It head,C length) : ptr(&*head), len(length) {}
 		template<typename Ct>
 		span(const Ct& container) : ptr(container.begin()), len(container.size()) {}
 		
-		size_t size(void) const{
+		C size(void) const{
 			return len;
 		}
 		bool empty(void) const{
@@ -43,16 +44,16 @@ namespace UOS{
 		const T* data(void) const{
 			return ptr;
 		}
-		T& operator[](size_t index){
+		T& operator[](C index){
 			return ptr[index];
 		}
-		const T& operator[](size_t index) const{
+		const T& operator[](C index) const{
 			return ptr[index];
 		}
 	};
-	template<typename T>
-	struct hash<span<T> >{
-		qword operator()(const span<T>& obj){
+	template<typename T,typename C>
+	struct hash<span<T,C> >{
+		qword operator()(const span<T,C>& obj){
 			return fasthash64(obj.data(),sizeof(T)*obj.size(),0);
 		}
 	};

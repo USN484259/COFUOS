@@ -4,24 +4,24 @@
 
 namespace UOS{
 	// min = block_size(bot), max = block_size(top - 1)
-	template<unsigned bot,unsigned top,typename M>
+	template<byte bot,byte top,typename M>
 	class buddy_heap {
 		static_assert(bot >= 4 && top > bot,"Invalid buddy_heap instance");
 
-		static constexpr size_t block_mask(unsigned sh){
+		static constexpr size_t block_mask(byte sh){
 			return ((size_t)1 << sh) - 1;
 		}
-		static constexpr size_t block_size(unsigned sh){
+		static constexpr size_t block_size(byte sh){
 			return (size_t)1 << sh;
 		}
-		static constexpr unsigned block_index(unsigned sh){
+		static constexpr byte block_index(byte sh){
 			return sh - bot;
 		}
 		static constexpr qword block_diff(const void* a,const void* b){
 			return reinterpret_cast<qword>(a) ^ reinterpret_cast<qword>(b);
 		}
 		//get shift of size ( aligned up )
-		inline static unsigned category(const size_t sz){
+		inline static byte category(const size_t sz){
 			assert(sz);
 			if (sz > block_size(top - 1))
 				return top;
@@ -39,10 +39,10 @@ namespace UOS{
 			return res;
 		}
 		//get shift of given memory range (aligned down)
-		inline static unsigned category(const void* ptr,const size_t sz){
+		inline static byte category(const void* ptr,const size_t sz){
 			assert(ptr && sz);
-			unsigned res = top;
-			unsigned cur = bot;
+			auto res = top;
+			auto cur = bot;
 			auto base = reinterpret_cast<qword>(ptr);
 			while(cur < top){
 				if (base & block_mask(cur))
@@ -68,7 +68,7 @@ namespace UOS{
 		EXPANDER callback = nullptr;
 
 	private:
-		void* get(unsigned sh){
+		void* get(byte sh){
 			if (sh >= top)
 				return nullptr;
 			node* cur = nullptr;
@@ -90,7 +90,7 @@ namespace UOS{
 			put(reinterpret_cast<byte*>(cur) + block_size(sh),sh);
 			return cur;
 		}
-		bool put(void* ptr,unsigned sh){
+		bool put(void* ptr,byte sh){
 			if (0 != (reinterpret_cast<qword>(ptr) & block_mask(sh)))
 				return false;
 			auto index = block_index(sh);
@@ -153,8 +153,8 @@ namespace UOS{
 			return cap_size;
 		}
 		size_t max_size(void) const{
-			unsigned res = top;
-			for (unsigned i = bot;i < top;++i){
+			auto res = top;
+			for (auto i = bot;i < top;++i){
 				if (pool[i])
 					res = i;
 			}
@@ -162,7 +162,7 @@ namespace UOS{
 		}
 
 		void* allocate(size_t req){
-			unsigned sh = category(req);
+			auto sh = category(req);
 			if (sh >= top)
 				return nullptr;
 			void* ptr = nullptr;
@@ -182,23 +182,26 @@ namespace UOS{
 		bool release(void* ptr,size_t sz){
 			if (!ptr)
 				return false;
-			unsigned sh = category(sz);
+			auto sh = category(sz);
 			if (sh >= top)
 				return false;
 			lock_guard<M> guard(lock);
 			return put(ptr,sh);
 		}
-		bool expand(void* base,size_t len){
-			if (!base || !len)
+		bool expand(void* ptr,size_t len){
+			if (!ptr || !len)
 				return false;
-			if (reinterpret_cast<qword>(base) & block_mask(bot))	//not aligned
+			auto base = reinterpret_cast<qword>(ptr);
+			auto aligned_base = align_up(base,block_size(bot));
+			if (len <= (aligned_base - base))
 				return false;
-			
+			len -= (aligned_base - base);
+			auto cur = reinterpret_cast<byte*>(aligned_base);
 			bool res = false;
 			lock_guard<M> guard(lock);
-			auto cur = reinterpret_cast<byte*>(base);
+
 			while(len >= block_size(bot)){
-				unsigned sh = category(cur,len);
+				auto sh = category(cur,len);
 				if (sh >= top)
 					break;
 				auto size = block_size(sh);
