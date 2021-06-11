@@ -158,7 +158,7 @@ process::process(initial_process_tag) : id (new_id()), vspace(&vm),\
 
 process::process(literal&& cmd,const spawn_info& info) : \
 	id(new_id()),vspace(new user_vspace()),privilege(info.privilege),\
-	commandline(move(cmd)), start_time(timer.running_time())
+	work_dir(info.work_dir), commandline(move(cmd)), start_time(timer.running_time())
 {
 	IF_assert;
 	//image file handle as handle 0, user not accessible
@@ -173,9 +173,9 @@ process::process(literal&& cmd,const spawn_info& info) : \
 			handles.assign(i + 1,st->duplicate(this));
 		}
 	}
-	work_dir.assign(info.work_dir.begin(),info.work_dir.end());
-
+#ifdef PS_TEST
 	dbgprint("spawned new process $%d @ %p",id,this);
+#endif
 	auto th = spawn(process_loader,&info.env_ptr);
 	assert(th);
 	th->relax();
@@ -185,7 +185,10 @@ process::~process(void){
 	if (!threads.empty() || active_count){
 		bugcheck("deleting non-stop process #%d (%d,%d) @ %p",id,active_count,threads.size(),this);
 	}
+	assert(work_dir == nullptr);
+#ifdef PS_TEST
 	dbgprint("deleted process $%d @ %p",id,this);
+#endif
 	delete vspace;
 }
 
@@ -205,7 +208,9 @@ thread* process::spawn(thread::procedure entry,const qword* args,qword stk_size)
 }
 
 void process::kill(dword ret_val){
+#ifdef PS_TEST
 	dbgprint("killing process %d @ %p",id,this);
+#endif
 	this_core core;
 	auto this_thread = core.this_thread();
 	bool kill_self = false;
@@ -226,6 +231,7 @@ void process::kill(dword ret_val){
 }
 
 void process::on_exit(void){
+	folder_instance* wd = nullptr;
 	{
 		interrupt_guard<spin_lock> guard(objlock);
 		assert(active_count && active_count <= threads.size());
@@ -234,9 +240,15 @@ void process::on_exit(void){
 		state = STOPPED;
 		guard.drop();
 		notify();
+		wd = work_dir;
+		work_dir = nullptr;
 	}
+#ifdef PS_TEST
 	dbgprint("process $%d exit with %x",id,(qword)result);
+#endif
 	handles.clear();
+	if (wd)
+		wd->relax();
 }
 
 void process::erase(thread* th){
@@ -294,8 +306,28 @@ void process::manage(void*){
 
 bool process::set_work_dir(const span<char>& str){
 	lock_guard<spin_lock> guard(objlock);
-	work_dir.assign(str.begin(),str.end());
-	return true;
+	if (str.empty()){
+		if (work_dir){
+			work_dir->relax();
+			work_dir = nullptr;
+		}
+		return true;
+	}
+	auto wd = file::open_wd(work_dir,str);
+	if (wd){
+		if (work_dir)
+			work_dir->relax();
+		work_dir = wd;
+		return true;
+	}
+	return false;
+}
+
+folder_instance* process::get_work_dir(void) const{
+	lock_guard<spin_lock> guard(objlock);
+	if (work_dir)
+		work_dir->acquire();
+	return work_dir;
 }
 
 process_manager::process_manager(void){
@@ -323,7 +355,7 @@ process* process_manager::spawn(literal&& command,spawn_info& info){
 			break;
 		auto sep = find_first_of(command.begin(),command.end(),' ');
 		span<char> filename(command.begin(),sep);
-		f = file::open(filename,true);
+		f = file::open(filename,0x80 | ALLOW_FILE);	//0x80 => load program
 		if (!f)
 			break;
 
@@ -340,7 +372,7 @@ process* process_manager::spawn(literal&& command,spawn_info& info){
 		if (header == nullptr || \
 			(0 == (header->img_type & 0x02)) || \
 			(header->img_type & 0x3000) || \
-			IS_HIGHADDR(header->imgbase) || \
+			(header->imgbase & HIGHADDR(0)) || \
 			(header->imgbase & PAGE_MASK) || \
 			(header->align_section & PAGE_MASK) || \
 			(header->align_file & 0x1FF) || \
@@ -349,7 +381,7 @@ process* process_manager::spawn(literal&& command,spawn_info& info){
 				break;
 		//(likely) valid image file:
 		//non-system, non-dll, executable, valid vbase, valid alignment, has section
-		
+
 		process::spawn_info ps_info = {
 			f,
 			{
@@ -357,13 +389,20 @@ process* process_manager::spawn(literal&& command,spawn_info& info){
 				info.std_stream[1],
 				info.std_stream[2]
 			},
-			info.work_dir,
+			info.work_dir.empty() ? this_process->get_work_dir() : file::open_wd(nullptr,info.work_dir),
 			info.privilege,
 			reinterpret_cast<qword>(info.env.detach()),
 			header->imgbase,
 			header->imgsize,
 			header->header_size
 		};
+
+		if (command.at(0) != '/'){
+			// replace with absolute path
+			auto path = f->get_path();
+			path.append(sep,command.end());
+			command.assign(path.begin(),path.end());
+		}
 
 		//create a process and load this image
 		interrupt_guard<spin_lock> guard(lock);

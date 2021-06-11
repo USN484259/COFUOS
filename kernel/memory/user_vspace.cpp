@@ -79,7 +79,7 @@ bool user_vspace::common_check(qword addr,dword page_count){
 	else
 		return false;
 	
-	if ((addr & PAGE_MASK) || IS_HIGHADDR(addr))
+	if ((addr & PAGE_MASK) || (addr & HIGHADDR(0)))
 		return false;
 	
 	if (addr + page_count*PAGE_SIZE > size_512G){
@@ -167,7 +167,7 @@ bool user_vspace::commit(qword base_addr,dword page_count){
 bool user_vspace::protect(qword base_addr,dword page_count,qword attrib){
 	if (!common_check(base_addr,page_count))
 		return false;
-	qword mask = PAGE_XD | PAGE_GLOBAL | PAGE_CD | PAGE_WT | PAGE_WRITE;
+	qword mask = PAGE_XD | PAGE_GLOBAL | PAGE_CD | PAGE_WT | PAGE_USER | PAGE_WRITE | PAGE_PRESENT;
 	if (attrib & ~mask)
 		return false;
 	map_view view(pl4te);
@@ -196,7 +196,7 @@ bool user_vspace::protect(qword base_addr,dword page_count,qword attrib){
 }
 
 PTE user_vspace::peek(qword va){
-	if (IS_HIGHADDR(va) || va >= size_512G)
+	if (va >= size_512G)
 		return PTE{0};
 	map_view view(pl4te);
 	auto pdpt_table = (PDPTE*)view;

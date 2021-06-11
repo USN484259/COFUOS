@@ -178,7 +178,7 @@ bool kernel_vspace::protect(qword base_addr,dword page_count,qword attrib){
 	if (!common_check(base_addr,page_count))
 		return false;
 	//check for valid attrib
-	qword mask = PAGE_XD | PAGE_GLOBAL | PAGE_CD | PAGE_WT | PAGE_WRITE;
+	qword mask = PAGE_XD | PAGE_GLOBAL | PAGE_CD | PAGE_WT | PAGE_WRITE | PAGE_PRESENT;
 	if (attrib & ~mask)
 		return false;
 	interrupt_guard<spin_lock> guard(objlock);

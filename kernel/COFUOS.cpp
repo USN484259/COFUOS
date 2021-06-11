@@ -55,7 +55,7 @@ void thread_shell(qword,qword,qword,qword){
 
 	//open & lock kernel images
 	literal name("/boot/COFUOS");
-	auto kernel_image = file::open(name);
+	auto kernel_image = file::open(name,ALLOW_FILE);
 	if (kernel_image == nullptr)
 		bugcheck("cannot open %s",name.c_str());
 	this_process->handles.assign(0,kernel_image);
@@ -80,9 +80,7 @@ void thread_shell(qword,qword,qword,qword){
 	bool bad = false;
 	while(true){
 		process_manager::spawn_info info = {SHELL,{dev_pipe,nullptr,kdb_pipe},span<char>("/",1)};
-
 		process* shell = proc.spawn("/bin/shell",info);
-
 		if (!shell)
 			bugcheck("shell failed to launch");
 		
@@ -130,17 +128,15 @@ void krnlentry(void* module_base){
 		}
 	}
 
-	{
-		this_core core;
-		auto this_process = core.this_thread()->get_process();
-		qword args[4];
-		auto th = this_process->spawn(thread_shell,args);
-		if (!th)
-			bugcheck("failed to spawn shell thread");
-
-	}
+	this_core core;
+	auto this_process = core.this_thread()->get_process();
+	qword args[4];
+	auto th = this_process->spawn(thread_shell,args);
+	if (!th)
+		bugcheck("failed to spawn shell thread");
 
 	int_trap(3);
+	core.this_thread()->set_priority(scheduler::idle_priority);
 	sti();
 
 	//as idle thread

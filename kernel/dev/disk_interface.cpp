@@ -3,7 +3,8 @@
 #include "timer.hpp"
 #include "lang.hpp"
 #include "memory/include/vm.hpp"
-#include "process/include/thread.hpp"
+#include "process/include/core_state.hpp"
+#include "process/include/process.hpp"
 #include "lock_guard.hpp"
 
 using namespace UOS;
@@ -29,7 +30,6 @@ bool disk_interface::slot::match(qword aligned_lba) const{
 bool disk_interface::slot::flush(void){
 	assert(objlock.is_locked() && objlock.is_exclusive());
 	if (dirty == 0){
-		valid = 0;
 		return true;
 	}
 	byte head = 0;
@@ -47,7 +47,7 @@ bool disk_interface::slot::flush(void){
 			head = i + 1;
 		}
 	}
-	dirty = valid = 0;
+	dirty = 0;
 	return true;
 }
 
@@ -56,6 +56,7 @@ bool disk_interface::slot::reload(qword aligned_lba){
 	assert(aligned_lba == page_lba(aligned_lba));
 	if (!flush())
 		return false;
+	valid = 0;
 	lba_base = aligned_lba;
 	auto res = ide.command(IDE::READ,lba_base,phy_page,PAGE_SIZE);
 	if (!res){
@@ -86,6 +87,7 @@ bool disk_interface::slot::store(qword lba,byte count){
 	if (aligned_lba != lba_base){
 		if (!flush())
 			return false;
+		valid = 0;
 		lba_base = aligned_lba;
 	}
 	unsigned off = lba - lba_base;
@@ -114,6 +116,9 @@ disk_interface::disk_interface(word count) : slot_count(count), \
 	for (auto i = 0;i < slot_count;++i){
 		new (table + i) slot(va + i*PAGE_SIZE);
 	}
+	this_core core;
+	qword args[4] = { reinterpret_cast<qword>(this) };
+	th_flush = core.this_thread()->get_process()->spawn(thread_flush,args);
 	dbgprint("disk_interface with %d slots @ %p",slot_count,va);
 }
 
@@ -124,9 +129,9 @@ byte disk_interface::count(qword lba){
 
 disk_interface::slot* disk_interface::get(qword lba,byte count,bool write){
 	const auto aligned_lba = page_lba(lba);
-	if (align_up(lba + count,PAGE_SIZE/SECTOR_SIZE) - aligned_lba != (PAGE_SIZE/SECTOR_SIZE)){
-		bugcheck("disk_interface::slot::get bad param %x,%d",lba,count);
-		return nullptr;
+	if (count > this->count(lba)){
+	// if (align_up(lba + count,PAGE_SIZE/SECTOR_SIZE) - aligned_lba != (PAGE_SIZE/SECTOR_SIZE)){
+		bugcheck("disk_interface::get bad param %x,%d",lba,count);
 	}
 	bool res;
 	byte times = 0;
@@ -166,12 +171,55 @@ disk_interface::slot* disk_interface::get(qword lba,byte count,bool write){
 	bugcheck("disk_interface::get failed");
 }
 
-void disk_interface::relax(slot* ptr){
+void disk_interface::upgrade(slot* ptr,qword lba,byte count){
 	assert(ptr && ptr - table < slot_count);
+	assert(ptr->is_locked());
+	if (page_lba(lba) != ptr->lba_base || count > this->count(lba)){
+		bugcheck("disk_interface::upgrade bad param %x,%d",lba,count);
+	}
+	if (!ptr->store(lba,count)){
+		bugcheck("disk_interface::upgrade failed");
+	}
+}
+
+void disk_interface::relax(slot* ptr,bool flush){
+	assert(ptr && ptr - table < slot_count);
+	if (flush && ptr->dirty){
+		ptr->flush();
+	}
 	ptr->unlock();
 	if (!ptr->is_locked()){
 		interrupt_guard<void> ig;
 		slot_guard.signal_all();
 		slot_guard.reset();
 	}
+}
+
+void disk_interface::flush(void){
+	for (unsigned index = 0;index < slot_count;++index){
+		auto& cur = table[index];
+		if (cur.try_lock()){
+			cur.flush();
+			cur.unlock();
+		}
+	}
+}
+
+void disk_interface::on_timer(qword ticket,void* ptr){
+	auto self = reinterpret_cast<disk_interface*>(ptr);
+	assert(ticket == self->ticket);
+	self->ev_flush.signal_one();
+}
+
+void disk_interface::thread_flush(qword ptr,qword,qword,qword){
+	auto self = reinterpret_cast<disk_interface*>(ptr);
+	self->ticket = timer.wait(flush_interval,on_timer,reinterpret_cast<void*>(self),true);
+	{
+		this_core core;
+		core.this_thread()->set_priority(scheduler::idle_priority);
+	}
+	do{
+		self->ev_flush.wait();
+		self->flush();
+	}while(true);
 }

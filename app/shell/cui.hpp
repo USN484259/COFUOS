@@ -115,5 +115,6 @@ public:
 	}
 	void clear(void);
 	bool put(char ch);
+	bool put(const char* str);
 	void render(word xoff,word yoff);
 };

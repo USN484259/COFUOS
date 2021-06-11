@@ -313,7 +313,7 @@ void kdb_stub::cmd_read_regs(void){
 }
 
 void kdb_stub::cmd_write_regs(void){
-// TODO
+	// TODO
 	send(err_denied);
 }
 

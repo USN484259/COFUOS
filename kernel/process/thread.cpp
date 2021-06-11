@@ -14,16 +14,15 @@ using namespace UOS;
 id_gen<dword> thread::new_id;
 
 //initial thread
-thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), critical(0), priority(scheduler::idle_priority), slice(scheduler::max_slice), ps(p) {
+thread::thread(initial_thread_tag, process* p) : id(new_id()), state(RUNNING), critical(0), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p) {
 	assert(ps && id == 0);
 	krnl_stk_top = 0;	//???
 	krnl_stk_reserved = pe_kernel->stk_reserve;
 }
 
-thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), state(READY), critical(0), priority(scheduler::kernel_priority), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
+thread::thread(process* p, procedure entry, const qword* args, qword stk_size) : id(new_id()), state(READY), critical(0), priority(this_core().this_thread()->get_priority()), slice(scheduler::max_slice), ps(p), krnl_stk_reserved(align_down(stk_size,PAGE_SIZE)) {
 	IF_assert;
 	assert(ps && krnl_stk_reserved >= PAGE_SIZE);
-	//acquire();
 	lock_guard<spin_lock> guard(objlock);
 	auto va = vm.reserve(0,2 + krnl_stk_reserved/PAGE_SIZE);
 	if (!va)
@@ -42,7 +41,9 @@ thread::thread(process* p, procedure entry, const qword* args, qword stk_size) :
 	gpr.rdx = args[1];
 	gpr.r8 = args[2];
 	gpr.r9 = args[3];
+#ifdef PS_TEST
 	dbgprint("new thread $%d @ %p",id,this);
+#endif
 	ready_queue.put(this);
 
 }
@@ -52,7 +53,9 @@ thread::~thread(void){
 		bugcheck("deleting non-stop thread #%d @ %p",id,this);
 	// if (hold_lock)
 	// 	bugcheck("deleting thread #%d @ %p while holding lock %x",id,this,hold_lock);
+#ifdef PS_TEST
 	dbgprint("deleted thread #%d @ %p",id,this);
+#endif
 	if (sse){
 		//flush FPU state from this core
 		this_core core;
@@ -63,8 +66,9 @@ thread::~thread(void){
 		delete sse;
 	}
 	if (user_stk_top){
-		if (!get_process()->vspace->release(user_stk_top - user_stk_reserved - PAGE_SIZE,1 + user_stk_reserved/PAGE_SIZE))
-			bugcheck("vspace->release failed @ %p",user_stk_top - user_stk_reserved);
+		// if (!get_process()->vspace->release(user_stk_top - user_stk_reserved - PAGE_SIZE,1 + user_stk_reserved/PAGE_SIZE))
+		// 	bugcheck("vspace->release failed @ %p",user_stk_top - user_stk_reserved);
+		get_process()->vspace->release(user_stk_top - user_stk_reserved - PAGE_SIZE,1 + user_stk_reserved/PAGE_SIZE);
 	}
 	if (!vm.release(krnl_stk_top - krnl_stk_reserved - PAGE_SIZE,2 + krnl_stk_reserved/PAGE_SIZE))
 		bugcheck("vm.release failed @ %p",krnl_stk_top - krnl_stk_reserved);
@@ -175,8 +179,8 @@ void thread::on_stop(void){
 		hold_lock = 0;
 	}
 	*/
-	objlock.unlock();
 	gc.put(this);
+	objlock.unlock();
 }
 
 void thread::on_gc(void){
@@ -210,16 +214,18 @@ void thread::hold(void){
 }
 
 void thread::drop(void){
-	interrupt_guard<spin_lock> guard(objlock);
-	assert(critical & CRITICAL);
-	critical &= ~CRITICAL;
-	if (critical & KILL){
+	{
+		interrupt_guard<spin_lock> guard(objlock);
+		assert(critical & CRITICAL);
+		critical &= ~CRITICAL;
+		if (0 == (critical & KILL))
+			return;
 		assert(state == RUNNING);
 		state = STOPPED;
-		guard.drop();
-		core_manager::preempt(true);
-		bugcheck("failed to escape @ %p",this);
 	}
+	interrupt_guard<void> ig;
+	core_manager::preempt(true);
+	bugcheck("failed to escape @ %p",this);
 }
 
 void thread::sleep(qword us){
@@ -234,8 +240,8 @@ void thread::sleep(qword us){
 		core_manager::preempt(true);
 		return;
 	}
-
 	thread* next_thread;
+	bool need_gc = false;
 	do{
 		next_thread = ready_queue.get();
 		if (!next_thread)
@@ -244,8 +250,10 @@ void thread::sleep(qword us){
 		if (next_thread->set_state(thread::RUNNING))
 			break;
 		next_thread->on_stop();
+		need_gc = true;
 	}while(true);
-
+	if (need_gc)
+		gc.signal();
 	this_thread->lock();
 	auto ticket = timer.wait(us,on_timer,this_thread);
 	if (!this_thread->set_state(thread::WAITING,ticket,nullptr)){
@@ -256,7 +264,9 @@ void thread::sleep(qword us){
 }
 
 void thread::kill(thread* th){
+#ifdef PS_TEST
 	dbgprint("killing thread %d @ %p",th->id,th);
+#endif
 	this_core core;
 	thread* this_thread = core.this_thread();
 	bool kill_self = (this_thread == th);
@@ -284,6 +294,7 @@ void thread::kill(thread* th){
 			if (!kill_self){
 				guard.drop();
 				th->on_stop();
+				gc.signal();
 			}
 		}
 	}

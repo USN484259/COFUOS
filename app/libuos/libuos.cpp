@@ -70,11 +70,8 @@ STATUS create_thread(void (*func)(void*,void*),void* arg,dword stk_size,HANDLE* 
 void sleep(qword us) {
 	syscall(srv::sleep,us);
 }
-dword check(HANDLE handle) {
-	return syscall(srv::check,handle);
-}
-dword wait_for(HANDLE handle,qword us) {
-	return syscall(srv::wait_for,handle,us);
+dword wait_for(HANDLE handle,qword us,dword nowait) {
+	return syscall(srv::wait_for,handle,us,nowait);
 }
 dword signal(HANDLE handle,dword mode) {
 	return syscall(srv::signal,handle,mode);
@@ -159,8 +156,8 @@ dword stream_write(HANDLE handle,const void* buffer,dword* length){
 	auto res = syscall(srv::stream_write,handle,buffer,*length);
 	return unpack_qword<dword,dword>(res,length);
 }
-STATUS file_open(const char* name,dword length,dword access,HANDLE* handle){
-	auto res = syscall(srv::file_open,name,length,access);
+STATUS file_open(const char* name,dword length,dword mode,HANDLE* handle){
+	auto res = syscall(srv::file_open,name,length,mode);
 	return unpack_qword(res,handle);
 }
 STATUS file_tell(HANDLE handle,qword* buffer){

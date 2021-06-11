@@ -6,19 +6,22 @@
 namespace UOS{
 	template<typename T,typename C = dword>
 	class span{
-		const T* ptr = nullptr;
-		C len = 0;
 	public:
-		typedef T* iterator;
-		typedef const T* const_iterator;
+		typedef typename UOS::remove_cv<T>::type value_type;
+		typedef value_type* iterator;
+		typedef const value_type* const_iterator;
+	private:
+		value_type* ptr = nullptr;
+		C len = 0;
 
+	public:
 		span(void) = default;
 		template<typename It>
-		span(It head,It tail) : ptr(&*head), len(tail - head) {}
+		span(It head,It tail) : ptr((value_type*)&*head), len(tail - head) {}
 		template<typename It>
-		span(It head,C length) : ptr(&*head), len(length) {}
+		span(It head,C length) : ptr((value_type*)&*head), len(length) {}
 		template<typename Ct>
-		span(const Ct& container) : ptr(container.begin()), len(container.size()) {}
+		span(const Ct& container) : ptr((value_type*)container.begin()), len(container.size()) {}
 		
 		C size(void) const{
 			return len;

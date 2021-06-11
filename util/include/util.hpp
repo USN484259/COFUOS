@@ -17,7 +17,10 @@ namespace UOS{
 	constexpr typename remove_reference<T>::type&& move( T&& t ){
 		return static_cast<typename remove_reference<T>::type&&>(t);
 	}
-		
+	template< typename T > struct remove_cv                   { typedef T type; };
+	template< typename T > struct remove_cv<const T>          { typedef T type; };
+	template< typename T > struct remove_cv<volatile T>       { typedef T type; };
+	template< typename T > struct remove_cv<const volatile T> { typedef T type; };
 
 	template<typename T> struct is_lvalue_reference { static constexpr bool value = false; };
 	template<typename T> struct is_lvalue_reference<T&> { static constexpr bool value = true; };

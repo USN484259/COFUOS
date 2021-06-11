@@ -10,12 +10,12 @@ mutex::mutex(void){
 }
 
 void mutex::lock(void){
-	wait_for(semaphore,0);
+	wait_for(semaphore,0,0);
 }
 
-bool mutex::try_lock(void){
-	return (byte)check(semaphore);
-}
+// bool mutex::try_lock(void){
+// 	return (byte)check(semaphore);
+// }
 
 void mutex::unlock(void){
 	signal(semaphore,0);

@@ -10,7 +10,7 @@
 namespace UOS{
 	class folder_instance;
 	class file_instance{
-		friend class folder_instance;
+		//friend class folder_instance;
 		friend class instance_wrapper;
 	protected:
 		mutable rwlock objlock;
@@ -19,7 +19,7 @@ namespace UOS{
 		literal name;
 		qword valid_size = 0;
 		qword alloc_size = 0;
-		dword rec_index = (-1);
+		dword rec_index = 0;
 		word name_hash;
 		byte attribute = 0;	//file attributes
 		byte access = 0;	//share_read, share_write
@@ -53,10 +53,10 @@ namespace UOS{
 				}
 			};
 		};
-
+		void imp_get_path(string& str) const;
 	public:
 		// X locked after construction
-		file_instance(exfat& fs,literal&& str,folder_instance* top);
+		file_instance(exfat& fs,folder_instance* top,literal&& str,dword index,const exfat::record* file);
 		// X locked before destruction
 		virtual ~file_instance(void);
 		
@@ -67,14 +67,14 @@ namespace UOS{
 		void acquire(void);
 		void relax(void);
 
-		inline void lock(void){
-			objlock.lock(rwlock::SHARED);
+		inline void lock(rwlock::MODE mode){
+			objlock.lock(mode);
 		}
-		inline bool try_lock(void){
-			return objlock.try_lock(rwlock::SHARED);
+		inline bool try_lock(rwlock::MODE mode){
+			return objlock.try_lock(mode);
 		}
 		inline void unlock(void){
-			assert(objlock.is_locked() && !objlock.is_exclusive());
+			assert(objlock.is_locked());
 			objlock.unlock();
 		}
 		inline bool is_locked(void) const{
@@ -102,10 +102,13 @@ namespace UOS{
 			return parent;
 		}
 
-		qword get_lba(qword offset);
+		qword get_lba(qword offset,bool expand = false);
+		void set_size(qword vs,qword fs);
 
-		bool set_name(const span<char>& str);
-		bool set_size(qword sz);
+		void get_path(string& str) const;
+
+		bool rename(const span<char>& str);
+		bool resize(qword sz);
 		bool move_to(folder_instance* target);
 		bool remove(void);
 	};
@@ -113,10 +116,38 @@ namespace UOS{
 
 		hash_set<instance_wrapper,instance_wrapper::hash,instance_wrapper::equal> file_table;
 
-		//void imp_flush(file_instance*);
-		file_instance* imp_open(dword index,const span<char>& str,const void* buffer);
 	public:
-		folder_instance(exfat& f,literal&& str,folder_instance* top);
+		class reader{
+			struct record{
+				byte data[0x20];
+			};
+			struct name_part{
+				byte type;
+				byte zero;
+				word str[0x0F];
+			};
+			folder_instance& inst;
+			vector<record> list;
+			dword index;
+
+		public:
+			enum : byte { CHECK_HASH = 0x40 };
+		public:
+			reader(folder_instance& ins,dword i = 0) : inst(ins), index(i) {}
+			// instance should be locked
+			byte step(byte mode,word hash = 0);
+			const exfat::record* get_record(void) const;
+			dword get_index(void) const{
+				return index;
+			}
+			literal get_name(void) const;
+
+		};
+
+		//void imp_flush(file_instance*);
+	public:
+		folder_instance(exfat& fs,folder_instance* top,literal&& str,dword index,const exfat::record* file);
+		folder_instance(exfat& fs,const exfat::record* file);
 		~folder_instance(void);
 
 		bool is_folder(void) const override{
@@ -125,9 +156,9 @@ namespace UOS{
 		}
 
 		// instance auto acquired
-		file_instance* open(const span<char>& str);
+		file_instance* open(const span<char>& str,byte mode);
 		void close(file_instance*);
-		void as_root(dword root_cluster);
+		//void as_root(dword root_cluster);
 		
 		file_instance* create(const span<char>& str, byte attrib = 0);
 		void update(file_instance*);

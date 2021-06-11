@@ -9,7 +9,7 @@ int list_process(void){
 	dword pid = 0;
 	do{
 		if (SUCCESS != enum_process(&pid)){
-			printf("failed to enumerate process\n");
+			fputs("failed to enumerate process\n",stderr);
 			return 1;
 		}
 		HANDLE hps = 0;
@@ -39,10 +39,10 @@ int process_detail(dword pid){
 		case SUCCESS:
 			break;
 		case DENIED:
-			printf("access denied\n");
+			fputs("Access denied\n",stderr);
 			return 5;
 		default:
-			printf("failed\n");
+			fputs("Failed\n",stderr);
 			return 3;
 	}
 	int result = 0;
@@ -50,7 +50,7 @@ int process_detail(dword pid){
 		PROCESS_INFO info;
 		dword size = sizeof(info);
 		if (SUCCESS != process_info(hps,&info,&size) || size != sizeof(info)){
-			printf("failed to get process detail\n");
+			fprintf(stderr,"failed to get detail of process %u\n",pid);
 			result = 3;
 			break;
 		}
@@ -60,9 +60,9 @@ int process_detail(dword pid){
 			size = 0;
 		cmd[min<dword>(size,sizeof(cmd) - 1)] = 0;
 
-		printf("pid\t%d\n",pid);
-		printf("cmd\t%s\n",size ? cmd : "<too long>");
-		printf("priv\t%s\n",info.privilege <= SHELL ? "SHELL" : "NORMAL");
+		printf("process-id\t%d\n",pid);
+		printf("commandline\t%s\n",size ? cmd : "<too long>");
+		printf("privilege\t%s\n",info.privilege <= SHELL ? "SHELL" : "NORMAL");
 		{
 			char mem_unit = 'K';
 			dword mem_val = info.memory_usage / 0x400;
@@ -70,21 +70,21 @@ int process_detail(dword pid){
 				mem_unit = 'M';
 				mem_val /= 0x400;
 			}
-			printf("mem\t%d%cB\n",mem_val,mem_unit);
+			printf("memory\t%d%cB\n",mem_val,mem_unit);
 		}
-		printf("t_cnt\t%d\n",info.thread_count);
-		printf("h_cnt\t%d\n",info.handle_count);
+		printf("thread-count\t%d\n",info.thread_count);
+		printf("handle-count\t%d\n",info.handle_count);
 		{
 			dword ms = info.start_time / 1000;
 			dword sec = ms / 1000;
 			ms %= 1000;
-			printf("stime\t%d:%d\n",sec,ms);
+			printf("start-time\t%d:%d\n",sec,ms);
 		}
 		{
 			dword ms = info.cpu_time / 1000;
 			dword sec = ms / 1000;
 			ms %= 1000;
-			printf("ctime\t%d:%d\n",sec,ms);
+			printf("cpu-time\t%d:%d\n",sec,ms);
 		}
 	}while(false);
 	close_handle(hps);
@@ -95,7 +95,10 @@ int process_detail(dword pid){
 int main(int argc,char** argv){
 	if (argc < 2)
 		return list_process();
-	
+	if (0 == strcmp(argv[1],"--help")){
+		printf("%s [pid]\nShow process detail. List processes if no pid specified\n",argv[0]);
+		return 0;
+	}
 	dword pid = strtoul(argv[1],nullptr,0);
 	return process_detail(pid);
 }

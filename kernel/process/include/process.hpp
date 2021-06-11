@@ -83,7 +83,7 @@ namespace UOS{
 		dword active_count = 0;
 		const PE64* image = nullptr;
 		hash_set<thread, thread::hash, thread::equal> threads;
-		literal work_dir;
+		folder_instance* work_dir = nullptr;
 	public:
 		literal const commandline;
 		handle_table handles;
@@ -93,7 +93,7 @@ namespace UOS{
 		struct spawn_info{
 			file* f;
 			stream* std_stream[3];
-			span<char> work_dir;
+			folder_instance* work_dir;
 			PRIVILEGE privilege;
 			qword env_ptr = 0;
 			qword imagebase = 0;
@@ -122,9 +122,6 @@ namespace UOS{
 		inline qword get_stack_preserve(void) const{
 			return image->stk_reserve;
 		}
-		inline const literal& get_work_dir(void) const{
-			return work_dir;
-		}
 		inline bool get_result(dword& val){
 			if (state != STOPPED)
 				return false;
@@ -135,6 +132,8 @@ namespace UOS{
 		REASON wait(qword = 0,wait_callback = nullptr) override;
 		bool relax(void) override;
 		void manage(void* = nullptr) override;
+		// instance acquired
+		folder_instance* get_work_dir(void) const;
 		bool set_work_dir(const span<char>& str);
 		thread* spawn(thread::procedure entry,const qword* args,qword stk_size = 0);
 		void kill(dword ret_val);

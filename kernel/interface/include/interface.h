@@ -6,6 +6,7 @@ typedef dword HANDLE;
 typedef enum : dword{
 	DE = 0xC0000000,
 	DB = 0xC0000001,
+	KL = 0xC0000002,	//killed
 	BP = 0xC0000003,
 	OF = 0xC0000004,
 	BR = 0xC0000005,
@@ -37,13 +38,14 @@ typedef enum : byte {
 	READONLY = 1,
 	HIDDEN = 2,
 	SYSTEM = 4,
-	//VID = 8,
 	FOLDER = 0x10,
 	ARCHIVE = 0x20
 } FILE_ATTRIBUTE;
 typedef enum : byte {
 	SHARE_READ = 1,
-	SHARE_WRITE = 2
+	SHARE_WRITE = 2,
+	ALLOW_FILE = 8,
+	ALLOW_FOLDER = 0x10,
 } OPEN_MODE;
 typedef enum : dword {
 	SUCCESS			= 0,
@@ -82,9 +84,9 @@ typedef struct {
 	qword memory_usage;
 } PROCESS_INFO;
 typedef struct {
-	char* commandline;
-	char* work_dir;
-	char* environment;
+	const char* commandline;
+	const char* work_dir;
+	const char* environment;
 	dword cmd_length;
 	dword wd_length;
 	dword env_length;
@@ -106,4 +108,5 @@ typedef enum : dword {
 	halt,
 	disk_read,
 	dbgbreak = 3,
+	set_rw,
 } osctl_code;

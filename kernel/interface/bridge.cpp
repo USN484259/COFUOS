@@ -40,11 +40,16 @@ bool UOS::user_exception(qword& rip,qword& rsp,dword errcode){
 }
 
 void UOS::process_loader(qword ptr,qword image_base,qword image_size,qword header_size){
-	literal env;
-	env.attach(reinterpret_cast<void*>(ptr));
 	this_core core;
 	thread* this_thread = core.this_thread();
 	process* this_process = this_thread->get_process();
+
+	auto top_priority = this_process->get_privilege() > SHELL ? scheduler::user_priority : scheduler::shell_priority;
+	if (this_thread->get_priority() < top_priority)
+		this_thread->set_priority(top_priority);
+	
+	literal env;
+	env.attach(reinterpret_cast<void*>(ptr));
 	file* f;
 	{
 		lock_guard<handle_table> guard(this_process->handles);
@@ -172,8 +177,10 @@ void UOS::user_entry(qword entry,qword arg,qword stk_top,qword stk_size){
 		thread::kill(this_thread);
 		bugcheck("user_entry failed to exit");
 	}
-
-	this_thread->set_priority(scheduler::user_priority);
+	auto top_priority = this_thread->get_process()->get_privilege() > SHELL ? scheduler::user_priority : scheduler::shell_priority;
+	if (this_thread->get_priority() < top_priority)
+		this_thread->set_priority(top_priority);
+	//this_thread->set_priority(scheduler::user_priority);
 	service_exit(entry,arg,0,stk_top);
 }
 
@@ -215,10 +222,8 @@ qword kernel_service(dword cmd,qword a1,qword a2,qword a3,qword rip,qword rsp){
 		case sleep:
 			srv.sleep(a1);
 			return 0;
-		case check:
-			return srv.check(a1);
 		case wait_for:
-			return srv.wait_for(a1,a2);
+			return srv.wait_for(a1,a2,a3);
 		case signal:
 			return srv.signal(a1,a2);
 		case get_process:

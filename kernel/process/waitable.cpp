@@ -93,6 +93,7 @@ REASON waitable::imp_wait(qword us){
 	}
 	thread* next_thread;
 	thread* put_back = nullptr;
+	bool need_gc = false;
 	do{
 		next_thread = ready_queue.get();
 		if (!next_thread)
@@ -106,7 +107,11 @@ REASON waitable::imp_wait(qword us){
 		if (next_thread->set_state(thread::RUNNING))
 			break;
 		next_thread->on_stop();
+		need_gc = true;
 	}while(true);
+	if (need_gc)
+		gc.signal(next_thread);
+
 	next_thread->put_slice(scheduler::max_slice);
 	qword ticket = 0;
 	this_thread->lock();
@@ -144,6 +149,7 @@ void waitable::on_timer(qword ticket,void* ptr){
 	th->lock();
 	if (!th->set_state(thread::READY,TIMEOUT)){
 		th->on_stop();
+		gc.signal();
 		return;
 	}
 	this_core core;
@@ -201,7 +207,7 @@ size_t waitable::imp_notify(thread* th,REASON reason){
 		return 0;
 
 	size_t count = 0;
-	
+	bool need_gc = false;
 	while(th){
 		auto next = thread_queue::next(th);
 		th->lock();
@@ -212,12 +218,12 @@ size_t waitable::imp_notify(thread* th,REASON reason){
 		}
 		else{
 			th->on_stop();
+			need_gc = true;
 		}
 		th = next;
 	}
-	// this_core core;
-	// if (!core.this_thread()->has_context())
-	// 	core_manager::preempt(false);
+	if (need_gc)
+		gc.signal();
 	return count;
 }
 

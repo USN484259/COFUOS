@@ -1,5 +1,7 @@
 launch
 mount /dev/sda /
 mkdir-p /bin/
-upload shell/bin/shell.exe.clean /bin/shell
-<! for f in bin/*.clean; do echo upload $f /bin/$(basename $f .exe.clean); done
+upload shell/bin/shell.exe /bin/shell
+<! for f in bin/*.exe; do echo upload $f /bin/$(basename $f .exe); done
+mkdir-p /bin/hack/
+<! for f in hack/bin/*.exe; do echo upload $f /bin/hack/$(basename $f .exe); done

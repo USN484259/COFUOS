@@ -63,6 +63,7 @@ bool service_provider::check(void const* ptr,dword length,bool write){
 		}
 		va += PAGE_SIZE;
 	}
+	assert(0 == (tail & HIGHADDR(0)));
 	return true;
 }
 
@@ -102,6 +103,8 @@ qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
 			return 0;
 		case halt:
 			shutdown();
+		case set_rw:
+			return filesystem.set_rw(buffer) ? SUCCESS : FAILED;
 		default:
 			return BAD_PARAM;
 	}
@@ -264,19 +267,15 @@ qword service_provider::create_thread(qword entry,qword arg,dword stk_size){
 void service_provider::sleep(qword us){
 	thread::sleep(us);
 }
-dword service_provider::check(HANDLE handle){
+dword service_provider::wait_for(HANDLE handle,qword us,dword nowait){
 	auto obj = get(handle);
 	if (obj == nullptr)
 		return BAD_HANDLE;
-	return obj->check() ? 1 : 0;
-}
-dword service_provider::wait_for(HANDLE handle,qword us){
-	auto obj = get(handle);
-	if (obj == nullptr)
-		return BAD_HANDLE;
+	if (nowait)
+		return obj->check() ? 1 : 0;
+
 	if (obj == this_thread)
 		return FAILED;
-
 	assert(hold_handle);
 	hold_handle = false;
 	skip_critical = true;
@@ -385,12 +384,12 @@ qword service_provider::process_result(HANDLE handle){
 	return pack_qword(SUCCESS,result);
 }
 qword service_provider::create_process(void const* ptr,dword length){
-	if (!check(ptr,length))
+	if (!check(ptr,length) || length < sizeof(STARTUP_INFO))
 		return BAD_BUFFER;
 	auto info = (const STARTUP_INFO*)ptr;
 	if (info->cmd_length > PAGE_SIZE)
 		return BAD_PARAM;
-	if (!check(info->commandline,info->cmd_length))
+	if (!check(info->commandline,info->cmd_length) || info->cmd_length == 0)
 		return BAD_BUFFER;
 
 	process_manager::spawn_info ps_info;
@@ -401,10 +400,6 @@ qword service_provider::create_process(void const* ptr,dword length){
 		if (!check(info->work_dir,info->wd_length))
 			return BAD_BUFFER;
 		ps_info.work_dir = span<char>(info->work_dir,info->wd_length);
-	}
-	else{
-		auto& wd = this_process->get_work_dir();
-		ps_info.work_dir = span<char>(wd);
 	}
 	if (info->environment){
 		if (info->env_length > PAGE_SIZE)
@@ -462,12 +457,18 @@ qword service_provider::open_process(dword id){
 qword service_provider::get_work_dir(void* buffer,dword length){
 	if (!check(buffer,length,true))
 		return BAD_BUFFER;
-	auto& wd = this_process->get_work_dir();
-	const auto size = wd.size();
-	if (size > length)
-		return pack_qword(TOO_SMALL,size);
-	memcpy(buffer,wd.c_str(),size);
-	return pack_qword(SUCCESS,size);
+	auto wd = this_process->get_work_dir();
+	if (wd){
+		string str;
+		wd->get_path(str);
+		wd->relax();
+		auto size = str.size();
+		if (size > length)
+			return pack_qword(TOO_SMALL,size);
+		memcpy(buffer,str.c_str(),size);
+		return pack_qword(SUCCESS,size);
+	}
+	return pack_qword(SUCCESS,0);
 }
 STATUS service_provider::set_work_dir(const void* buffer,dword length){
 	if (!check(buffer,length))
@@ -483,7 +484,7 @@ OBJTYPE service_provider::handle_type(HANDLE handle){
 	return obj->type();
 }
 qword service_provider::open_handle(const void* buffer,dword length){
-	if (!check(buffer,length))
+	if (!check(buffer,length) || length == 0)
 		return BAD_BUFFER;
 	span<char> name((char const*)buffer,length);
 
@@ -572,7 +573,7 @@ qword service_provider::stream_read(HANDLE handle,void* buffer,dword limit){
 	auto f = static_cast<stream*>(obj);
 	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
-	assert(!IS_HIGHADDR(buffer));
+	assert(0 == ((qword)buffer & HIGHADDR(0)));
 	auto len = f->read(buffer,limit);
 	return pack_qword(SUCCESS,len);
 }
@@ -583,18 +584,21 @@ qword service_provider::stream_write(HANDLE handle,void const* buffer,dword leng
 	auto f = static_cast<stream*>(obj);
 	if (!check(buffer,length))
 		return BAD_BUFFER;
-	assert(!IS_HIGHADDR(buffer));
+	assert(0 == ((qword)buffer & HIGHADDR(0)));
 	auto len = f->write(buffer,length);
 	return pack_qword(SUCCESS,len);
 }
-qword service_provider::file_open(const void* name,dword length,dword access){
+qword service_provider::file_open(const void* name,dword length,dword mode){
 	if (length > PAGE_SIZE)
 		return BAD_PARAM;
-	if (!check(name,length))
+	if (!check(name,length) || length == 0)
 		return BAD_BUFFER;
-	if (access)	//not implemented
-		return BAD_PARAM;
-	auto f = file::open(span<char>((const char*)name,length));
+	// if (access)	//not implemented
+	// 	return BAD_PARAM;
+
+	constexpr byte mask = ALLOW_FILE | ALLOW_FOLDER;
+	byte allow = (mode & mask);
+	auto f = file::open(span<char>((const char*)name,length),allow ? allow : mask);
 	if (!f)
 		return NOT_FOUND;
 	auto handle = this_process->handles.put(f);
@@ -629,7 +633,20 @@ STATUS service_provider::file_setsize(HANDLE handle,qword new_size){
 	bugcheck("file_setsize not implemented");
 }
 qword service_provider::file_path(HANDLE handle,void* buffer,dword length){
-	bugcheck("file_path not implemented");
+	if (!check(buffer,length,true))
+		return BAD_BUFFER;
+	auto obj = get(handle,OBJ_FILE);
+	if (obj == nullptr)
+		return BAD_HANDLE;
+	auto f = static_cast<file*>(obj);
+	auto str = f->get_path();
+	auto size = str.size();
+	if (size > length){
+		return pack_qword(TOO_SMALL,size);
+	}
+	memcpy(buffer,str.c_str(),size);
+	return pack_qword(SUCCESS,size);
+
 }
 qword service_provider::file_info(HANDLE handle,void* buffer,dword length){
 	bugcheck("file_info not implemented");

@@ -90,14 +90,17 @@ namespace UOS{
 
 	class gc_service{
 		spin_lock lock;
-		thread_queue queue;
 		event ev;
+		thread* th_gc;
+		thread_queue queue;
+
 
 		static void thread_gc(qword,qword,qword,qword);
 
 	public:
 		gc_service(void);
 		void put(thread* th);
+		void signal(thread* = nullptr);
 	};
 
 	extern scheduler ready_queue;

@@ -293,6 +293,14 @@ namespace UOS{
 			: "ri" (val)
 		);
 	}
+	template<typename T>
+	inline void lock_or(T volatile* dst,T val){
+		ASM (
+			"lock or %0, %1"
+			: "+m" (*dst)
+			: "ri" (val)
+		);
+	}
 
 	inline void* return_address(void){
 		return __builtin_return_address(0);

@@ -61,8 +61,7 @@ namespace UOS{
 		STATUS set_priority(HANDLE handle,byte val);
 		qword create_thread(qword entry,qword arg,dword stk_size);
 		void sleep(qword us);
-		dword check(HANDLE handle);
-		dword wait_for(HANDLE handle,qword us);
+		dword wait_for(HANDLE handle,qword us,dword nowait);
 		dword signal(HANDLE handle,dword mode);
 		HANDLE get_process(void);
 		dword process_id(HANDLE handle);
@@ -88,7 +87,7 @@ namespace UOS{
 		qword stream_state(HANDLE handle);
 		qword stream_read(HANDLE handle,void* buffer,dword limit);
 		qword stream_write(HANDLE handle,void const* buffer,dword length);
-		qword file_open(void const* name,dword length,dword access);
+		qword file_open(void const* name,dword length,dword mode);
 		STATUS file_tell(HANDLE handle,void* buffer);
 		STATUS file_seek(HANDLE handle,qword offset,dword mode);
 		STATUS file_setsize(HANDLE handle,qword new_size);

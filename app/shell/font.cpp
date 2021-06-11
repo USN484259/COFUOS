@@ -40,6 +40,9 @@ word font::line_height(void) const{
 word font::max_width(void) const{
 	return font_info.max_width;
 }
+word font::table_size(void) const{
+	return 4*font_info.max_width;
+}
 const char* font::name(void) const{
 	return font_info.name;
 }

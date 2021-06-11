@@ -66,12 +66,14 @@ void* zeromemory(void* dst,size_t len);
 
 size_t strlen(const char* str);
 const char* strstr(const char* str,const char* substr);
+int strcmp(const char* a,const char* b);
 
 unsigned long strtoul(const char* str,const char** end,int base);
 unsigned long long strtoull(const char* str,const char** end,int base);
 int snprintf(char* buffer,size_t limit,const char* format,...);
 int fprintf(FILE* stream,const char* format,...);
 #define printf(...) fprintf(stdout,__VA_ARGS__)
+int puts(const char* str);
 
 int fputs(const char* str,FILE* stream);
 int fputc(int ch,FILE* stream);

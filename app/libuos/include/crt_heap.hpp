@@ -9,7 +9,7 @@ public:
 	//kernel will clean up everything
 	//~mutex(void);
 	void lock(void);
-	bool try_lock(void);
+	// bool try_lock(void);
 	void unlock(void);
 };
 

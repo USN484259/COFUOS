@@ -33,7 +33,7 @@ public:
 		if (SUCCESS != stream_read(h,buffer,&length))
 			return 0;
 		if (length == 0){
-			wait_for(h,0);
+			wait_for(h,0,0);
 			stream_state(h,&length);
 		}
 		return length;
@@ -42,7 +42,7 @@ public:
 		if (SUCCESS != stream_write(h,data,&length))
 			return 0;
 		if (length == 0){
-			wait_for(h,0);
+			wait_for(h,0,0);
 			stream_state(h,&length);
 		}
 		return length;

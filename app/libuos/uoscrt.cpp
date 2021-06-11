@@ -140,6 +140,16 @@ const char* strstr(const char* str,const char* substr){
 	return nullptr;
 }
 
+extern "C"
+int strcmp(const char* a,const char* b){
+	while(*a && *b){
+		if (*a != *b)
+			break;
+		++a,++b;
+	}
+	return (byte)*a - (byte)*b;
+}
+
 inline byte hex2bin(char ch){
 	if (ch >= '0' && ch <= '9')
 		return ch - '0';
@@ -152,8 +162,8 @@ inline byte hex2bin(char ch){
 extern "C"
 unsigned long strtoul(const char* str,const char** end,int base){
 	auto result = strtoull(str,end,base);
-	constexpr auto limit = (unsigned long long)1 << (8*sizeof(unsigned long));
-	return (result >= limit) ? limit : result;
+	constexpr auto limit = (unsigned long)(-1);
+	return (result > limit) ? limit : result;
 }
 
 extern "C"
@@ -385,7 +395,7 @@ bool block_write(FILE* stream,const char* ptr,dword length){
 			return false;
 		}
 		if (size == 0){
-			switch(wait_for(stream->file,0)){
+			switch(wait_for(stream->file,0,0)){
 				case PASSED:
 				case NOTIFY:
 					break;
@@ -444,6 +454,13 @@ int fprintf(FILE* stream,const char* format,...){
 }
 
 extern "C"
+int puts(const char* str){
+	if (fputs(str,stdout) < 0)
+		return EOF;
+	return fputc('\n',stdout);
+}
+
+extern "C"
 int fputs(const char* str,FILE* stream){
 	if (stream == nullptr || str == nullptr)
 		return EOF;
@@ -485,7 +502,7 @@ bool block_read(FILE* stream,char* ptr,dword length){
 			return false;
 		}
 		if (sz == 0){
-			switch(wait_for(stream->file,0)){
+			switch(wait_for(stream->file,0,0)){
 				case PASSED:
 				case NOTIFY:
 					break;

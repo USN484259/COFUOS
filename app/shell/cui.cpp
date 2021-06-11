@@ -304,7 +304,7 @@ void CUI::draw(char ch,text_buffer::iterator pos){
 		case '\t':
 		{
 			cursor.x += sys_fnt.get(' ')->advance;
-			auto tab_size = 2*sys_fnt.max_width();
+			auto tab_size = sys_fnt.table_size();
 			cursor.x = (cursor.x / tab_size + 1)*tab_size;
 			return;
 		}
@@ -400,6 +400,12 @@ void label::clear(void){
 }
 
 bool label::put(char ch){
+	if (ch == '\t'){
+		cursor += sys_fnt.get(' ')->advance;
+		auto tab_size = sys_fnt.table_size();
+		cursor = (cursor / tab_size + 1)*tab_size;
+		return true;
+	}
 	auto fc = sys_fnt.get(ch);
 	if (fc == nullptr)
 		return false;
@@ -415,6 +421,14 @@ bool label::put(char ch){
 	});
 	len = cursor + fc->xoff + fc->width;
 	cursor += fc->advance;
+	return true;
+}
+
+bool label::put(const char* str){
+	while(*str){
+		if (!put(*str++))
+			return false;
+	}
 	return true;
 }
 

@@ -14,7 +14,6 @@ namespace UOS{
 			qword lba_base;
 			byte valid = 0;
 			byte dirty = 0;
-			//STATE state = INVALID;
 			qword timestamp = 0;
 			rwlock objlock;
 
@@ -50,21 +49,26 @@ namespace UOS{
 			void* data(qword lba) const;
 		};
 	private:
+		static constexpr qword flush_interval = 1000*1000*4;
+
 		event slot_guard;
 		const word slot_count;
-		//rwlock cache_guard;
+		qword ticket = 0;
+		event ev_flush;
+		thread* th_flush = nullptr;
 		slot* const table;
-
 
 	public:
 		disk_interface(word slot_count);
 		static byte count(qword lba);
 
 		slot* get(qword lba,byte count,bool write);
-		void relax(slot* ptr);
+		void upgrade(slot* ptr,qword lba,byte count);
+		void relax(slot* ptr,bool flush = false);
 
-		// byte read(qword lba,byte count,void* buffer);
-		// byte write(qword lba,byte count,const void* buffer);
+		void flush(void);
+		static void thread_flush(qword,qword,qword,qword);
+		static void on_timer(qword,void*);
 	};
 	extern disk_interface dm;
 }

@@ -46,6 +46,7 @@ public:
 	font(void const* base,dword len);
 	word line_height(void) const;
 	word max_width(void) const;
+	word table_size(void) const;
 	const char* name(void) const;
 	const fontchar* get(byte ch) const;
 };

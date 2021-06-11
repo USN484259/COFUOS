@@ -114,6 +114,7 @@ void core_manager::preempt(bool lower){
 	this_core core;
 	auto this_thread = core.this_thread();
 	thread* next_thread;
+	bool need_gc = false;
 	do{
 		next_thread = ready_queue.get(this_thread->get_priority() + lower);
 		if (!next_thread)
@@ -122,7 +123,11 @@ void core_manager::preempt(bool lower){
 		if (next_thread->set_state(thread::RUNNING))
 			break;
 		next_thread->on_stop();
+		need_gc = true;
 	}while(true);
+
+	if (need_gc)
+		gc.signal(next_thread);
 
 	if (next_thread){
 		assert(next_thread->is_locked());
@@ -131,10 +136,12 @@ void core_manager::preempt(bool lower){
 			ready_queue.put(this_thread);
 		}
 		// this_thread->on_stop called in escape
+		// gc signaled on escape
 		this_thread->unlock();
 		core.switch_to(next_thread);
 	}
 	else if (this_thread->get_state() == thread::STOPPED){
+		need_gc = false;
 		do{
 			next_thread = ready_queue.get();
 			if (!next_thread)
@@ -143,7 +150,10 @@ void core_manager::preempt(bool lower){
 			if (next_thread->set_state(thread::RUNNING))
 				break;
 			next_thread->on_stop();
+			need_gc = true;
 		}while(true);
+		if (need_gc)
+			gc.signal(next_thread);
 		// core.escape(next_thread);
 		core.switch_to(next_thread);
 		bugcheck("failed to escape @ %p",this_thread);
@@ -173,7 +183,9 @@ bool this_core::irq_switch_to(byte,void* data){
 	if (gc_th){
 		gc_th->lock();
 		gc_th->on_stop();
+#ifdef PS_TEST
 		dbgprint("gc relaxed %p",gc_th);
+#endif
 		if (!need_gc)
 			write_gs<qword>(offsetof(core_state,gc_ptr),0);
 	}
@@ -189,6 +201,8 @@ bool this_core::irq_switch_to(byte,void* data){
 		target = reinterpret_cast<thread*>(cur_thread->get_context()->rcx);
 	}
 	assert(target->is_locked());
+	if (gc_th)
+		gc.signal(target);
 	target->slice_timestamp = time_tick;
 
 	process* ps = target->get_process();
@@ -262,7 +276,7 @@ gc_service::gc_service(void){
 	this_core core;
 	auto this_process = core.this_thread()->get_process();
 	qword args[4] = {reinterpret_cast<qword>(this)};
-	this_process->spawn(thread_gc,args);
+	th_gc = this_process->spawn(thread_gc,args);
 }
 
 void gc_service::put(thread* th){
@@ -271,7 +285,18 @@ void gc_service::put(thread* th){
 		interrupt_guard<spin_lock> guard(lock);
 		queue.put(th);
 	}
-	ev.signal_one();
+	// this_core core;
+	// if (core.this_thread() == gc.get_worker()){
+	// 	// corner case: when switch out from gc_thread, 
+	// 	// put thread into gc & notify_one cause gc_thread deadlock
+	// 	return;
+	// }
+	// ev.signal_one();
+}
+
+void gc_service::signal(thread* target){
+	if (target != th_gc)
+		ev.signal_one();
 }
 
 void gc_service::thread_gc(qword arg,qword,qword,qword){
@@ -290,7 +315,9 @@ void gc_service::thread_gc(qword arg,qword,qword,qword){
 			}
 			if (th == nullptr)
 				break;
+#ifdef PS_TEST
 			dbgprint("gc service on %p",th);
+#endif
 			th->on_gc();
 		}while(true);
 	}

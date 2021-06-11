@@ -96,6 +96,7 @@ bool IDE::command(MODE mode,qword lba,dword pa,word size){
 		case WRITE:
 			dma_cmd = 0;
 			ide_cmd = 0xCA;
+			dbgprint("IDE write @ LBA %x,0x%x",lba,size);
 			break;
 		default:
 			bugcheck("unknown IDE operation %x",(qword)mode);
@@ -123,8 +124,7 @@ bool IDE::command(MODE mode,qword lba,dword pa,word size){
 			out_byte(port_base[0] + 4,lba >> 8);
 			out_byte(port_base[0] + 5,lba >> 16);
 			out_byte(port_base[0] + 7,ide_cmd);
-
-			out_byte(dma_base + 0,9);	//enable DMA
+			out_byte(dma_base + 0,1 | dma_cmd);	//enable DMA
 		}
 		switch(ev.wait(4*1000*1000)){
 			case TIMEOUT:
@@ -168,7 +168,9 @@ bool IDE::on_irq(byte irq,void* ptr){
 	byte stat = in_byte(self->dma_base + 2);
 	if (0 == (stat & 4))	//not this device
 		return false;
-	out_byte(self->dma_base + 0,0);	//halt the DMA
+	byte cmd = in_byte(self->dma_base);
+	cmd &= 0xFE;	//halt the DMA
+	out_byte(self->dma_base + 0,cmd);
 	self->ev.signal_all();
 	return true;
 }
