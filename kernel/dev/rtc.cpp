@@ -126,10 +126,21 @@ void RTC::update(void){
 			//calculate POSIX time
 			dword cur_year = century * 100 + year;
 			dword leap_count = (cur_year - 1969)/4;
-			//year 2100 non-leap, not implemented
+			if (cur_year > 2100){
+				//year 2100, 2200, etc are non-leap
+				dword century_count = (cur_year - 1) / 100 - 20;
+				leap_count -= (century_count - century_count / 4);
+			}
 			dword days_of_year = month_table[month - 1] + date - 1;
-			if (0 == cur_year%4 && month > 2){
-				++leap_count;
+			if (month > 2){
+				bool is_leap;
+				if (cur_year % 100){
+					is_leap = (0 == cur_year % 400);
+				}
+				else{
+					is_leap = (0 == cur_year % 4);
+				}
+				leap_count += is_leap;
 			}
 			auto total_days = (cur_year - 1970)*365 + leap_count + days_of_year;
 			time = (qword)total_days*86400 + hour*3600 + minute*60 + second;

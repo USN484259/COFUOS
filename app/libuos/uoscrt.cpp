@@ -155,7 +155,7 @@ inline byte hex2bin(char ch){
 		return ch - '0';
 	ch &= ~0x20;
 	if (ch >='A' && ch <= 'F')
-		return ch - 'A';
+		return ch - 'A' + 0x0A;
 	return 0xFF;
 }
 

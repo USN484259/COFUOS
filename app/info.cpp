@@ -24,7 +24,7 @@ int main(int argc,char** argv){
 	time /= 60;
 	dword hour = time;
 
-	printf("%u processes\nmemory (%llu%c/%llu%c)\nup_time %d:%hhd:%hhd.%hd\n",\
+	printf("%u tasks\nmemory %llu%c/%llu%c\nup_time %d:%hhd:%hhd.%hd\n",\
 		info->process_count, info->used_memory/used_divider, used_unit,\
 		info->total_memory/total_divider, total_unit, \
 		hour,min,sec,ms

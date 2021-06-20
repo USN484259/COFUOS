@@ -209,7 +209,7 @@ void exfat::worker_list(file* f){
 		f->length = 0;
 		return;
 	}
-	auto file_name = rec.get_name();
+	auto file_name = rec.get_name(true);
 	dword sz = file_name.size();
 	if (f->length < sz){
 		lock_or(&f->iostate,(word)MEM_FAILURE);
@@ -280,6 +280,8 @@ void exfat::worker_write(file* f){
 		}
 	}
 	// set total transfer size & change file size
-	f->instance->set_size(valid_size,file_size);
+	if (!f->instance->set_size(valid_size,file_size)){
+		lock_or(&f->iostate,(word)FS_FAILURE);
+	}
 	f->length = len;
 }

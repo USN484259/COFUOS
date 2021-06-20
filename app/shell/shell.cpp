@@ -161,11 +161,12 @@ void terminal::show_help(void){
 	print("Use 'su' prefix to grant higher privilege\n");
 	print("Use 'bg' prefix to run command in background\n");
 	print("\nShell interal commands:\n");
-	print("help\tShow this help\n");
-	print("cd\tChange directory\n");
-	print("clear\tClear screen\n");
-	print("halt\tShutdown system\n");
-	print("break\tTrigger debugger break\n");
+	print("help\t\tShow this help\n");
+	print("cd (path)\tChange directory\n");
+	print("clear\t\tClear screen\n");
+	print("halt\t\tShutdown system\n");
+	print("set_rw [-force]\tAllow disk write\n");
+	print("break\t\tTrigger debugger break\n");
 	print("\nBasic commands:\n");
 	print("info\tShow system information\n");
 	print("echo\tEcho back characters\n");
@@ -175,7 +176,8 @@ void terminal::show_help(void){
 	print("ps\tProcess list or detail\n");
 	print("kill\tTerminate process\n");
 	print("date\tShow date and time\n");
-	print("file\tOpen and operate file\n");
+	print("file\tOpen and operate on files\n");
+	print("prime\tCalculate prime numbers\n");
 }
 
 void terminal::dispatch(void){
@@ -462,7 +464,7 @@ void update_status(void){
 	}
 	auto cur_len = status_bar->length();
 	if (cur_len < prev_len){
-		rectangle rect{prev_len,resolution[1] - sys_fnt.line_height(),cur_len,resolution[1]};
+		rectangle rect{cur_len,resolution[1] - sys_fnt.line_height(),prev_len,resolution[1]};
 		display_fill(0,&rect);
 	}
 	status_bar->render(0,resolution[1] - sys_fnt.line_height());

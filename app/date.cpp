@@ -1,7 +1,25 @@
 #include "uos.h"
 
+/*
+https://howardhinnant.github.io/date_algorithms.html
+*/
+
 void show_date(qword time){
-	//TODO
+	qword days = time / 86400;
+	days += 719468;		// days since 0000-3-1
+	dword era = days / 146097;	// 400-year cycle
+	dword doe = days % 146097;	// days in 400-year
+	// years in 400-year, leap years accounted
+	dword yoe = (doe - doe / 1460 + doe / 36524 - (doe >= 146096) ) / 365;
+	//days in year, starting from 3-1
+	dword doy = doe - (yoe * 365 + yoe / 4 - yoe / 100);
+	dword mp = (doy * 5 + 2) / 153;
+
+	dword year = era * 400 + yoe;
+	dword month = (mp < 10) ? (mp + 3) : (mp - 9);
+	dword date = 1 + doy - (153 * mp + 2) / 5;
+	
+	printf("%u-%u-%u",year,month,date);
 }
 void show_time(qword time){
 	byte sec = time % 60;

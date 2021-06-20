@@ -101,9 +101,12 @@ namespace UOS{
 			assert(is_locked());
 			return parent;
 		}
+		inline dword get_index(void) const{
+			return rec_index;
+		}
 
 		qword get_lba(qword offset,bool expand = false);
-		void set_size(qword vs,qword fs);
+		bool set_size(qword vs,qword fs);
 
 		void get_path(string& str) const;
 
@@ -130,18 +133,20 @@ namespace UOS{
 			vector<record> list;
 			dword index;
 
+			static word checksum(const void*,dword);
+
 		public:
 			enum : byte { CHECK_HASH = 0x40 };
 		public:
 			reader(folder_instance& ins,dword i = 0) : inst(ins), index(i) {}
 			// instance should be locked
 			byte step(byte mode,word hash = 0);
-			const exfat::record* get_record(void) const;
+			exfat::record* get_record(void) const;
 			dword get_index(void) const{
 				return index;
 			}
-			literal get_name(void) const;
-
+			literal get_name(bool label_folder = false) const;
+			bool update(dword base,bool name = false);
 		};
 
 		//void imp_flush(file_instance*);
@@ -161,7 +166,8 @@ namespace UOS{
 		//void as_root(dword root_cluster);
 		
 		file_instance* create(const span<char>& str, byte attrib = 0);
-		void update(file_instance*);
+		bool update_size(file_instance*);
+		bool update_name(file_instance*);
 		void detach(file_instance*);
 		void attach(file_instance*);
 

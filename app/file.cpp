@@ -57,7 +57,7 @@ int main(int argc,char** argv){
 		}
 	}
 	while(true){
-		printf("FILE > ");
+		fputs("FILE > ",stdout);
 		char buffer[0x40];
 		if (nullptr == fgets(buffer,sizeof(buffer),stdin))
 			break;
@@ -68,6 +68,19 @@ int main(int argc,char** argv){
 
 		if (ptr == strstr(ptr,"exit")){
 			break;
+		}
+		if (ptr == strstr(ptr,"help")){
+			puts("Available commands:");
+			puts("help\t\tShow help");
+			puts("exit\t\tExit program");
+			puts("open (path)\t Open file");
+			puts("close\t\tClose file");
+			puts("size\t\tShow file size");
+			puts("tell\t\tShow file offset");
+			puts("seek (offset)\tSet file offset");
+			puts("read [size]\tRead file");
+			puts("write (string)\tWrite file");
+			continue;
 		}
 		if (ptr == strstr(ptr,"open")){
 			ptr += 4;
@@ -94,7 +107,7 @@ int main(int argc,char** argv){
 				printf("file size = 0x%llx\n",sz);
 			}
 			else{
-				printf("failed getting size\n");
+				puts("failed getting size");
 			}
 			continue;
 		}
@@ -104,7 +117,7 @@ int main(int argc,char** argv){
 				printf("file offset = 0x%llx\n",off);
 			}
 			else{
-				printf("failed getting offset\n");
+				puts("failed getting offset");
 			}
 			continue;
 		}
@@ -115,7 +128,7 @@ int main(int argc,char** argv){
 			const char* end;
 			auto off = strtoull(ptr,&end,0);
 			if (end == ptr){
-				printf("seek (offset)\n");
+				puts("seek (offset)");
 			}
 			else{
 				if (!f.seek(off)){
@@ -131,8 +144,8 @@ int main(int argc,char** argv){
 			auto sz = strtoul(ptr,nullptr,0);
 			if (sz == 0)
 				sz = 0x10;
-			else if (sz > 0x200)
-				sz = 0x200;
+			else if (sz > 0x2000)
+				sz = 0x2000;
 			char data[sz + 1];
 			auto res = f.read(data,sz);
 			assert(res <= sz);
@@ -145,7 +158,29 @@ int main(int argc,char** argv){
 			}
 			continue;
 		}
-
+		if (ptr == strstr(ptr,"write")){
+			ptr += 5;
+			while(*ptr && isspace(*ptr))
+				++ptr;
+			auto tail = ptr;
+			while(*tail && *tail != '\n')
+				++tail;
+			dword sz = tail - ptr;
+			if (sz){
+				auto res = f.write(ptr,sz);
+				if (res == sz){
+					printf("write data of 0x%x bytes\n",res);
+				}
+				else{
+					printf("failed writing 0x%x bytes (0x%x)\n",sz,res);
+				}
+			}
+			else{
+				puts("write (string)");
+			}
+			continue;
+		}
+		
 		printf("unknown command %s",ptr);
 	}
 	return 0;

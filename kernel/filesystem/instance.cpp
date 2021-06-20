@@ -62,10 +62,14 @@ qword file_instance::get_lba(qword offset,bool expand){
 	return 0;
 }
 
-void file_instance::set_size(qword vs,qword fs){
+bool file_instance::set_size(qword vs,qword fs){
 	assert(objlock.is_locked() && objlock.is_exclusive());
-	valid_size = vs;
-	alloc_size = fs;
+	if (valid_size != vs || alloc_size != fs){
+		valid_size = vs;
+		alloc_size = fs;
+		return parent->update_size(this);
+	}
+	return true;
 }
 
 void file_instance::imp_get_path(string& str) const{
@@ -182,8 +186,40 @@ void folder_instance::close(file_instance* ptr){
 	delete this;
 }
 
+bool folder_instance::update_size(file_instance* inst){
+	assert(inst->is_locked());
+
+	lock_guard<rwlock> guard(objlock);
+	reader rec(*this,inst->get_index());
+
+	auto stat = rec.step(ALLOW_FILE | ALLOW_FOLDER);
+	if (stat != 0)
+		return false;
+	auto index = rec.get_index();
+	auto file = rec.get_record();
+	assert(file);
+
+	if (inst->get_index() + file->entrance_size + 1 != index)
+		return false;
+
+	file->valid_size = inst->get_valid_size();
+	file->alloc_size = inst->get_size();
+
+	return rec.update(inst->get_index());
+}
+
+word folder_instance::reader::checksum(const void* ptr,dword limit){
+	word sum = 0;
+	for (dword i = 0;i < limit;++i){
+		if (i == 2 || i == 3)
+			continue;
+		sum = (((sum & 1) ? 0x8000 : 0) | (sum >> 1)) + ((const byte*)ptr)[i];
+	}
+	return sum;
+}
+
 byte folder_instance::reader::step(byte mode,word hash){
-	byte stat = 0;
+	byte stat = EOF_FAILURE;
 	assert(inst.is_locked());
 	//lock_guard<folder_instance> guard(inst,rwlock::SHARED);
 	dword limit = inst.get_valid_size() / exfat::record_size;
@@ -249,19 +285,14 @@ byte folder_instance::reader::step(byte mode,word hash){
 						if (list.size() < count)
 							continue;
 						// checksum
-						auto ptr = (const byte*)list.data();
-						const dword limit = exfat::record_size*list.size();
-						word sum = 0;
-						for (dword i = 0;i < limit;++i){
-							if (i == 2 || i == 3)
-								continue;
-							sum = (((sum & 1) ? 0x8000 : 0) | (sum >> 1)) + ptr[i];
-						}
+						word sum = checksum(list.data(),exfat::record_size*list.size());
 						auto file_sum = *(const word*)(list.front().data + 2);
 						if (sum != file_sum)
 							break;
 						}
 						// got file
+						++index;
+						stat = 0;
 						goto done;
 				}
 			}
@@ -276,25 +307,79 @@ done:
 	return stat;
 }
 
-const exfat::record* folder_instance::reader::get_record(void) const{
-	if (list.size() < 2)
-		return nullptr;
-	return (const exfat::record*)(list.data());
+bool folder_instance::reader::update(dword base,bool name){
+	assert(inst.is_locked());
+	auto file = get_record();
+	if (file == nullptr || (dword)(file->entrance_size + 1) != list.size())
+		return false;
+	
+	dword limit = inst.get_valid_size() / exfat::record_size;
+	if (base + file->entrance_size + 1 != index || index > limit)
+		return false;
+	
+	if (name){
+		dbgprint("folder_instance::reader::update name not supported");
+		return false;
+	}
+	file->checksum = checksum(file,exfat::record_size*list.size());
+	auto offset = base * exfat::record_size;
+	auto lba = inst.get_lba(offset);
+	if (!lba)
+		return false;
+	auto block = dm.get(lba,1,false);
+	if (!block)
+		return false;
+	dm.upgrade(block,lba,1);
+	auto ptr = (byte*)block->data(lba) + (offset & SECTOR_MASK);
+	if ((offset & SECTOR_MASK) <= SECTOR_SIZE - exfat::record_size){
+		memcpy(ptr,file,2*exfat::record_size);
+		dm.relax(block);
+		return true;
+	}
+	else do{
+		memcpy(ptr,file,exfat::record_size);
+		dm.relax(block);
+		offset += exfat::record_size;
+		lba = inst.get_lba(offset);
+		if (!lba){
+			break;
+		}
+		block = dm.get(lba,1,false);
+		if (!block){
+			break;
+		}
+		dm.upgrade(block,lba,1);
+		ptr = (byte*)block->data(lba) + (offset & SECTOR_MASK);
+		memcpy(ptr,(const byte*)file + exfat::record_size,exfat::record_size);
+		dm.relax(block);
+		return true;
+	}while(false);
+	dbgprint("folder_instance::reader::update failed updating cross-cluster record, record may corrupt");
+	return false;
 }
 
-literal folder_instance::reader::get_name(void) const{
-	auto inst = get_record();
-	if (inst == nullptr || (dword)(inst->entrance_size + 1) != list.size())
+exfat::record* folder_instance::reader::get_record(void) const{
+	if (list.size() < 2)
+		return nullptr;
+	return (exfat::record*)(list.data());
+}
+
+literal folder_instance::reader::get_name(bool label_folder) const{
+	auto file = get_record();
+	if (file == nullptr || (dword)(file->entrance_size + 1) != list.size())
 		return literal();
-	char name[align_up(inst->name_size,0x10)];
-	auto name_list = (const name_part*)(inst + 1);
-	for (unsigned i = 0;i < inst->name_size;++i){
-		if (2 + i/0xF > inst->entrance_size)
+	label_folder = (label_folder && (file->attributes & FOLDER));
+	char name[align_up(file->name_size + label_folder,0x10)];
+	auto name_list = (const name_part*)(file + 1);
+	for (unsigned i = 0;i < file->name_size;++i){
+		if (2 + i/0xF > file->entrance_size)
 			return literal();
 		auto ch = name_list[i/0xF].str[i%0xF];
 		if (ch == 0 || ch & 0xFF00)
 			return literal();
 		name[i] = ch & 0xFF;
 	}
-	return literal(name,name + inst->name_size);
+	if (label_folder)
+		name[file->name_size] = '/';
+	return literal(name,name + file->name_size + label_folder);
 }

@@ -375,7 +375,10 @@ dword exfat::allocator::get(void){
 		}
 		auto ptr = (qword*)block->data(lba);
 		qword data = ptr[(pos % bit_per_sector)/64];
-		for(;pos < fs.cluster_count && pos % bit_per_sector;++pos){
+		do{
+			if (pos >= fs.cluster_count){
+				break;
+			}
 			if (0 == (pos % 64)){
 				data = ptr[(pos % bit_per_sector)/64];
 			}
@@ -387,9 +390,11 @@ dword exfat::allocator::get(void){
 				fs.bmp_last_index = pos;
 				return pos + 2;
 			}
-		}
-		if (pos >= fs.cluster_count)
+		}while(++pos % bit_per_sector);
+
+		if (pos >= fs.cluster_count){
 			pos = 0;
+		}
 	}while(pos != initial);
 	return 0;
 }

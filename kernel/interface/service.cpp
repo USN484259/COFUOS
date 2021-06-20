@@ -15,9 +15,6 @@
 
 using namespace UOS;
 
-#define OS_VERSION 0x00010000
-#define OS_DESCRIPTION "COFUOS by USN484259"
-
 inline void unpack_rect(rectangle& rect,qword val){
 	dword rb = (dword)(val >> 32);
 	dword lt = (dword)val;
@@ -136,11 +133,11 @@ qword service_provider::osctl(osctl_code cmd,void* buffer,dword length){
 qword service_provider::os_info(void* buffer,dword limit){
 	if (!check(buffer,limit,true))
 		return BAD_BUFFER;
-	auto size = sizeof(OS_INFO) + sizeof(OS_DESCRIPTION);
+	auto size = sizeof(OS_INFO) + sizeof(COFUOS_DESCRIPTION);
 	if (limit < sizeof(OS_INFO))
 		return pack_qword(TOO_SMALL,size);
 	auto info = (OS_INFO*)buffer;
-	info->version = OS_VERSION;
+	info->version = COFUOS_VERSION;
 	info->features = 0;	//TODO
 	info->active_core = cores.size();
 	//TODO info->cpu_load
@@ -153,7 +150,7 @@ qword service_provider::os_info(void* buffer,dword limit){
 	info->reserved = 0;
 	if (limit < size)
 		return pack_qword(SUCCESS,sizeof(OS_INFO));
-	memcpy(info + 1,OS_DESCRIPTION,sizeof(OS_DESCRIPTION));
+	memcpy(info + 1,COFUOS_DESCRIPTION,sizeof(COFUOS_DESCRIPTION));
 	return pack_qword(SUCCESS,size);
 }
 qword service_provider::get_time(void){

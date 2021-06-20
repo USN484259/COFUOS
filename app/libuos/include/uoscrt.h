@@ -43,7 +43,6 @@ extern FILE std_obj[3];
 extern "C" {
 #endif
 
-
 NORETURN void exit(int ret_val);
 NORETURN void abort(void);
 
