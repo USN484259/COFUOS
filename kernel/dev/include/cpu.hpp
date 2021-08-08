@@ -22,6 +22,7 @@ namespace UOS{
 
 	void build_IDT(void);
 	void build_TSS(TSS* tss,qword stk_normal,qword stk_pf,qword stk_fatal);
+	void delay_us(word cnt = 1);
 }
 
 extern "C"{

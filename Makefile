@@ -1,5 +1,5 @@
 export COFUOS_ROOT:=$(CURDIR)
-export DEFINES:=$(DEFINES) COFUOS
+export DEFINES:=COFUOS
 export CC_OPTIONS= -g -std=c++14 -Og -masm=intel -ffreestanding -fno-exceptions -fno-rtti -Wall -Wno-invalid-offsetof -Werror=return-type -nostdlib -m64 -fmacro-prefix-map="$(COFUOS_ROOT)"="." 
 
 # change variables below for different configuration

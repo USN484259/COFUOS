@@ -47,7 +47,7 @@ class screen_buffer{
 	word head_line = 0;
 	bool focus = false;
 
-	void imp_render(word xoff,word yoff,rectangle& rect,dword* line_base);
+	void imp_render(word xoff,word yoff,const rectangle& rect,dword* line_base);
 public:
 	screen_buffer(dword* ptr,word ls,word lc,word ws);
 	bool has_focus(void) const{

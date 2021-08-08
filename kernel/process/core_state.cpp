@@ -246,7 +246,9 @@ void this_core::switch_to(thread* th){
 	assert(th->get_state() == thread::RUNNING);
 	//assert(this_thread()->get_state() != thread::RUNNING);
 	//gc_step();
-	//dbgprint("%d --> %d", this_thread()->id, th->id);
+#ifdef PS_TEST
+	dbgprint("%d --> %d", this_thread()->id, th->id);
+#endif
 	if (this_thread()->has_context()){
 		irq_switch_to(0,reinterpret_cast<void*>(th));
 	}

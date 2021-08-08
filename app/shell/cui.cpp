@@ -182,27 +182,29 @@ bool screen_buffer::fill(const rectangle& rect){
 	return true;
 }
 
-void screen_buffer::imp_render(word xoff,word yoff,rectangle& rect,dword* line_base){
-	rect.left += xoff;
-	rect.top += yoff;
-	rect.right += xoff;
-	rect.bottom += yoff;
-	display_draw(line_base + rect.left,&rect,line_size);
+void screen_buffer::imp_render(word xoff,word yoff,const rectangle& rect,dword* line_base){
+	rectangle region(rect);
+	region.left += xoff;
+	region.top += yoff;
+	region.right += xoff;
+	region.bottom += yoff;
+	display_draw(line_base + region.left,&region,line_size);
 }
 
 bool screen_buffer::render(word xoff,word yoff,const rectangle& rect){
 	if (!focus || rect.left >= rect.right || rect.top >= rect.bottom)
 		return false;
-	rectangle region(rect);
+	//rectangle region(rect);
 	auto line = (head_line + rect.top) % line_count;
 	if (line + (rect.bottom - rect.top) <= line_count){
-		imp_render(xoff,yoff,region,buffer + line_size*line);
+		imp_render(xoff,yoff,rect,buffer + line_size*line);
 	}
 	else{
 		auto slice = line_count - line;
-		region.bottom = region.top + slice;
+		rectangle region(rect);
+		region.bottom = rect.top + slice;
 		imp_render(xoff,yoff,region,buffer + line_size*line);
-		region.top = slice;
+		region.top = rect.top + slice;
 		region.bottom = rect.bottom;
 		imp_render(xoff,yoff,region,buffer);
 	}

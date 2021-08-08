@@ -25,9 +25,9 @@ namespace UOS{
 		qword rsp;
 		qword ss;
 	};
-	static_assert(sizeof(context) == 8*(5+15),"context_size_mismatch");
 	struct SSE_context{
 		qword data[0x200/sizeof(qword)];
 	};
-
+	static_assert(sizeof(context) == 8*(5+15),"context_size_mismatch");
+	static_assert(sizeof(SSE_context) == 0x200, "SSE_context_size_mismatch");
 }

@@ -96,3 +96,11 @@ void UOS::build_TSS(TSS* tss,qword stk_normal,qword stk_pf,qword stk_fatal){
 	}
 	bugcheck("no GDT entrance @ %p",gdt);
 }
+
+void UOS::delay_us(word cnt){
+	while(cnt--){
+		__asm__ volatile (
+			"out 0x80,al"
+		);
+	}
+}

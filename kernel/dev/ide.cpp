@@ -1,6 +1,7 @@
 #include "ide.hpp"
 #include "pci.hpp"
 #include "apic.hpp"
+#include "cpu.hpp"
 #include "memory/include/pm.hpp"
 #include "memory/include/vm.hpp"
 #include "process/include/thread.hpp"
@@ -53,7 +54,7 @@ IDE::IDE(void) : port_base{0x1F0,0x3F4,0x170,0x374},irq_vector{APIC::IRQ_IDE_PRI
 	out_dword(dma_base + 4,PRDT_PBASE);
 
 	apic.set(irq_vector[0],on_irq,this);
-
+	reset();
 	dbgprint("BusMaster IDE initialized");
 }
 
@@ -62,9 +63,10 @@ void IDE::reset(void){
 	interrupt_guard<void> ig;
 	byte sel = in_byte(port_base[0] + 6) & 0x10;
 	out_byte(port_base[1] + 2,4);
-	thread::sleep(5);
+	delay_us(8);
 	out_byte(port_base[1] + 2,0);
 	out_byte(port_base[0] + 6,sel);
+	delay_us();
 	sync.signal();
 }
 
@@ -119,6 +121,7 @@ bool IDE::command(MODE mode,qword lba,dword pa,word size){
 			ev.reset();
 
 			out_byte(port_base[0] + 6,(0x0F & (lba >> 24)) | sel);
+			delay_us();
 			out_byte(port_base[0] + 2,size/SECTOR_SIZE);
 			out_byte(port_base[0] + 3,lba);
 			out_byte(port_base[0] + 4,lba >> 8);

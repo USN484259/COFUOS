@@ -1,5 +1,5 @@
 
-CL_OPTIONS=/nologo /Ox /MT /TP /W4 /EHsc /Fobin\\ /Febin\\font_maker.exe
+# CL_OPTIONS=/nologo /Ox /MT /TP /W4 /EHsc /Fobin\\ /Febin\\font_maker.exe
 
 #INCLUDE_PATH=/I D\:\\VC\\include\\ /I D\:\\win10_kits\\include\\ucrt\\ /I D\:\\win10_kits\\include\\shared\\ /I D\:\\win10_kits\\include\\um /I D\:\\COFUOS\\util\\include\\
 
@@ -31,5 +31,5 @@ clean:
 
 bin/font_maker: $(SOURCE_FILES)
 	$(CC) -g -I $(COFUOS_ROOT)/util/include $< -o $@
-	#$(CL_EXE) $(CL_OPTIONS) $(WIN_INC_PATH) $(SOURCE_FILES) $(LINK_OPTIONS) $(WIN_LIB_PATH)
+# $(CL_EXE) $(CL_OPTIONS) $(WIN_INC_PATH) $(SOURCE_FILES) $(LINK_OPTIONS) $(WIN_LIB_PATH)
 .PHONY: font clean

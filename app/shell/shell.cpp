@@ -157,7 +157,7 @@ void terminal::thread_monitor(void*,void* ptr){
 }
 
 void terminal::show_help(void){
-	print("Press APP + F1 - F12 to switch terminal\n");
+	print("Press CTRL + F1 - F12 to switch terminal\n");
 	print("Use 'su' prefix to grant higher privilege\n");
 	print("Use 'bg' prefix to run command in background\n");
 	print("\nShell interal commands:\n");
@@ -527,7 +527,7 @@ int main(int argc,char** argv){
 			}
 
 			if (pressed){
-				if (key_state[SUPER] && key >= 0x61 && key <= 0x6C){
+				if (key_state[CTRL] && key >= 0x61 && key <= 0x6C){
 					// F1 .. F12
 					term[active_index]->set_focus(false);
 					if (painting){

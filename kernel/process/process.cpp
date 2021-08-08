@@ -225,6 +225,8 @@ void process::kill(dword ret_val){
 			}
 			thread::kill(&th);
 		}
+		guard.drop();
+		notify();
 	}
 	if (kill_self)
 		thread::kill(this_thread);

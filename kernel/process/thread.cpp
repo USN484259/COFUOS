@@ -195,6 +195,7 @@ void thread::save_sse(void){
 	if (!sse){
 		sse = new SSE_context;
 	}
+	assert((qword)sse == align_down((qword)sse, sizeof(sse)));
 	fxsave(sse);
 }
 

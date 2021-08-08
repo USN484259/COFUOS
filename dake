@@ -9,7 +9,8 @@ fi
 
 if [ $cmd = "vbox" ]
 then
-	virtualboxvm --startvm COFUOS --start-running --debug &
+	virtualboxvm --startvm COFUOS &
+	# --start-running --debug
 	sleep 8s
 	cd kernel/ && gdb
 elif [ $cmd = "bochs" ]
@@ -18,8 +19,7 @@ then
 	gnome-terminal -- bochs -q
 	cd kernel/ && gdb
 else
-	export DEFINES=
-	make $@
+	false
 fi
 
 if [ $? -ne 0 ]
