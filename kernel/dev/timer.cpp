@@ -15,12 +15,14 @@ qword basic_timer::set_timer(unsigned index,byte sel,qword us){
 	dbgprint("comparator #%d : %x",index,state);
 	if ((state & 0x30) != 0x30)
 		bugcheck("64-bit periodic mode not supported");
-	state &= ~((1 << 14) | (1 << 8) | (1 << 6) | (1 << 1));	//64-bit, no-FSB, edge triggered
-	state |= (1 << 3) | (1 << 2);	//periodic, enable
+
+	auto count = us*us2fs/tick_fs;
+	state &= ~((1 << 14) | (1 << 8) | (1 << 1));	//64-bit, no-FSB, edge triggered
+	state |= (1 << 6) | (1 << 3) | (1 << 2);	//set_comparator, periodic, enable
 	state |= (sel & 0x1F) << 9;		//channel selection
 	*(base + (0x100 + 0x20*index)/sizeof(qword)) = state;
-	auto count = us*us2fs/tick_fs;
-	*(base + (0x108 + 0x20*index)/sizeof(qword)) = count;	//tick count
+	*(base + (0x108 + 0x20*index)/sizeof(qword)) = count;	//set comparator
+	*(base + (0x108 + 0x20*index)/sizeof(qword)) = count;	//set adder
 	dbgprint("comparator #%d : (%x,%d)",index,state,count);
 	return count;
 }
