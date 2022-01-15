@@ -49,17 +49,17 @@ int main(int argc,char** argv){
 		printf("dump of LBA 0x%llx :\n",lba);
 		//printf("\t00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n");
 		for (auto line = page*0x10;line < (page + 1)*0x10;++line){
-			char str[0x40] = "  0\t\t";
+			char str[0x40] = "  0\t";
 			str[0] = hexchar[line >> 4];
 			str[1] = hexchar[line & 0x0F];
 			for (auto i = 0;i < 0x10;++i){
 				byte data = buffer[line*0x10 + i];
-				str[5 + i*3] = hexchar[data >> 4];
-				str[6 + i*3] = hexchar[data & 0x0F];
-				str[7 + i*3] = '\t';
+				str[4 + i*3] = hexchar[data >> 4];
+				str[5 + i*3] = hexchar[data & 0x0F];
+				str[6 + i*3] = ' ';
 			}
-			str[4 + 0x30] = '\n';
-			str[5 + 0x30] = 0;
+			str[3 + 0x30] = '\n';
+			str[4 + 0x30] = 0;
 			fputs(str,stdout);
 		}
 	}

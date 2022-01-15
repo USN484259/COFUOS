@@ -48,7 +48,7 @@ public:
 		return ((const dword*)fat_sector->data(sector_lba))[offset];
 	}
 	bool put(dword tail,dword next){
-		assert(tail >= 2 && next >= 2);
+		assert(next >= 2);
 
 		if (!load(next))
 			return false;
@@ -56,7 +56,11 @@ public:
 		auto ptr = (dword*)fat_sector->data(sector_lba);
 		dm.upgrade(fat_sector,sector_lba,1);
 		ptr[offset] = 0xFFFFFFFF;
-
+		// tail == 0 for empty file
+		if (0 == tail)
+			return true;
+		
+		assert(tail >= 2);
 		if (!load(tail))
 			return false;
 		offset = tail % element_per_sector;
@@ -499,31 +503,32 @@ bool cluster_chain::expand(dword index){
 		dbgprint("expanding linear cluster chain not supported");
 		return false;
 	}
-	line tail = {0, first_cluster};
-	if (!cache_line.empty()){
-		tail = cache_line.front();
-	}
-	if (tail.index >= index)
-		return true;
-	// follow cluster chain and find tail cluster
 	fat_reader fat(host());
-	do{
-		auto next = fat.get(tail.cluster);
-		if (next == 0)
-			return false;
-		if (next >= 0xFFFFFFF8)
-			break;
-		++tail.index;
-		tail.cluster = next;
-	}while(tail.index < index);
-	if (tail.index >= index)
-		return true;
+	line tail = {0, first_cluster};
+	if (index){
+		if (!cache_line.empty()){
+			tail = cache_line.front();
+		}
+		if (tail.index >= index)
+			return true;
+		// follow cluster chain and find tail cluster
+		do{
+			auto next = fat.get(tail.cluster);
+			if (next == 0)
+				return false;
+			if (next >= 0xFFFFFFF8)
+				break;
+			++tail.index;
+			tail.cluster = next;
+		}while(tail.index < index);
+		if (tail.index >= index)
+			return true;
+	}
 	// tail is the last cluster
 
 	//allocate clusters
 	exfat::allocator alloc(host());
-
-	while(tail.index < index){
+	do{
 		auto next = alloc.get();
 		if (next == 0){
 			// no free cluster
@@ -536,7 +541,6 @@ bool cluster_chain::expand(dword index){
 			first_cluster = next;
 		}
 		tail.cluster = next;
-		++tail.index;
-	}
+	}while(++tail.index < index);
 	return true;
 }

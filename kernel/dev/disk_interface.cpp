@@ -96,6 +96,7 @@ bool disk_interface::slot::store(qword lba,byte count){
 		byte mask = 1 << (off + i);
 		dirty |= mask;
 	}
+	zeromemory(static_cast<byte*>(access) + SECTOR_SIZE*off, SECTOR_SIZE*count);
 	valid |= dirty;
 	timestamp = timer.running_time();
 	return true;
@@ -177,8 +178,12 @@ void disk_interface::upgrade(slot* ptr,qword lba,byte count){
 	if (page_lba(lba) != ptr->lba_base || count > this->count(lba)){
 		bugcheck("disk_interface::upgrade bad param %x,%d",lba,count);
 	}
-	if (!ptr->store(lba,count)){
-		bugcheck("disk_interface::upgrade failed");
+	unsigned off = lba - ptr->lba_base;
+	for (unsigned i = 0;i < count;++i){
+		assert(off + i < 8);
+		byte mask = 1 << (off + i);
+		assert(ptr->valid & mask);
+		ptr->dirty |= mask;
 	}
 }
 

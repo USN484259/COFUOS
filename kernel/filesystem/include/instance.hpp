@@ -167,6 +167,7 @@ namespace UOS{
 		
 		file_instance* create(const span<char>& str, byte attrib = 0);
 		bool update_size(file_instance*);
+		bool update_chain(file_instance*, dword head);
 		bool update_name(file_instance*);
 		void detach(file_instance*);
 		void attach(file_instance*);

@@ -1,0 +1,7 @@
+#!/bin/sh
+
+virtualboxvm --startvm COFUOS &
+#--start-running --debug 
+sleep 4s
+cd kernel && exec gdb
+

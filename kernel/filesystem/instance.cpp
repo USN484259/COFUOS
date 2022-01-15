@@ -54,8 +54,11 @@ qword file_instance::get_lba(qword offset,bool expand){
 			}
 			break;
 		}
-		if (expand && clusters.expand(index))
-			;	// retry, should succeed
+		if (expand && clusters.expand(index)) {
+			if (index == 0 && !parent->update_chain(this, clusters.get(0)))
+				break;
+			// retry, should succeed
+		}
 		else
 			break;
 	}while(true);
@@ -207,6 +210,28 @@ bool folder_instance::update_size(file_instance* inst){
 
 	return rec.update(inst->get_index());
 }
+
+bool folder_instance::update_chain(file_instance* inst, dword head){
+	assert(inst->is_locked());
+
+	lock_guard<rwlock> guard(objlock);
+	reader rec(*this,inst->get_index());
+
+	auto stat = rec.step(ALLOW_FILE | ALLOW_FOLDER);
+	if (stat != 0)
+		return false;
+	auto index = rec.get_index();
+	auto file = rec.get_record();
+	assert(file);
+
+	if (inst->get_index() + file->entrance_size + 1 != index)
+		return false;
+	
+	file->first_cluster = head;
+
+	return rec.update(inst->get_index());
+}
+
 
 word folder_instance::reader::checksum(const void* ptr,dword limit){
 	word sum = 0;

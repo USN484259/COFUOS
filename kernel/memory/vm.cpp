@@ -26,7 +26,7 @@ void map_view::map(qword pa,qword attrib){
 		qword origin_value = table[index];
 		if (origin_value & 0x01)
 			continue;
-		
+
 		qword new_value = attrib | pa | PAGE_PRESENT;
 
 		if (origin_value == cmpxchg(table + index, new_value, origin_value)){
@@ -53,9 +53,11 @@ void map_view::unmap(void){
 	qword origin_value = table[index];
 	if (0 == (origin_value & 0x01))
 		bugcheck("double free @ %x", index);
-	if (origin_value != cmpxchg(table + index, (qword)0, origin_value))
+	auto diff = origin_value ^ cmpxchg(table + index, (qword)0, origin_value);
+	if (diff & ~(qword)0x60)
 		bugcheck("double free @ %x", index);
 	invlpg(view);
+	view = nullptr;
 }
 
 void virtual_space::BLOCK::get(const PTE* pt){
@@ -584,7 +586,7 @@ dword virtual_space::imp_iterate(const PDPTE* pdpt_table,qword base_addr,dword p
 PTE virtual_space::imp_peek(qword va,PDPTE const* pdpt_table){
 	if (LOWADDR(va) >> 39)
 		return PTE {0};
-	
+
 	auto pdpt_index = (va >> 30) & 0x1FF;
 	auto pdt_index = (va >> 21) & 0x1FF;
 	auto pt_index = (va >> 12) & 0x1FF;
@@ -645,7 +647,7 @@ bool virtual_space::new_pt(PDTE& pdt,map_view& view,bool take){
 	BLOCK block = {0};
 	block.size = 0x200;
 	block.put(table);
-	
+
 	++used_pages;
 	return true;
 }
@@ -691,7 +693,7 @@ bool virtual_space::reserve_fixed(PDPTE* pdpt_table,qword base_addr,dword page_c
 	assert(0 == (base_addr & PAGE_MASK));
 	if (LOWADDR(base_addr) >> 39)
 		return false;
-	
+
 	map_view pdt_view;
 	map_view pt_view;
 
