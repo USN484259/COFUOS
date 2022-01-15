@@ -18,7 +18,9 @@ void show_date(qword time){
 	dword year = era * 400 + yoe;
 	dword month = (mp < 10) ? (mp + 3) : (mp - 9);
 	dword date = 1 + doy - (153 * mp + 2) / 5;
-	
+	if (month <= 2)
+		++year;
+
 	printf("%u-%u-%u",year,month,date);
 }
 void show_time(qword time){
