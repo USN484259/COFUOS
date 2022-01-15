@@ -59,7 +59,7 @@ public:
 		// tail == 0 for empty file
 		if (0 == tail)
 			return true;
-		
+
 		assert(tail >= 2);
 		if (!load(tail))
 			return false;
@@ -288,7 +288,7 @@ void exfat::thread_init(qword arg,qword cnt,qword,qword){
 	}
 	if (sum != *(const dword*)buffer)
 		bugcheck("exFAT checksum mismatch (%x,%x)",(qword)sum,(qword)*(const dword*)buffer);
-	
+
 	// parse root directory and get allocation bitmap
 
 	byte fat_index = (root & 0x80000000) ? 1 : 0;
@@ -536,11 +536,12 @@ bool cluster_chain::expand(dword index){
 		}
 		if (!fat.put(tail.cluster,next))
 			return false;
-		if (tail.index == 0){
-			assert(first_cluster == 0);
+		if (0 == first_cluster) {
 			first_cluster = next;
+		} else {
+			++tail.index;
 		}
 		tail.cluster = next;
-	}while(++tail.index < index);
+	}while(tail.index < index);
 	return true;
 }

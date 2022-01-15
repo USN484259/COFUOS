@@ -28,8 +28,8 @@ void map_view::map(qword pa,qword attrib){
 			continue;
 
 		qword new_value = attrib | pa | PAGE_PRESENT;
-
-		if (origin_value == cmpxchg(table + index, new_value, origin_value)){
+		auto diff = origin_value ^ cmpxchg(table + index, new_value, origin_value);
+		if (0 == (diff & ~(qword)0x60)){
 			//gain this slot
 			view = (void*)(MAP_VIEW_BASE + PAGE_SIZE * index);
 			return;
@@ -50,11 +50,8 @@ void map_view::unmap(void){
 		bugcheck("out_of_range %p",view);
 
 	auto table = (qword volatile* const)MAP_TABLE_BASE;
-	qword origin_value = table[index];
+	qword origin_value = xchg(table + index, (qword)0);
 	if (0 == (origin_value & 0x01))
-		bugcheck("double free @ %x", index);
-	auto diff = origin_value ^ cmpxchg(table + index, (qword)0, origin_value);
-	if (diff & ~(qword)0x60)
 		bugcheck("double free @ %x", index);
 	invlpg(view);
 	view = nullptr;
