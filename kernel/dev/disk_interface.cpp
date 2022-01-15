@@ -75,7 +75,7 @@ bool disk_interface::slot::load(qword lba,byte count){
 	if (valid == 0xFF){
 		return true;
 	}
-	
+
 	assert(dirty);
 	//just write dirty pages and read back
 	return reload(lba_base);
@@ -221,7 +221,7 @@ void disk_interface::thread_flush(qword ptr,qword,qword,qword){
 	self->ticket = timer.wait(flush_interval,on_timer,reinterpret_cast<void*>(self),true);
 	{
 		this_core core;
-		core.this_thread()->set_priority(scheduler::idle_priority);
+		core.this_thread()->set_priority(scheduler::service_priority);
 	}
 	do{
 		self->ev_flush.wait();
